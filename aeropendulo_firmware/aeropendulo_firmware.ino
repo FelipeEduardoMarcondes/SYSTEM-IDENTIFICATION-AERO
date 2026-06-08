@@ -8,7 +8,7 @@
   WAVE=<n>                          Anuncia n amostras de sinal contínuo
   DATA=v0,v1,...,vk                 Bloco de amostras (até WAVE_CHUNK por pacote)
   DATA_END                          Encerra o carregamento do buffer WAVE
-  CHIRP=Amp,Fmax,T0,DC              Gera chirp dinamicamente (Amp, Fmax em Hz, T0 em s, offset DC)
+  CHIRP=Amp,Fmax,T0,DC,PadS         Gera chirp dinamicamente (Amp, Fmax em Hz, T0 em s, offset DC, pad em s)
   R=<graus>                         Referência instantânea (legado / modo SEQ)
   START                             Inicia experimento
   STOP                              Para imediatamente
@@ -72,12 +72,13 @@ int          waveBloco     = 0;
 bool         waveAtivo     = false;
 
 // ── Parâmetros do Chirp ───────────────────────────────────────────────────────
-bool  chirpAtivo = false;
-float chirp_Amp  = 0.0f;
-float chirp_T0   = 0.0f;
-float chirp_DC   = 0.0f;
-float chirp_a    = 0.0f;
-float chirp_b    = 0.0f;
+bool  chirpAtivo  = false;
+float chirp_Amp   = 0.0f;
+float chirp_T0    = 0.0f;
+float chirp_DC    = 0.0f;
+float chirp_PadS  = 0.0f;   // s — DC antes e depois do chirp ativo
+float chirp_a     = 0.0f;
+float chirp_b     = 0.0f;
 
 // ── Temporização ──────────────────────────────────────────────────────────────
 unsigned long proximaAmostra = 0;
@@ -234,12 +235,13 @@ void finalizarWAVE() {
 }
 
 void parsearCHIRP(const String& cmd) {
-  // Exemplo de payload: CHIRP=30.0,0.5,20.0,45.0
+  // Payload: CHIRP=amp,fmax,t0,dc,pad_s
   String dados = cmd.substring(6);
-  
+
   int p1 = dados.indexOf(',');
   int p2 = dados.indexOf(',', p1 + 1);
   int p3 = dados.indexOf(',', p2 + 1);
+  int p4 = dados.indexOf(',', p3 + 1);   // opcional — pad_s
 
   if (p1 == -1 || p2 == -1 || p3 == -1) {
     Serial.println("# CHIRP_ERR");
@@ -249,7 +251,9 @@ void parsearCHIRP(const String& cmd) {
   chirp_Amp     = dados.substring(0, p1).toFloat();
   float f_max   = dados.substring(p1 + 1, p2).toFloat();
   chirp_T0      = dados.substring(p2 + 1, p3).toFloat();
-  chirp_DC      = dados.substring(p3 + 1).toFloat();
+  chirp_DC      = (p4 == -1) ? dados.substring(p3 + 1).toFloat()
+                              : dados.substring(p3 + 1, p4).toFloat();
+  chirp_PadS    = (p4 == -1) ? 0.0f : dados.substring(p4 + 1).toFloat();
 
   float f0 = 1.0f / chirp_T0;
   float k1 = 1.0f;
@@ -261,7 +265,7 @@ void parsearCHIRP(const String& cmd) {
   chirpAtivo = true;
   waveAtivo  = false;
   nDegraus   = 0;
-  
+
   Serial.println("# CHIRP_OK");
 }
 
@@ -309,7 +313,7 @@ void setup() {
   Serial.println("# Comandos: START | STOP | RECAL | FREE");
   Serial.println("# SEQ=t1:r1,...  |  R=<graus>");
   Serial.println("# WAVE=<n> | DATA=v0,... | DATA_END");
-  Serial.println("# CHIRP=Amp,Fmax,T0,DC");
+  Serial.println("# CHIRP=Amp,Fmax,T0,DC,PadS");
   estado = IDLE;
 }
 
@@ -464,11 +468,18 @@ void loop() {
 
   // ── Avanço de referência ─────────────────────────────────────────────────
   if (chirpAtivo) {
-    float t_sec = t_exp / 1000.0f;
-    if (t_sec <= chirp_T0) {
-      r = chirp_Amp * sin((chirp_a * t_sec + chirp_b) * t_sec) + chirp_DC;
+    float t_sec   = t_exp / 1000.0f;
+    float t_fim   = chirp_PadS + chirp_T0;
+    if (t_sec < chirp_PadS) {
+      // Fase 1: pad inicial — sistema estabiliza no ponto de operação
+      r = chirp_DC;
+    } else if (t_sec < t_fim) {
+      // Fase 2: chirp ativo — fase calculada a partir do início da excitação
+      float t_local = t_sec - chirp_PadS;
+      r = chirp_Amp * sinf((chirp_a * t_local + chirp_b) * t_local) + chirp_DC;
     } else {
-      r = chirp_DC; 
+      // Fase 3: pad final — retorno ao ponto de operação
+      r = chirp_DC;
     }
   } else if (waveAtivo) {
     if (waveIdx < waveLen) {

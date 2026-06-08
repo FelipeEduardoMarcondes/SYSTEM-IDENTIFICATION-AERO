@@ -133,8 +133,8 @@ class SerialManager:
         self.enviar("DATA_END")
         return self.aguardar_token("WAVE_READY", timeout_s=15.0)
 
-    def enviar_chirp(self, amp: float, fmax: float, t0: float, dc: float) -> bool:
-        comando = f"CHIRP={amp:.2f},{fmax:.4f},{t0:.2f},{dc:.2f}"
+    def enviar_chirp(self, amp: float, fmax: float, t0: float, dc: float, pad_s: float = 0.0) -> bool:
+        comando = f"CHIRP={amp:.2f},{fmax:.4f},{t0:.2f},{dc:.2f},{pad_s:.2f}"
         self.enviar(comando)
         return self.aguardar_token("CHIRP_OK", timeout_s=5.0)
 

@@ -119,32 +119,49 @@ def _definir_sequencia_degraus() -> tuple:
     return duracao_s, degraus
 
 def _configurar_chirp_params() -> tuple:
+    import glob
     print("\n  Configuracao do CHIRP (Embarcado)")
-    print("  [1] Ler parametros_chirp.csv (gerado pelo MATLAB)")
+    print("  [1] Carregar parametros de CSV")
     print("  [2] Inserir manualmente\n")
-    
+
     opcao = None
     while opcao not in ("1", "2"):
         opcao = input("  Opcao [1/2]: ").strip()
 
     if opcao == "1":
-        try:
-            df = pd.read_csv('parametros_chirp.csv', header=None)
-            amp  = float(df.iloc[0, 0])
-            fmax = float(df.iloc[0, 1])
-            t0   = float(df.iloc[0, 2])
-            dc   = float(df.iloc[0, 3])
-            print(f"  [Lido do CSV] Amp={amp}, Fmax={fmax}Hz, T0={t0}s, DC={dc}")
-            return t0, amp, fmax, dc
-        except Exception as e:
-            print(f"  [ERRO] Falha ao ler parametros_chirp.csv: {e}")
-            print("  Recorrendo a entrada manual.")
+        csvs = sorted(glob.glob("*.csv") + glob.glob(f"{DADOS_DIR}/*.csv"))
+        if not csvs:
+            print("  Nenhum CSV encontrado. Recorrendo a entrada manual.")
+        else:
+            print("\n  CSVs disponíveis:")
+            for i, f in enumerate(csvs):
+                print(f"  [{i + 1}] {f}")
+            idx_csv = -1
+            while not (0 <= idx_csv < len(csvs)):
+                try:
+                    idx_csv = int(input(f"\n  Escolha [1-{len(csvs)}]: ").strip()) - 1
+                except ValueError:
+                    pass
+            try:
+                df = pd.read_csv(csvs[idx_csv], header=None)
+                amp   = float(df.iloc[0, 0])
+                fmax  = float(df.iloc[0, 1])
+                t0    = float(df.iloc[0, 2])
+                dc    = float(df.iloc[0, 3])
+                # Coluna 4 opcional — pad_s; usa 10 s como padrão se ausente
+                pad_s = float(df.iloc[0, 4]) if df.shape[1] >= 5 else 10.0
+                print(f"  [Lido do CSV] Amp={amp}, Fmax={fmax}Hz, T0={t0}s, DC={dc}, PadS={pad_s}s")
+                return t0, amp, fmax, dc, pad_s
+            except Exception as e:
+                print(f"  [ERRO] Falha ao ler {csvs[idx_csv]}: {e}")
+                print("  Recorrendo a entrada manual.")
 
-    t0   = _pedir_float("Duracao do chirp (s)", 20.0)
-    amp  = _pedir_float("Amplitude pico (graus)", 30.0)
-    fmax = _pedir_float("Frequencia maxima (Hz)", 0.5)
-    dc   = _pedir_float("Ponto de operacao (graus)", 45.0)
-    return t0, amp, fmax, dc
+    t0    = _pedir_float("Duracao do chirp ativo (s)", 20.0)
+    amp   = _pedir_float("Amplitude pico (graus)", 30.0)
+    fmax  = _pedir_float("Frequencia maxima (Hz)", 0.5)
+    dc    = _pedir_float("Ponto de operacao (graus)", 45.0)
+    pad_s = _pedir_float("Pad de DC antes/depois do chirp (s)", 10.0)
+    return t0, amp, fmax, dc, pad_s
 
 def _configurar_multisine() -> tuple:
     import glob
@@ -231,24 +248,26 @@ def rodar_chirp(porta: str) -> str | None:
     mgr = _conectar_e_aguardar(porta)
     if not mgr: return None
     
-    t0, amp, fmax, dc = _configurar_chirp_params()
-    duracao_total = t0 + 5.0 # Margem de segurança pós-sinal
+    t0, amp, fmax, dc, pad_s = _configurar_chirp_params()
+    margem        = 5.0                          # s de margem após o pad final
+    duracao_total = t0 + 2.0 * pad_s + margem
     _pedir_recal(mgr)
 
     print("\n  Enviando parametros do CHIRP para o Arduino...")
-    if not mgr.enviar_chirp(amp, fmax, t0, dc):
+    if not mgr.enviar_chirp(amp, fmax, t0, dc, pad_s):
         print("  [ERRO] Falha ao enviar parametros. Abortando.")
         mgr.fechar()
         return None
 
-    live = LivePlot(nome="CHIRP EMBARCADO", janela_s=min(30.0, duracao_total))
+    live = LivePlot(nome=f"CHIRP EMBARCADO  pad={pad_s:.0f}s  t0={t0:.0f}s",
+                    janela_s=min(30.0, duracao_total))
     if not mgr.iniciar_experimento():
         live.fechar()
         mgr.fechar()
         return None
 
     aq = Aquisicao(mgr, live)
-    linhas = aq.rodar(duracao_s=duracao_total, modo="wave") # Python apenas coleta
+    linhas = aq.rodar(duracao_s=duracao_total, modo="wave")  # Python apenas coleta
     live.fechar()
     mgr.fechar()
 

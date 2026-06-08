@@ -202,9 +202,13 @@ def plotar(caminho: str):
     ax1.plot(t, ang, color=CORES["angulo"], lw=1.8, label="angulo medido (deg)")
     ax1.axhline(0, color=CORES["zero"], lw=0.7, ls=":")
 
-    margem = max(10.0, (stat["ang_max"] - stat["ang_min"]) * 0.15 + 5.0)
+    # Escala inclui tanto o ângulo medido quanto a referência
+    vals_painel = np.concatenate([ang, ref[~np.isnan(ref)]]) if tem_ref else ang
+    y_min = float(np.nanmin(vals_painel))
+    y_max = float(np.nanmax(vals_painel))
+    margem = max(10.0, (y_max - y_min) * 0.15 + 5.0)
     ax1.set_ylabel("Angulo  (deg)", fontsize=10)
-    ax1.set_ylim(stat["ang_min"] - margem, stat["ang_max"] + margem)
+    ax1.set_ylim(y_min - margem, y_max + margem)
     ax1.grid(True)
     ax1.set_xticklabels([])
     ax1.legend(loc="upper right", framealpha=0, fontsize=9)
