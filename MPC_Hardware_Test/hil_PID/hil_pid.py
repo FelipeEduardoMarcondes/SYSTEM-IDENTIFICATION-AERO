@@ -34,7 +34,7 @@ except Exception as e:
 Ts = 0.01  # Alterado para 100 Hz
 
 # ALTERE AQUI PARA O CAMINHO DO SEU ARQUIVO CSV DE REFERÊNCIA GERADO PELO MATLAB !!!!!
-csv_filename = r'c:\Users\mathe\OneDrive - Grupo Marista\PUCPR\15 Semestre\CONTROLE AVANÇADO\GITs\1-4 DRONE - GIT\SYSTEM-IDENTIFICATION-AERO\MPC_Hardware_Test\generate_ref_signal\sinal4_multiseno.csv'
+csv_filename = r'c:\Users\mathe\OneDrive - Grupo Marista\PUCPR\15 Semestre\CONTROLE AVANÇADO\GITs\1-4 DRONE - GIT\SYSTEM-IDENTIFICATION-AERO\MPC_Hardware_Test\generate_ref_signal\sinal1_semi_estatica.csv'
 try:
     df_ref = pd.read_csv(csv_filename)
     csv_time = df_ref['Tempo_s'].values
@@ -77,9 +77,34 @@ y_1 = 0.0
 # ==========================================
 # 3. LOOP DE CONTROLE (HIL puramente PID)
 # ==========================================
-print("\nIniciando Loop de Controle HIL com PID...")
+print("\nSincronizando estado inicial com o Arduino...")
 
-y_atual = 0.0 # Estado inicial assumido antes da 1a leitura
+if 'ser' in locals() and ser.is_open:
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
+    
+    y_atual = 0.0
+    # Roda vazio por 0.5 segundo (50 passos) para o filtro do Arduino convergir
+    for _ in range(50):
+        ser.write(f"0.0000\n".encode())
+        arduino_reply = ser.readline().decode('utf-8', errors='ignore').strip()
+        if arduino_reply:
+            try:
+                y_atual = float(arduino_reply)
+            except ValueError:
+                pass
+        time.sleep(Ts)
+        
+    # Inicializa a memória do PID com o estado real lido para evitar "Derivative Kick"
+    y_1 = y_atual
+    e_1 = ref_signal[0] - y_atual
+    print(f"Estado inicial lido com sucesso: {y_atual:.2f} graus. Iniciando controle!")
+else:
+    y_atual = 0.0
+    y_1 = 0.0
+    e_1 = 0.0
+
+print("\nIniciando Loop de Controle HIL com PID...")
 
 for step in range(n_steps):
     loop_start = time.time()
