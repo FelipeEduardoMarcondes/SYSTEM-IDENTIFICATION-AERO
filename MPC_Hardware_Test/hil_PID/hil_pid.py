@@ -34,7 +34,7 @@ except Exception as e:
 Ts = 0.01  # Alterado para 100 Hz
 
 # ALTERE AQUI PARA O CAMINHO DO SEU ARQUIVO CSV DE REFERÊNCIA GERADO PELO MATLAB !!!!!
-csv_filename = r'c:\Users\mathe\OneDrive - Grupo Marista\PUCPR\15 Semestre\CONTROLE AVANÇADO\GITs\1-4 DRONE - GIT\SYSTEM-IDENTIFICATION-AERO\MPC_Hardware_Test\generate_ref_signal\sinal1_semi_estatica.csv'
+csv_filename = r'c:\Users\mathe\OneDrive - Grupo Marista\PUCPR\15 Semestre\CONTROLE AVANÇADO\GITs\1-4 DRONE - GIT\SYSTEM-IDENTIFICATION-AERO\MPC_Hardware_Test\generate_ref_signal\sinal2_degraus_malha_fechada.csv'
 try:
     df_ref = pd.read_csv(csv_filename)
     csv_time = df_ref['Tempo_s'].values

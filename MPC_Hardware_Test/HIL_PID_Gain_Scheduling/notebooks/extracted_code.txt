@@ -1,0 +1,440 @@
+
+==================================================
+Notebook: /Users/helon/Desktop/HIL_PID_Gain_Scheduling/notebooks/mpc_grey_box_14_drone.ipynb
+==================================================
+
+--- Cell 1 (markdown) ---
+# MPC - grey-box
+
+This script runs an optimal MPC (using casadi) for the 1/4 drone case study, using a continuous-time state-space grey-box model identified.
+
+--- Cell 2 (code) ---
+# 1. Imports and Definitions
+import numpy as np
+import matplotlib.pyplot as plt
+import time
+from tqdm.auto import tqdm
+from casadi import SX, MX, DM, Function, nlpsol, vertcat, integrator, sqrt
+
+Ts = 0.05  # Sampling time in seconds
+nx = 2
+
+
+--- Cell 3 (code) ---
+# 2. CasADi state-space grey-box model (Manual RK4 for speedup)
+c1 = -8.29151533
+c2 = 0.00418887
+c3 = -1.43673669
+
+x = SX.sym('x', nx)
+u_sym = SX.sym('u')
+
+# Continuous time ODE
+def f_dyn(x_vec, u_val):
+    return vertcat(x_vec[1], c1*np.sin(x_vec[0]) + c2*u_val*sqrt(u_val**2 + 1e-4) + c3*x_vec[1])
+
+# Manual RK4 integrator (much faster symbolic Hessian than CasADi's integrator())
+k1 = f_dyn(x, u_sym)
+k2 = f_dyn(x + Ts/2 * k1, u_sym)
+k3 = f_dyn(x + Ts/2 * k2, u_sym)
+k4 = f_dyn(x + Ts * k3, u_sym)
+x_next = x + Ts/6 * (k1 + 2*k2 + 2*k3 + k4)
+y_k = x_next[0]
+
+F = Function('F', [x, u_sym], [x_next, y_k], ['x0', 'p'], ['xf', 'yk'])
+
+
+--- Cell 4 (code) ---
+# 3. MPC Setup
+N = 20
+data = {
+    'Ts': Ts,
+    'x0': np.zeros(nx),
+    'u_min': np.array([-100.0]),
+    'u_max': np.array([100.0]),
+    'u_guess': np.array([1.0]),
+    'x_guess': np.zeros(nx),
+    'tol': 1e-8,
+}
+
+def vcat(lst):
+    return vertcat(*[DM(x) if not hasattr(x, 'is_symbolic') else x for x in lst])
+
+w, lbw, ubw, w0 = [], [], [], []
+g, lbg, ubg = [], [], []
+J = 0
+
+xk_param = MX.sym('xk_param', nx)
+Pref = MX.sym('Pref', N)
+u_prev_param = MX.sym('u_prev_param', 1)
+
+xk = MX.sym('x0', nx)
+w.append(xk)
+lbw.append(np.full(nx, -np.inf))
+ubw.append(np.full(nx, np.inf))
+w0.append(data['x_guess'])
+
+g.append(xk - xk_param)
+lbg.append(np.zeros(nx))
+ubg.append(np.zeros(nx))
+
+for k in range(N):
+    uk = MX.sym(f'u_{k}', 1)
+    w.append(uk)
+    lbw.append(data['u_min'])
+    ubw.append(data['u_max'])
+    w0.append(data['u_guess'])
+    
+    Fk = F(x0=xk, p=uk)
+    xnext = Fk['xf']
+    yk = Fk['yk'] * 180.0 / np.pi  # Convert angle to degrees for cost function
+    
+    if k == 0:
+        du = uk - u_prev_param
+    else:
+        du = uk - u_prev
+    u_prev = uk
+    
+    J = J + 1e3 * (yk - Pref[k])**2 + 0.1 * uk**2 + 50.0 * du**2
+    
+    xk = MX.sym(f'x_{k+1}', nx)
+    w.append(xk)
+    lbw.append(np.full(nx, -np.inf))
+    ubw.append(np.full(nx, np.inf))
+    w0.append(data['x_guess'])
+    
+    g.append(xk - xnext)
+    lbg.append(np.zeros(nx))
+    ubg.append(np.zeros(nx))
+
+w = vertcat(*w)
+lbw = vcat(lbw)
+ubw = vcat(ubw)
+w0 = vcat(w0)
+g = vertcat(*g)
+lbg = vcat(lbg)
+ubg = vcat(ubg)
+
+nlp = {'x': w, 'g': g, 'f': J, 'p': vertcat(xk_param, Pref, u_prev_param)}
+solver = nlpsol('solver', 'ipopt', nlp, {'ipopt.print_level': 0, 'print_time': 0})
+
+
+--- Cell 5 (code) ---
+# 4. Reference Sequence Generation
+T_sim = 75.0
+steps = int(T_sim / Ts)
+t_steps = np.arange(0, T_sim + N*Ts, Ts)
+
+def get_ref(t):
+    step = int(t // 2)
+    if step <= 18:
+        return step * 10.0
+    else:
+        return max(180.0 - (step - 18) * 10.0, 0.0)
+
+x2ref_full = np.array([get_ref(t) for t in t_steps])
+tvec = np.arange(0, T_sim, Ts)
+
+plt.figure(figsize=(12, 3))
+plt.plot(t_steps, x2ref_full, 'k--')
+plt.title('Reference trajectory (staircase)')
+plt.ylabel('Angle (deg)'); plt.xlabel('Time (s)')
+plt.grid(True); plt.show()
+
+
+--- Cell 6 (code) ---
+# 5. Simulation Loop
+xsim = np.zeros((nx, 1))
+ysim = []
+usim = []
+tvec_sim = []
+dtvec = []
+u_prev_sim = 0.0
+
+w0_val = w0.full().flatten()
+
+for k in tqdm(range(steps), desc="MPC Simulation"):
+    t = k * Ts
+    ref_window = x2ref_full[k : k + N]
+    
+    pval = np.concatenate([xsim[:, -1], ref_window, [u_prev_sim]])
+    
+    tic = time.perf_counter()
+    sol = solver(x0=w0_val, lbx=lbw, ubx=ubw, lbg=lbg, ubg=ubg, p=pval)
+    dtvec.append(time.perf_counter() - tic)
+    
+    w_opt = sol['x'].full().flatten()
+    u_opt = w_opt[nx]
+    
+    # Open Loop Simulation using model F
+    sim_step = F(x0=xsim[:, -1], p=u_opt)
+    xk1 = sim_step['xf'].full().flatten()
+    yk = sim_step['yk'].full().item() * 180.0 / np.pi
+    
+    xsim = np.c_[xsim, xk1]
+    usim.append(u_opt)
+    ysim.append(yk)
+    tvec_sim.append(t)
+    
+    # Warm start
+    w0_val = w_opt
+    u_prev_sim = u_opt
+
+
+--- Cell 7 (code) ---
+# 6. Plotting Results
+plt.figure(figsize=(14, 12))
+plt.subplot(3, 1, 1)
+plt.plot(tvec_sim, x2ref_full[:steps], 'k--', label='Reference', lw=2)
+plt.plot(tvec_sim, ysim, 'b-', label='Output $\\theta$', lw=2)
+plt.ylabel('Angle [deg]')
+plt.title('Optimal MPC (CasADi grey-box state-space model)')
+plt.grid(True)
+plt.legend()
+
+plt.subplot(3, 1, 2)
+plt.plot(tvec_sim, usim, 'r-', label='Control Effort $u$', lw=2)
+plt.axhline(data['u_max'][0], color='k', ls=':', alpha=0.5)
+plt.axhline(data['u_min'][0], color='k', ls=':', alpha=0.5)
+plt.ylabel('Control [%]')
+plt.xlabel('Time [s]')
+plt.grid(True)
+plt.legend()
+
+
+plt.subplot(3, 1, 3)
+plt.plot(tvec_sim, np.array(dtvec) * 1000, 'g-', lw=2)
+plt.axhline(np.mean(dtvec) * 1000, color='k', ls=':', alpha=0.5, label=f'Mean: {np.mean(dtvec)*1000:.2f} ms')
+plt.ylabel('Time/Iteration [ms]')
+plt.xlabel('Time [s]')
+plt.title('Solver Time')
+plt.grid(True)
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+
+==================================================
+Notebook: /Users/helon/Desktop/HIL_PID_Gain_Scheduling/notebooks/pid_gain_scheduling_14_drone.ipynb
+==================================================
+
+--- Cell 1 (markdown) ---
+# Gain scheduling - PID
+
+This script derives optimal PID gains ($K_p$, $K_i$, $K_d$) mathematically by matching the closed-loop characteristic polynomial with desired poles.
+
+--- Cell 2 (code) ---
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+from scipy.interpolate import interp1d
+import warnings
+warnings.filterwarnings('ignore')
+
+# Identified parameters from phys_14_drone.ipynb
+c1 = -8.29151533
+c2 = 0.00418887
+c3 = -1.43673669
+
+# Bounds
+u_min, u_max = -100.0, 100.0
+Ts = 0.05  # Sampling time
+
+
+--- Cell 3 (markdown) ---
+## 1. Linearization and Analytical PID Derivation
+
+The continuous-time dynamics of the drone, using the virtual control $v = u|u|$, is given by:
+$$ \ddot{\theta} = c_1 \sin(\theta) + c_3 \dot{\theta} + c_2 v $$
+
+To linearize the system around an equilibrium angle $\theta_{eq}$ (where $\dot{\theta} = 0$ and $\ddot{\theta} = 0$), we find the equilibrium virtual control $v_{eq}$:
+$$ 0 = c_1 \sin(\theta_{eq}) + c_2 v_{eq} \implies v_{eq} = -\frac{c_1}{c_2}\sin(\theta_{eq}) $$
+
+Introducing small perturbations $\theta = \theta_{eq} + \tilde{\theta}$ and $v = v_{eq} + \tilde{v}$, and substituting into the dynamics:
+$$ \ddot{\tilde{\theta}} = c_1 \sin(\theta_{eq} + \tilde{\theta}) + c_3 \dot{\tilde{\theta}} + c_2 (v_{eq} + \tilde{v}) $$
+
+Using the first-order Taylor expansion $\sin(\theta_{eq} + \tilde{\theta}) \approx \sin(\theta_{eq}) + \cos(\theta_{eq})\tilde{\theta}$:
+$$ \ddot{\tilde{\theta}} \approx c_1 \sin(\theta_{eq}) + c_1 \cos(\theta_{eq})\tilde{\theta} + c_3 \dot{\tilde{\theta}} + c_2 v_{eq} + c_2 \tilde{v} $$
+
+Since $c_1 \sin(\theta_{eq}) + c_2 v_{eq} = 0$, those terms cancel out. Taking the Laplace transform of the resulting linearized plant yields the open-loop transfer function:
+$$ G_p(s) = \frac{\Theta(s)}{V(s)} = \frac{c_2}{s^2 - c_3 s - c_1 \cos(\theta_{eq})} $$
+
+A standard PID controller in the Laplace domain is:
+$$ C(s) = K_p + \frac{K_i}{s} + K_d s = \frac{K_d s^2 + K_p s + K_i}{s} $$
+
+In a unity-feedback loop, the closed-loop transfer function $T(s)$ from reference $R(s)$ to output $\Theta(s)$ is:
+$$ T(s) = \frac{C(s)G_p(s)}{1 + C(s)G_p(s)} = \frac{c_2 (K_d s^2 + K_p s + K_i)}{s(s^2 - c_3 s - c_1 \cos(\theta_{eq})) + c_2(K_d s^2 + K_p s + K_i)} $$
+
+The denominator is the **Closed-Loop Characteristic Polynomial**:
+$$ s^3 + (c_2 K_d - c_3)s^2 + (c_2 K_p - c_1 \cos(\theta_{eq}))s + c_2 K_i = 0 $$
+
+If we desire closed-loop poles at $p_1, p_2, p_3$, our desired characteristic polynomial is:
+$$ (s - p_1)(s - p_2)(s - p_3) = s^3 + \alpha_2 s^2 + \alpha_1 s + \alpha_0 = 0 $$
+
+Equating coefficients, we obtain the exact analytical gains:
+1. $K_d = \frac{\alpha_2 + c_3}{c_2}$
+2. $K_p(\theta_{eq}) = \frac{\alpha_1 + c_1 \cos(\theta_{eq})}{c_2}$
+3. $K_i = \frac{\alpha_0}{c_2}$
+
+
+--- Cell 4 (code) ---
+angles_deg = np.array([0, 30, 60, 90, 120, 150, 180], dtype=float)
+angles_rad = np.deg2rad(angles_deg)
+
+v_eq_list = []
+Kp_list, Ki_list, Kd_list = [], [], []
+
+# Desired poles for the closed-loop system
+P_desired = [-2, -2.5, -3]
+alpha = np.poly(P_desired)  # Result: [1, alpha2, alpha1, alpha0]
+alpha2, alpha1, alpha0 = alpha[1], alpha[2], alpha[3]
+
+print("Analytical PID Design Summary:")
+print("-" * 60)
+for th in angles_rad:
+    sin_th = np.clip(np.sin(th), 0, None) 
+    cos_th = np.cos(th)
+    
+    # Equilibrium virtual control
+    v_eq = (-c1 * sin_th) / c2
+    v_eq_list.append(v_eq)
+    
+    # Analytical PID matching from pole placement:
+    # s^3 + (c2*Kd - c3)s^2 + (c2*Kp - c1*cos(th))s + c2*Ki = 0
+    
+    Kd_opt = (alpha2 + c3) / c2
+    Kp_opt = (alpha1 + c1 * cos_th) / c2
+    Ki_opt = alpha0 / c2
+    
+    Kp_list.append(Kp_opt)
+    Ki_list.append(Ki_opt)
+    Kd_list.append(Kd_opt)
+    
+    print(f"Angle {np.rad2deg(th):>3.0f} deg | Kp={Kp_opt:.1f}, Ki={Ki_opt:.1f}, Kd={Kd_opt:.1f}")
+
+
+--- Cell 5 (markdown) ---
+## 2. PID Gain Scheduling Interpolators
+
+--- Cell 6 (code) ---
+interp_veq = interp1d(angles_deg, v_eq_list, kind='cubic', fill_value='extrapolate')
+interp_Kp = interp1d(angles_deg, Kp_list, kind='linear', fill_value='extrapolate')
+interp_Ki = interp1d(angles_deg, Ki_list, kind='linear', fill_value='extrapolate')
+interp_Kd = interp1d(angles_deg, Kd_list, kind='linear', fill_value='extrapolate')
+
+print("Interpolators created.")
+
+
+--- Cell 7 (markdown) ---
+## 3. Visualization of Scheduled PID Gains
+
+--- Cell 8 (code) ---
+th_plot = np.linspace(0, 180, 100)
+
+Kp_plot = interp_Kp(th_plot)
+Ki_plot = interp_Ki(th_plot)
+Kd_plot = interp_Kd(th_plot)
+
+plt.figure(figsize=(10, 8))
+plt.plot(th_plot, Kp_plot, 'r-', lw=2, label='$K_p$')
+plt.plot(th_plot, Ki_plot, 'b-', lw=2, label='$K_i$')
+plt.plot(th_plot, Kd_plot, 'g-', lw=2, label='$K_d$')
+plt.title('Scheduled PID Gains vs Plant Angle')
+plt.xlabel('Plant Angle $\\theta$ [deg]')
+plt.ylabel('Gain Value')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+--- Cell 9 (markdown) ---
+## 4. Nonlinear Simulation
+We simulate the staircase reference using the difference equation computing virtual control $\Delta v[k]$.
+
+--- Cell 10 (code) ---
+# Simulation Settings
+T_sim = 190.0
+t_steps = np.arange(0, T_sim, Ts)
+
+def get_ref(t):
+    step = int(t // 5) # 5 seconds per step
+    if step <= 18:
+        return step * 10
+    else:
+        return max(180 - (step - 18) * 10, 0)
+
+def drone_dynamics(t, x, u_val):
+    th, th_dot = x
+    th_ddot = c1 * np.sin(th) + c2 * u_val * np.abs(u_val) + c3 * th_dot
+    return [th_dot, th_ddot]
+
+y_hist = []
+r_hist = []
+u_hist = []
+
+x_plant = np.array([0.0, 0.0])
+
+e_int = 0.0
+e_prev = 0.0
+
+for t in t_steps:
+    r_deg = get_ref(t)
+    r_rad = np.deg2rad(r_deg)
+    y_rad = x_plant[0]
+    y_deg = np.rad2deg(y_rad)
+    
+    # Gain Scheduling
+    sched_angle = np.clip(y_deg, 0, 180) 
+    sched_ref = np.clip(r_deg, 0, 180)
+    
+    v_eq = interp_veq(sched_ref) 
+    Kp = interp_Kp(sched_angle)
+    Ki = interp_Ki(sched_angle)
+    Kd = interp_Kd(sched_angle)
+    
+    # PID control law
+    e = r_rad - y_rad
+    e_int += e * Ts
+    e_der = (e - e_prev) / Ts
+    e_prev = e
+    
+    dv_k = Kp * e + Ki * e_int + Kd * e_der
+    
+    # Total virtual control effort
+    v_k = v_eq + dv_k
+    
+    # Map back to actual physical input: u = sqrt(v)
+    u_k = np.sign(v_k) * np.sqrt(np.abs(v_k))
+    u_k = np.clip(u_k, u_min, u_max)
+    
+    y_hist.append(y_deg)
+    r_hist.append(r_deg)
+    u_hist.append(u_k)
+    
+    sol = solve_ivp(drone_dynamics, [t, t + Ts], x_plant, args=(u_k,), method='RK45')
+    x_plant = sol.y[:, -1]
+
+# Plotting
+plt.figure(figsize=(14, 8))
+
+plt.subplot(2, 1, 1)
+plt.plot(t_steps, r_hist, 'k--', label='Reference', lw=2)
+plt.plot(t_steps, y_hist, 'b-', label='Output $\\theta$', lw=2)
+plt.ylabel('Angle [deg]')
+plt.title('Gain Scheduling (Optimized PID) - Sweep Up and Down')
+plt.grid(True)
+plt.legend()
+
+plt.subplot(2, 1, 2)
+plt.plot(t_steps, u_hist, 'r-', label='Control Effort $u$', lw=2)
+plt.axhline(u_max, color='k', ls=':', alpha=0.5)
+plt.axhline(u_min, color='k', ls=':', alpha=0.5)
+plt.ylabel('Control [%]')
+plt.xlabel('Time [s]')
+plt.grid(True)
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
