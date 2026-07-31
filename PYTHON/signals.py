@@ -71,7 +71,7 @@ def degraus_aleatorios(
     amplitudes = amp * (2 * rng.random(n_rand) - 1)
     sinal_ativ = np.repeat(amplitudes, n_deg)[:n_ativ] + dc
 
-    u = np.concatenate([_zeropad(n_pad), sinal_ativ, _zeropad(n_pad)])
+    u = np.concatenate([_zeropad(n_pad) + dc, sinal_ativ, _zeropad(n_pad) + dc])
     u = _enforce_limits(u, u_min, u_max)
     t = np.arange(len(u)) * TS
     return t, u

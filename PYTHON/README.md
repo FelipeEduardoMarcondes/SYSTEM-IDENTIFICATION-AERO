@@ -1,7 +1,7 @@
 # Aeropêndulo — Sistema de Aquisição v2
 
 TCC: NMPC Aproximado por Redes Neurais em Hardware Embarcado  
-Firmware: Arduino (ICM-20948 + ESC BLDC)  
+Firmware: STM32 (ICM-20948 + ESC BLDC)  
 Python: aquisição, geração de sinais, visualização
 
 ---
@@ -10,7 +10,7 @@ Python: aquisição, geração de sinais, visualização
 
 ```
 aeropendulo/
-├── aeropendulo_firmware.ino     Firmware Arduino
+├── aeropendulo_firmware.ino     Firmware STM32
 └── python/
     ├── main.py          Ponto de entrada — menu interativo
     ├── config.py        Constantes globais (BAUD, FS, limites)
@@ -48,8 +48,8 @@ python python/main.py dados/chirp_20260530_143000.csv
 
 ### Protocolo SEQ — degraus discretos
 
-Usado para sequências de degraus com timing interno no Arduino.  
-Python envia o comando antes do START; durante a coleta o Arduino avança
+Usado para sequências de degraus com timing interno no STM32.  
+Python envia o comando antes do START; durante a coleta o STM32 avança
 os degraus sozinho pelo tempo interno, sem depender de UART para timing.
 
 ```
@@ -66,7 +66,7 @@ ARD → # PARADO
 
 ### Protocolo WAVE — sinais contínuos (chirp, multi-seno)
 
-O sinal completo é pré-carregado no buffer interno do Arduino **antes** do
+O sinal completo é pré-carregado no buffer interno do STM32 **antes** do
 START. Durante a aquisição, o firmware lê a próxima amostra a cada
 interrupção de timer (100 Hz determinístico) — sem nenhuma dependência
 de UART no loop de controle.
@@ -92,7 +92,7 @@ ARD → # PARADO
 **Por que WAVE resolve o problema do chirp?**  
 O chirp muda de valor a cada 10 ms. Enviar via UART com `time.sleep` causa
 jitter de ±5–20 ms por limitações do sistema operacional, distorcendo o
-sinal. Com WAVE, o Arduino executa `waveBuf[waveIdx++]` dentro da ISR do
+sinal. Com WAVE, o STM32 executa `waveBuf[waveIdx++]` dentro da ISR do
 timer — timing determinístico de hardware.
 
 ---
@@ -119,14 +119,14 @@ exportar_csv(t, u, "sinal_chirp.csv")
 
 ## Limites do buffer WAVE
 
-O Arduino Mega tem ~8 KB de SRAM. Com `float` (4 bytes) e `WAVE_MAX=6100`:
+O STM32 Mega tem ~8 KB de SRAM. Com `float` (4 bytes) e `WAVE_MAX=6100`:
 
 ```
 6100 × 4 bytes = 24.4 KB   →  ESTOURO no Mega
 ```
 
 **Solução para Mega:** reduza `WAVE_MAX` para `1500` (~15 s) e divida
-experimentos longos em blocos, ou use o Arduino Due / STM32 que têm
+experimentos longos em blocos, ou use o STM32 Due / STM32 que têm
 mais SRAM.
 
 Para o STM32F446RE (128 KB SRAM):

@@ -2,11 +2,11 @@
 acquisition.py — Loop de aquisição em malha fechada para o aeropêndulo.
 
 Responsável por:
-  - Receber linhas CSV do Arduino em tempo real
+  - Receber linhas CSV do STM32 em tempo real
   - Atualizar o LivePlot
   - Detectar parada (Enter / ESC / timeout / duração)
   - Para o modo SEQ: streaming da referência via R= em thread paralela
-  - Para o modo WAVE: nenhuma ação durante a coleta (Arduino é autônomo)
+  - Para o modo WAVE: nenhuma ação durante a coleta (STM32 é autônomo)
 
 Uso
 ---
@@ -57,7 +57,7 @@ class Aquisicao:
         ----------
         duracao_s : duração total esperada (s); 0 = sem limite
         modo      : "seq"  — streaming R= via thread (degraus discretos)
-                    "wave" — Arduino autônomo; Python só coleta
+                    "wave" — STM32 autônomo; Python só coleta
         degraus   : lista (t_s, ref_deg) usada apenas no modo "seq"
 
         Retorna
@@ -107,7 +107,7 @@ class Aquisicao:
                 timeouts += 1
                 print(f"  Timeout {timeouts}/{self.MAX_TIMEOUTS}")
                 if timeouts >= self.MAX_TIMEOUTS:
-                    print("  Arduino sem resposta. Abortando.")
+                    print("  STM32 sem resposta. Abortando.")
                     with self._lock:
                         self._mgr.enviar("STOP")
                     break
@@ -118,7 +118,7 @@ class Aquisicao:
             if not linha:
                 continue
             if linha.startswith("#"):
-                print(f"  [Arduino] {linha}")
+                print(f"  [STM32] {linha}")
                 if "PARADO" in linha or "FIM" in linha:
                     break
                 continue
@@ -135,6 +135,10 @@ class Aquisicao:
             except ValueError:
                 continue
 
+            # Removemos o descarte de ângulos. Apenas u é validado para evitar lixo
+            if abs(u) > 100:
+                continue
+
             t_s = t_ms / 1000.0
             t_list.append(t_s)
             ang_list.append(ang)
@@ -147,7 +151,8 @@ class Aquisicao:
                 f"err={ang - ref:+6.1f} deg  u={u:5.1f}%  n={len(t_list)}",
                 end="", flush=True,
             )
-            self._live.atualizar(t_list, ang_list, u_list, ref_list)
+            if len(t_list) % 5 == 0:
+                self._live.atualizar(t_list, ang_list, u_list, ref_list)
 
         # Encerramento
         self._parar.set()

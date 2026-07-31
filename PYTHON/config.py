@@ -7,7 +7,7 @@ Edite aqui antes de rodar qualquer módulo.
 # ── Serial ────────────────────────────────────────────────────────────────────
 BAUD           = 500_000
 SERIAL_TIMEOUT = 1.0          # s — timeout de readline em coleta normal
-WAVE_CHUNK     = 20          # amostras por bloco DATA= (não exceder 200)
+WAVE_CHUNK     = 250         # amostras por bloco DATA= (limite ~250 para RX_BUF_LEN=2048)
 
 # ── Amostragem ────────────────────────────────────────────────────────────────
 FS             = 100.0        # Hz — deve bater com o firmware (INTERVALO_US=10000)
@@ -18,7 +18,8 @@ LIVE_JANELA_S  = 30.0         # s — janela de visualização
 LIVE_UPDATE    = 0.25         # s — intervalo mínimo entre redesenhos
 
 # ── Caminhos ──────────────────────────────────────────────────────────────────
-DADOS_DIR      = "dados"
+EXP_DIR        = "experimentos"
+CONTROLE_DIR   = "controle"
 
 # ── Limites físicos ───────────────────────────────────────────────────────────
 REF_MIN        = 0.0          # graus

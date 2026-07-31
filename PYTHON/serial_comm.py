@@ -53,9 +53,11 @@ class SerialManager:
             return False
         try:
             self.ser = serial.Serial(self._porta, self._baud, timeout=self._timeout)
-            time.sleep(2.0)
+            time.sleep(1.0)
             self.ser.reset_input_buffer()
-            print(f"  Conectado em {self._porta} @ {self._baud} baud")
+            self.enviar("REBOOT")  # Força o auto-reset no STM32
+            self.ser.flush()
+            print(f"  Conectado em {self._porta} @ {self._baud} baud (rebootando STM32...)")
             return True
         except serial.SerialException as exc:
             print(f"  [ERRO] Não foi possível abrir {self._porta}: {exc}")
@@ -84,7 +86,7 @@ class SerialManager:
         while time.time() - t0 < timeout_s:
             linha = self.readline()
             if linha and verbose:
-                print(f"  [Arduino] {linha}")
+                print(f"  [STM32] {linha}")
             if token in linha:
                 return True
         print(f"  Timeout aguardando '{token}'.")
@@ -149,5 +151,5 @@ class SerialManager:
             return False
         cab = self.readline()
         if cab:
-            print(f"  [Arduino] {cab}")
+            print(f"  [STM32] {cab}")
         return True

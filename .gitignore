@@ -1,2 +1,44 @@
-/PYTHON/__pycache__
-.vscode
+# IDEs and Editors
+.vscode/
+.metadata/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+ENV/
+
+# Scripts temporarios (Testes e Reorganizacao)
+python/reorganize.py
+python/match_datasets.py
+python/analyze_csv.py
+python/analyze_csv2.py
+
+# STM32 / C Build Artifacts
+stm-firmware/Debug/
+stm-firmware/Release/
+*.o
+*.elf
+*.hex
+*.bin
+*.map
+*.su
+*.lst
+*.bak
+
+# Dados de Saida (Ignorar para nao inchar o repositorio)
+experimentos/
+
+# OS Files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Textos e anotacoes
+contexto-tcc.txt

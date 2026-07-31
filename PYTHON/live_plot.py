@@ -104,13 +104,14 @@ class LivePlot:
                       edgecolor="#30363d", linewidth=0.8),
         )
 
-        self._estop_txt = self.fig.text(
-            0.5, 0.5, "",
-            ha="center", va="center", fontsize=28, fontweight="bold",
-            color="#ff4444", alpha=0.0,
-            bbox=dict(boxstyle="round,pad=0.6", facecolor="#1a0000",
-                      edgecolor="#ff4444", linewidth=2),
+        self._estop_txt = self.ax1.text(
+            0.5, 0.5, "PARADA DE EMERGENCIA",
+            transform=self.ax1.transAxes,
+            fontsize=30, color="red", weight="bold",
+            ha="center", va="center", alpha=0.0
         )
+        self._estop_visivel = False
+        self._emergencia_pendente = False
 
         self.fig.canvas.draw()
         plt.pause(0.01)
@@ -128,6 +129,15 @@ class LivePlot:
         agora = time.time()
         if agora - self._ultimo_update < LIVE_UPDATE:
             return
+        
+        if not plt.fignum_exists(self.fig.number):
+            return
+
+        if self._emergencia_pendente and not self._estop_visivel:
+            self._estop_txt.set_text("PARADA DE EMERGENCIA")
+            self._estop_txt.set_alpha(1.0)
+            self._estop_visivel = True
+
         self._ultimo_update = agora
 
         if len(t) < 2:
@@ -140,7 +150,7 @@ class LivePlot:
         erro = anga - refa
 
         t_max = ta[-1]
-        t_min = max(0.0, t_max - self.janela_s)
+        t_min = 0.0 # Removemos o limite da janela (max(0.0, t_max - self.janela_s))
         mask  = ta >= t_min
 
         self.ln_ang.set_data(ta[mask], anga[mask])
@@ -154,7 +164,7 @@ class LivePlot:
         self.ax1.set_ylim(vmin - mg, vmax + mg)
         self.ax1.set_xlim(t_min, t_max + 0.5)
 
-        rmse = float(np.sqrt(np.mean(erro ** 2)))
+        rmse = float(np.sqrt(np.nanmean(erro ** 2)))
         n    = len(ta)
         freq = float(n / t_max) if t_max > 0 else 0.0
 
@@ -171,11 +181,8 @@ class LivePlot:
     # ── Emergência ───────────────────────────────────────────────────────────
 
     def mostrar_emergencia(self):
-        self._estop_txt.set_text("PARADA DE EMERGENCIA")
-        self._estop_txt.set_alpha(1.0)
-        self._estop_visivel = True
-        self.fig.canvas.draw_idle()
-        self.fig.canvas.flush_events()
+        # Sinaliza para a thread principal atualizar a UI
+        self._emergencia_pendente = True
 
     # ── Encerramento ─────────────────────────────────────────────────────────
 

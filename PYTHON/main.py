@@ -8,7 +8,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from config import BAUD, FS, DADOS_DIR
+from config import BAUD, FS, CONTROLE_DIR
 
 try:
     from serial_comm import SerialManager, selecionar_porta, SERIAL_OK
@@ -88,7 +88,8 @@ def _definir_sequencia_degraus() -> tuple:
                     pass
             print("  Formato: <tempo_s> <angulo_deg>  ex: 0 40")
     else:
-        csvs = sorted(glob.glob("*.csv"))
+        from config import CONTROLE_DIR
+        csvs = sorted(glob.glob("*.csv") + glob.glob(f"{CONTROLE_DIR}/*.csv"))
         if not csvs:
             print("  Nenhum CSV encontrado. Usando padrão.")
             return 10.0, [(0.0, 45.0)]
@@ -118,89 +119,31 @@ def _definir_sequencia_degraus() -> tuple:
     print(f"  Duração total: {duracao_s:.1f} s\n")
     return duracao_s, degraus
 
-def _configurar_chirp_params() -> tuple:
+
+def _configurar_sinal_arbitrario() -> tuple | None:
     import glob
-    print("\n  Configuracao do CHIRP (Embarcado)")
-    print("  [1] Carregar parametros de CSV")
-    print("  [2] Inserir manualmente\n")
+    print("\n  Configuracao do SINAL ARBITRARIO (Carregar CSV)")
 
-    opcao = None
-    while opcao not in ("1", "2"):
-        opcao = input("  Opcao [1/2]: ").strip()
+    csvs = sorted(glob.glob("*.csv") + glob.glob(f"{CONTROLE_DIR}/*.csv"))
+    if not csvs:
+        print(f"  Nenhum CSV encontrado na pasta '{CONTROLE_DIR}'.")
+        return None
 
-    if opcao == "1":
-        csvs = sorted(glob.glob("*.csv") + glob.glob(f"{DADOS_DIR}/*.csv"))
-        if not csvs:
-            print("  Nenhum CSV encontrado. Recorrendo a entrada manual.")
-        else:
-            print("\n  CSVs disponíveis:")
-            for i, f in enumerate(csvs):
-                print(f"  [{i + 1}] {f}")
-            idx_csv = -1
-            while not (0 <= idx_csv < len(csvs)):
-                try:
-                    idx_csv = int(input(f"\n  Escolha [1-{len(csvs)}]: ").strip()) - 1
-                except ValueError:
-                    pass
-            try:
-                df = pd.read_csv(csvs[idx_csv], header=None)
-                amp   = float(df.iloc[0, 0])
-                fmax  = float(df.iloc[0, 1])
-                t0    = float(df.iloc[0, 2])
-                dc    = float(df.iloc[0, 3])
-                # Coluna 4 opcional — pad_s; usa 10 s como padrão se ausente
-                pad_s = float(df.iloc[0, 4]) if df.shape[1] >= 5 else 10.0
-                print(f"  [Lido do CSV] Amp={amp}, Fmax={fmax}Hz, T0={t0}s, DC={dc}, PadS={pad_s}s")
-                return t0, amp, fmax, dc, pad_s
-            except Exception as e:
-                print(f"  [ERRO] Falha ao ler {csvs[idx_csv]}: {e}")
-                print("  Recorrendo a entrada manual.")
-
-    t0    = _pedir_float("Duracao do chirp ativo (s)", 20.0)
-    amp   = _pedir_float("Amplitude pico (graus)", 30.0)
-    fmax  = _pedir_float("Frequencia maxima (Hz)", 0.5)
-    dc    = _pedir_float("Ponto de operacao (graus)", 45.0)
-    pad_s = _pedir_float("Pad de DC antes/depois do chirp (s)", 10.0)
-    return t0, amp, fmax, dc, pad_s
-
-def _configurar_multisine() -> tuple:
-    import glob
-    print("\n  Configuracao do MULTI-SENO")
-    print("  [1] Gerar novo sinal")
-    print("  [2] Carregar sinal de CSV existente\n")
-
-    opcao = None
-    while opcao not in ("1", "2"):
-        opcao = input("  Opcao [1/2]: ").strip()
-
-    if opcao == "2":
-        csvs = sorted(glob.glob("*.csv") + glob.glob(f"{DADOS_DIR}/*.csv"))
-        if not csvs:
-            print("  Nenhum CSV encontrado. Gerando novo sinal.")
-        else:
-            print("\n  CSVs disponíveis:")
-            for i, f in enumerate(csvs):
-                print(f"  [{i + 1}] {f}")
-            idx_csv = -1
-            while not (0 <= idx_csv < len(csvs)):
-                try:
-                    idx_csv = int(input(f"  Escolha [1-{len(csvs)}]: ").strip()) - 1
-                except ValueError:
-                    pass
-            t, u = carregar_sinal_csv(csvs[idx_csv])
-            info(t, u, f"multisine (CSV: {csvs[idx_csv]})")
-            return float(t[-1]), t, u
-
-    duracao  = _pedir_float("Duracao ativa (s)", 40.0)
-    amp      = _pedir_float("Amplitude RMS (graus)", 30.0)
-    dc       = _pedir_float("Ponto de operacao (graus)", 45.0)
-    f_max    = _pedir_float("Frequencia maxima (Hz)", 0.5)
-    pad      = _pedir_float("Pad de zeros antes/depois (s)", 10.0)
-    seed     = _pedir_int("Semente aleatoria", 0)
-
-    t, u = multisine(duracao=duracao, amp=amp, dc=dc, f_max=f_max, pad_s=pad, seed=seed)
-    info(t, u, "multisine")
-    return duracao + 2 * pad, t, u
+    print("\n  Conjunto de Controle disponíveis:")
+    for i, f in enumerate(csvs):
+        print(f"  [{i + 1}] {f}")
+    
+    idx_csv = -1
+    while not (0 <= idx_csv < len(csvs)):
+        try:
+            idx_csv = int(input(f"  Escolha [1-{len(csvs)}]: ").strip()) - 1
+        except ValueError:
+            pass
+            
+    t, u = carregar_sinal_csv(csvs[idx_csv])
+    info(t, u, f"sinal (CSV: {csvs[idx_csv]})")
+    nome_arq = os.path.splitext(os.path.basename(csvs[idx_csv]))[0]
+    return float(t[-1]), t, u, nome_arq
 
 def _conectar_e_aguardar(porta: str) -> "SerialManager | None":
     mgr = SerialManager(porta)
@@ -244,51 +187,26 @@ def rodar_degraus(porta: str) -> str | None:
         return None
     return salvar_csv(linhas, prefixo="degraus")
 
-def rodar_chirp(porta: str) -> str | None:
-    mgr = _conectar_e_aguardar(porta)
-    if not mgr: return None
-    
-    t0, amp, fmax, dc, pad_s = _configurar_chirp_params()
-    margem        = 5.0                          # s de margem após o pad final
-    duracao_total = t0 + 2.0 * pad_s + margem
-    _pedir_recal(mgr)
 
-    print("\n  Enviando parametros do CHIRP para o Arduino...")
-    if not mgr.enviar_chirp(amp, fmax, t0, dc, pad_s):
-        print("  [ERRO] Falha ao enviar parametros. Abortando.")
-        mgr.fechar()
-        return None
-
-    live = LivePlot(nome=f"CHIRP EMBARCADO  pad={pad_s:.0f}s  t0={t0:.0f}s",
-                    janela_s=min(30.0, duracao_total))
-    if not mgr.iniciar_experimento():
-        live.fechar()
-        mgr.fechar()
-        return None
-
-    aq = Aquisicao(mgr, live)
-    linhas = aq.rodar(duracao_s=duracao_total, modo="wave")  # Python apenas coleta
-    live.fechar()
-    mgr.fechar()
-
-    if len(linhas) < 2:
-        return None
-    return salvar_csv(linhas, prefixo="chirp")
-
-def rodar_multisine(porta: str) -> str | None:
+def rodar_sinal_arbitrario(porta: str) -> str | None:
     mgr = _conectar_e_aguardar(porta)
     if not mgr: return None
 
-    duracao_total, t_sig, u_sig = _configurar_multisine()
+    resultado = _configurar_sinal_arbitrario()
+    if not resultado:
+        mgr.fechar()
+        return None
+        
+    duracao_total, t_sig, u_sig, prefixo = resultado
     _pedir_recal(mgr)
 
-    print(f"\n  Pré-carregando {len(u_sig)} amostras no Arduino...")
+    print(f"\n  Pré-carregando {len(u_sig)} amostras no STM32...")
     if not mgr.enviar_wave(u_sig):
         print("  [ERRO] Falha ao enviar WAVE. Abortando.")
         mgr.fechar()
         return None
 
-    live = LivePlot(nome="MULTISINE", janela_s=min(30.0, duracao_total / 2))
+    live = LivePlot(nome=prefixo.upper(), janela_s=min(30.0, duracao_total / 2))
     if not mgr.iniciar_experimento():
         live.fechar()
         mgr.fechar()
@@ -301,7 +219,7 @@ def rodar_multisine(porta: str) -> str | None:
 
     if len(linhas) < 2:
         return None
-    return salvar_csv(linhas, prefixo="multisine")
+    return salvar_csv(linhas, prefixo=prefixo)
 
 def rodar_repouso(porta: str) -> str | None:
     mgr = _conectar_e_aguardar(porta)
@@ -309,15 +227,18 @@ def rodar_repouso(porta: str) -> str | None:
     duracao_s = _pedir_float("Duracao da coleta em repouso (s)", 20.0)
     
     mgr.ser.reset_input_buffer()
+    import time; time.sleep(0.1)       # aguarda bytes residuais do boot
+    mgr.ser.reset_input_buffer()       # limpa novamente após settle
     mgr.enviar("FREE")
+    mgr.ser.flush()                    # garante que FREE foi transmitido
     if not mgr.aguardar_token("EXP_START", timeout_s=10.0):
         mgr.fechar()
         return None
 
     cab = mgr.readline()
-    if cab: print(f"  [Arduino] {cab}")
+    if cab: print(f"  [STM32] {cab}")
 
-    live = LivePlot(nome="REPOUSO (motor desligado)")
+    live = LivePlot(nome="REPOUSO")
     aq = Aquisicao(mgr, live)
     linhas = aq.rodar(duracao_s=duracao_s, modo="wave")
     live.fechar()
@@ -336,18 +257,17 @@ def recalibrar(porta: str):
 def _menu() -> str:
     print()
     if SERIAL_OK:
-        print("  [1] Experimento com degraus (SEQ)")
-        print("  [2] Experimento com chirp (Embarcado)")
-        print("  [3] Experimento com multi-seno (WAVE buffer)")
-        print("  [4] Coleta em repouso (motor desligado)")
-        print("  [5] Recalibrar giroscopio")
-        print("  [6] Plotar CSV existente")
+        print("  [1] Degraus de referencia")
+        print("  [2] Sinal Arbitrario")
+        print("  [3] Coleta em repouso (sem controle)")
+        print("  [4] Recalibrar giroscopio")
+        print("  [5] Plotar CSV existente")
     else:
-        print("  [6] Plotar CSV existente")
+        print("  [5] Plotar CSV existente")
         print("\n  OBS: pyserial nao instalado.")
     print("  [0] Sair")
 
-    validas = {"0", "6"} | ({"1", "2", "3", "4", "5"} if SERIAL_OK else set())
+    validas = {"0", "5"} | ({"1", "2", "3", "4"} if SERIAL_OK else set())
     while True:
         op = input("\n  Opcao: ").strip()
         if op in validas: return op
@@ -365,19 +285,17 @@ if __name__ == "__main__":
     op = _menu()
 
     if op == "0": sys.exit(0)
-    elif op in ("1", "2", "3", "4", "5"):
+    elif op in ("1", "2", "3", "4"):
         porta = selecionar_porta()
         if not porta: sys.exit(1)
 
         if op == "1":
             caminho = rodar_degraus(porta)
         elif op == "2":
-            caminho = rodar_chirp(porta)
+            caminho = rodar_sinal_arbitrario(porta)
         elif op == "3":
-            caminho = rodar_multisine(porta)
-        elif op == "4":
             caminho = rodar_repouso(porta)
-        elif op == "5":
+        elif op == "4":
             recalibrar(porta)
             caminho = None
 
@@ -385,7 +303,7 @@ if __name__ == "__main__":
             print(f"\n  Plotando resultado: {caminho}")
             plotar(caminho)
 
-    elif op == "6":
+    elif op == "5":
         caminho = selecionar_csv()
         if caminho: plotar(caminho)
         else: print("  Nenhum CSV encontrado.")

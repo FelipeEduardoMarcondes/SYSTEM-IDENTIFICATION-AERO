@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.ticker as ticker
 
-from config import DADOS_DIR, CORES, MPL_RC
+from config import EXP_DIR, CORES, MPL_RC
 
 plt.rcParams.update(MPL_RC)
 
@@ -29,13 +29,13 @@ plt.rcParams.update(MPL_RC)
 
 def salvar_csv(linhas_dados: list, prefixo: str = "ensaio") -> str:
     """
-    Salva linhas CSV brutas (vindas do Arduino) em arquivo com cabeçalho.
+    Salva linhas CSV brutas (vindas do STM32) em arquivo com cabeçalho.
 
     Retorna o caminho do arquivo criado.
     """
-    os.makedirs(DADOS_DIR, exist_ok=True)
+    os.makedirs(EXP_DIR, exist_ok=True)
     ts      = datetime.datetime.now().strftime("%m%d_%H-%M")
-    caminho = os.path.join(DADOS_DIR, f"{prefixo}_{ts}.csv")
+    caminho = os.path.join(EXP_DIR, f"{prefixo}_{ts}.csv")
     with open(caminho, "w") as f:
         f.write("tempo_ms,angulo_deg,u_pct,referencia\n")
         for linha in linhas_dados:
@@ -50,7 +50,7 @@ def carregar_csv(caminho: str) -> pd.DataFrame:
         tempo_s, angulo_deg, controle_u, referencia
     Suporta os formatos gerados pelo firmware (tempo_ms) e pelo MATLAB (Tempo_s).
     """
-    df = pd.read_csv(caminho)
+    df = pd.read_csv(caminho, on_bad_lines='skip')
     df.columns = [c.strip() for c in df.columns]
 
     if "tempo_ms" in df.columns:
@@ -60,6 +60,7 @@ def carregar_csv(caminho: str) -> pd.DataFrame:
             df["referencia"] = df["referencia"].astype(float)
         else:
             df["referencia"] = np.nan
+        df = df[(df["tempo_s"] >= 0) & (df["tempo_s"].diff().fillna(0) < 20) & (df["tempo_s"] < 7200)]
         return df
 
     if "Tempo_s" in df.columns:
@@ -67,6 +68,7 @@ def carregar_csv(caminho: str) -> pd.DataFrame:
         df["angulo_deg"] = df["Angulo_Medido"].astype(float)
         df["referencia"] = df["Ref"].astype(float)
         df["controle_u"] = df["Controle_u"].astype(float)
+        df = df[(df["tempo_s"] >= 0) & (df["tempo_s"].diff().fillna(0) < 20) & (df["tempo_s"] < 7200)]
         return df
 
     # Fallback genérico
@@ -76,6 +78,7 @@ def carregar_csv(caminho: str) -> pd.DataFrame:
         raise ValueError(f"Formato de CSV não reconhecido: {caminho}")
     df["referencia"] = np.nan
     df["controle_u"] = df.get("motor_percent", np.zeros(len(df)))
+    df = df[(df["tempo_s"] >= 0) & (df["tempo_s"].diff().fillna(0) < 20) & (df["tempo_s"] < 7200)]
     return df
 
 
@@ -98,7 +101,7 @@ def carregar_sequencia_csv(caminho: str) -> tuple:
 
 def selecionar_csv() -> str | None:
     """Menu interativo para escolher um CSV existente."""
-    arquivos = sorted(glob.glob(f"{DADOS_DIR}/*.csv") + glob.glob("*.csv"))
+    arquivos = sorted(glob.glob(f"{EXP_DIR}/*.csv") + glob.glob("*.csv"))
     if not arquivos:
         return None
     if len(arquivos) == 1:
