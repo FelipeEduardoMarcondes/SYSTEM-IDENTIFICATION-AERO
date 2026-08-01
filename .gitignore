@@ -32,8 +32,7 @@ stm-firmware/Release/
 *.lst
 *.bak
 
-# Dados de Saida (Ignorar para nao inchar o repositorio)
-experimentos/
+
 
 # OS Files
 Thumbs.db
