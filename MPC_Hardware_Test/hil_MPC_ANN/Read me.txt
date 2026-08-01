@@ -1,0 +1,5 @@
+Aqui consta o primeito teste (falho) de rodar o MPC usado em conjunto com o programa do Arduino slave. 
+
+Aqui conta a rede treinada MPC para o pendulo 1/4.
+
+Atualmente o programa está com um PID iniciando e dps ativano o MPC. 

@@ -1,0 +1,8 @@
+Carregue esse arquivo no Arduino para utilizado. 
+
+Esse programa somente recebe a ação de controle gerada pelo python e retorna os valores medido do IMU. 
+
+Usado em conjunto com os arquivos hil em python.
+
+
+MKM.
