@@ -19,13 +19,13 @@ Tduracao = 4; % quantos seg de duracao cada degrau
 % Tduracao = 6; % quantos seg de duracao cada degrau
 
 % amp2 = 15;
-amp2 = 30;
+amp2 = 45;
 
 [u2, t2] = gerarSeqDegraus(Ts, zeropad, valorDC, Tf2, Tduracao, amp2);
 
 %% Swept sine
 Fmax3 = 0.5;
-A3 = 30; % amplitude
+A3 = 45; % amplitude
 T03 = 60; % periodo [s]
 
 [u3, t3] = gerarSweptSine(Ts, zeropad, valorDC, Fmax3, A3, T03);
