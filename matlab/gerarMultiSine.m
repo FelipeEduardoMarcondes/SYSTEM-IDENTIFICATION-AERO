@@ -19,7 +19,7 @@ function [u4, t4] = gerarMultiSine(Ts, zeropad, valorDC, Fmax, Amp, Tf, ninp)
 %
 %   Ao final, salva u4 e t4 em 'dados_multi_sine.mat'
 
-rng(0)
+rng(88)
 [u, t] = multiSine(1/Ts, Fmax, Tf, Amp, ninp);
 
 u4 = [zeropad zeropad ([zeropad zeropad u' zeropad zeropad] + valorDC) zeropad zeropad];

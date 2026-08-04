@@ -24,7 +24,7 @@ CONTROLE_DIR   = "controle"
 # ── Limites físicos ───────────────────────────────────────────────────────────
 REF_MIN        = 0.0          # graus
 REF_MAX        = 135.0        # graus
-U_MAX          = 80.0         # % (espelho do firmware)
+U_MAX          = 100.0         # % (espelho do firmware)
 
 # ── Cores do plot (tema escuro) ───────────────────────────────────────────────
 CORES = {

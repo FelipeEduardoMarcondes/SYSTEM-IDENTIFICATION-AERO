@@ -16,7 +16,7 @@ function [u2, t2] = gerarSeqDegraus(Ts, zeropad, valorDC, Tf, Tduracao, amp)
 %
 %   Ao final, salva u2 e t2 em 'dados_seq_degraus.mat'
 
-rng(0)
+rng(42)
 
 t = (0:Ts:Tf);
 N = length(t);

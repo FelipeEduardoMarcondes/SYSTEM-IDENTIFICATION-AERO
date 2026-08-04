@@ -172,6 +172,10 @@ def rodar_degraus(porta: str) -> str | None:
     nome = "SEQ  " + "  ".join(f"{t:.0f}s->{r:.0f}deg" for t, r in degraus)
     live = LivePlot(nome=nome, transicoes=transicoes)
 
+    print("  Aguardando 2 segundos antes de começar (teste ESC)...")
+    import time
+    time.sleep(2.0)
+
     if not mgr.iniciar_experimento():
         live.fechar()
         mgr.fechar()
@@ -207,6 +211,11 @@ def rodar_sinal_arbitrario(porta: str) -> str | None:
         return None
 
     live = LivePlot(nome=prefixo.upper(), janela_s=min(30.0, duracao_total / 2))
+    
+    print("  Aguardando 2 segundos antes de começar (teste ESC)...")
+    import time
+    time.sleep(2.0)
+
     if not mgr.iniciar_experimento():
         live.fechar()
         mgr.fechar()
