@@ -75,7 +75,7 @@ extern void I2C_ClearBus(void);
 #define KD              0.2f
 
 /* ── Limites de controle ─────────────────────────────────────────────────── */
-#define U_MAX           80.0f
+#define U_MAX           100.0f
 
 /* ── Buffers de dados ────────────────────────────────────────────────────── */
 #define MAX_STEPS       50
@@ -446,12 +446,14 @@ static void esc_set_us(uint16_t us)
     __HAL_TIM_SET_COMPARE(&htim1, TIM1_CH1, us);
 }
 
-/* pct em [-80, +80] -> microsegundos: 1500 - 5*pct (igual ao Arduino) */
+/* pct em [-100, 100] -> microsegundos: 1500 + 5*pct (ESC Bidirecional) */
 static uint16_t pct_para_us(float pct)
 {
     if (pct >  U_MAX) pct =  U_MAX;
     if (pct < -U_MAX) pct = -U_MAX;
-    int us = (int)(1500.0f - 5.0f * pct);
+    
+    /* Usando + 5.0f para manter a direcao de giro que acabou de funcionar pra voce */
+    int us = (int)(1500.0f + 5.0f * pct);
     return (uint16_t)us;
 }
 
@@ -820,9 +822,14 @@ void aeropendulo_init(void)
     /* Inicia contador de microssegundos (DWT) */
     dwt_init();
 
-    /* Inicia recepcao UART o mais cedo possivel — permite receber
-       comandos (REBOOT, FREE, etc.) mesmo durante a inicializacao */
+    /* Inicia recepcao UART o mais cedo possivel */
     HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+
+    /* INICIA O PWM AQUI! O ESC precisa do sinal o mais rapido possivel
+       ao ligar a placa, senao ele entra em modo de falha (timeout de sinal). */
+    HAL_TIM_PWM_Start(&htim1, TIM1_CH1);
+    esc_set_us(ESC_NEUTRO_US);
+    uart_println("# PWM INICIADO (1500us - Aguardando IMU...)");
 
     /* Inicializa IMU (com recovery completo do I2C a cada tentativa) */
     {
@@ -841,12 +848,10 @@ void aeropendulo_init(void)
         }
     }
 
-    /* Apos init OK, reduz timeout I2C para runtime (rejeita ruido EMI rapido) */
+    /* Apos init OK, reduz timeout I2C para runtime */
     i2c_tmo = I2C_TIMEOUT;
 
-    /* Inicia PWM — pulso neutro */
-    HAL_TIM_PWM_Start(&htim1, TIM1_CH1);
-    esc_set_us(ESC_NEUTRO_US);
+    /* Aguarda o restante do tempo de armacao do ESC (3 segundos totais recomendados) */
     HAL_Delay(3000);
     uart_println("# ESC_OK");
 
