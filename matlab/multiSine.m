@@ -3,8 +3,8 @@ function [u, t] = multiSine(fsample, fmax, T, A, ninp)
 Ts=1/fsample;                    % sample frequency and sample period
 Ndata1=T/Ts;                     % length of the signal
 t=(0:Ndata1-1)'*Ts;              % time axis
-Nsines = Ndata1 - Ndata1*...
-    (fsample - fmax)/fsample;    % number of sines
+Nsines = round(Ndata1 - Ndata1*...
+    (fsample - fmax)/fsample);    % number of sines
 f = (0:Ndata1-1)*fsample/Ndata1; % multisine frequencies
 LinesPlot = 1:floor(Ndata1/2);   % lines to be plotted
 
