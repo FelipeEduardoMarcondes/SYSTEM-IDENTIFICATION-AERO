@@ -1,4 +1,3 @@
-# %% [markdown]
 # # Identificação do Aeropêndulo com Neural ODEs - Multi-Experimentos (v3.0)
 #
 # Ajustes desta versão em relação à v2.0:
@@ -99,7 +98,11 @@ train_files = [
     "RODADA-2/multi-seno-1_0804_19-06.csv",
     "RODADA-2/seq-degraus-2_0804_19-38.csv",
     "RODADA-2/multi-seno-3_0804_19-44.csv",
-    "RODADA-2/seq-degraus-1_0804_19-12.csv"
+    "RODADA-2/seq-degraus-1_0804_19-12.csv",
+    "dados_curva_semi_estatica-2_0807_17-40.csv",
+    "seq-degraus-aprbs-2_0807_17-27.csv",
+    "multi-seno-2_0807_17-16.csv",
+    "seq-degraus-1_0807_16-47.csv"     
 ]
 
 # Vários arquivos de teste, nunca vistos no treino: um chirp (alta frequência
@@ -166,8 +169,8 @@ print(f"Std posição: {std_pos:.4f} rad | Std velocidade: {std_vel:.4f} rad/s")
 class PhysicsODE(nn.Module):
     def __init__(self):
         super().__init__()
-        self.m1, self.L1 = 0.122, 0.39
-        self.m2, self.L2 = 0.055, 0.347
+        self.m1, self.L1 = 0.122, 0.35
+        self.m2, self.L2 = 0.055, 0.333
         self.g = 9.81
 
         # Parâmetros Desconhecidos: Inércia (J), Atrito (b), Ganho do Motor (Gu)
