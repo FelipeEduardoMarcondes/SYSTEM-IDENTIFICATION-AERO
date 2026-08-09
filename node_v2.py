@@ -1,3 +1,4 @@
+# %% [markdown]
 # # Identificação do Aeropêndulo com Neural ODEs - Multi-Experimentos (v3.0)
 #
 # Ajustes desta versão em relação à v2.0:
@@ -15,6 +16,7 @@
 #   de "problema de generalização geral".
 
 # %%
+from pickle import FALSE
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -30,6 +32,11 @@ print(f"Using device: {device}")
 
 torch.manual_seed(0)
 np.random.seed(0)
+
+# %%
+# Configuração: Escolha quais modelos treinar
+TREINAR_CAIXA_CINZA = True
+TREINAR_CAIXA_PRETA = False
 
 # %%
 def carregar_experimento(url, decimacao=1):
@@ -99,10 +106,12 @@ train_files = [
     "RODADA-2/seq-degraus-2_0804_19-38.csv",
     "RODADA-2/multi-seno-3_0804_19-44.csv",
     "RODADA-2/seq-degraus-1_0804_19-12.csv",
-    "dados_curva_semi_estatica-2_0807_17-40.csv",
-    "seq-degraus-aprbs-2_0807_17-27.csv",
-    "multi-seno-2_0807_17-16.csv",
-    "seq-degraus-1_0807_16-47.csv"     
+    "multi-seno-1_0807_16-57.csv",
+    "multi-seno-2_0807_17-13.csv",
+    "seq-degraus-1_0807_16-38.csv",
+    "seq-degraus-aprbs-2_0807_17-23.csv",
+    "seq-dragus-aprbs_0807_16-50.csv"
+
 ]
 
 # Vários arquivos de teste, nunca vistos no treino: um chirp (alta frequência
@@ -114,7 +123,7 @@ test_files = [
     "RODADA-2/seq-degraus-1_0804_19-09.csv",
 ]
 
-decimacao = 5
+decimacao = 2
 
 print("Carregando datasets de TREINO...")
 train_datasets = []
@@ -167,16 +176,22 @@ print(f"Std posição: {std_pos:.4f} rad | Std velocidade: {std_vel:.4f} rad/s")
 # %%
 # 1. MODELOS ODE (NODE)
 class PhysicsODE(nn.Module):
-    def __init__(self):
+    def __init__(self, J0=1.0, b0=np.exp(-1.0), Gu0=1.0):
         super().__init__()
-        self.m1, self.L1 = 0.122, 0.35
-        self.m2, self.L2 = 0.055, 0.333
+        self.m1, self.L1 = 0.122, 0.39
+        self.m2, self.L2 = 0.055, 0.347
         self.g = 9.81
 
         # Parâmetros Desconhecidos: Inércia (J), Atrito (b), Ganho do Motor (Gu)
-        self.log_J = nn.Parameter(torch.tensor(0.0))
-        self.log_b = nn.Parameter(torch.tensor(-1.0))
-        self.log_Gu = nn.Parameter(torch.tensor(0.0))
+        # Valores iniciais configuráveis -- por padrão reproduzem a v2.0
+        # (J0=1, b0=exp(-1), Gu0=1). Gu0/b0 podem vir do pré-treino físico
+        # (ver `pretreinar_fisico_estatico`), que os ajusta via gradiente
+        # (odeint + backprop, igual ao treino principal) usando curva(s)
+        # quase-estática(s), sem depender de J (pouco identificável nesse
+        # regime, já que a aceleração é baixa o tempo todo).
+        self.log_J = nn.Parameter(torch.log(torch.tensor(float(J0))))
+        self.log_b = nn.Parameter(torch.log(torch.tensor(float(b0))))
+        self.log_Gu = nn.Parameter(torch.log(torch.tensor(float(Gu0))))
 
         self.u_series = None
         self.t_series = None
@@ -320,35 +335,151 @@ def train_model_multi(model, name, datasets, epochs=1500, lr=0.02,
 
     return model, loss_history
 
+# %% [markdown]
+# ## Pré-treino físico: ajustando Gu e b via gradiente nos dados quase-estáticos
+#
+# Em vez de uma fórmula fechada (equação linearizada + limiar de aceleração),
+# este pré-treino usa exatamente o mesmo mecanismo do treino principal --
+# `odeint` integrando a ODE não-linear completa + backprop -- só que restrito
+# ao(s) arquivo(s) quase-estático(s). Isso tem duas vantagens sobre a versão
+# anterior:
+# - Não precisa linearizar nada nem escolher limiar de aceleração: a ODE real
+#   já lida corretamente com os trechos "semi" (velocidade baixa mas não nula).
+# - Usa TODOS os dados que você passar (em janelas de rollout), não só uma
+#   fração filtrada.
+#
+# `J` fica congelado por padrão (`treinar_J=False`): numa curva quase-estática
+# a aceleração é baixa o tempo todo, então há pouco sinal de gradiente pra
+# identificar inércia -- deixá-la livre aqui tende a ficar mal condicionado.
+# Os valores retornados (J0, b0, Gu0) são usados só como INICIALIZAÇÃO do
+# `PhysicsODE` para o treino dinâmico principal, que continua livre para
+# reajustar tudo (inclusive J) usando os dados multi-experimento.
+
 # %%
-# Treinando o modelo Físico
-phys_model = PhysicsODE()
-phys_model, phys_loss_hist = train_model_multi(
-    phys_model, "Physics-Informed Model (Caixa-Cinza)", train_datasets,
-    epochs=2500, lr=0.02, k_min=20, k_max=300, curriculum_stage_epochs=400,
-    state_std=state_std
-)
+def pretreinar_fisico_estatico(caminhos_arquivos, decimacao=5, epochs=800, lr=0.01,
+                                k_steps=60, batch_size=256, treinar_J=False,
+                                J0=1.0, b0=np.exp(-1.0), Gu0=1.0):
+    datasets = []
+    for path in caminhos_arquivos:
+        t_raw, u_raw, y_raw = carregar_experimento(path, decimacao=decimacao)
+        t_ten, u_ten, x_ten, y_rad, v_rad, u_norm = processar_dataset(t_raw, u_raw, y_raw)
+        datasets.append({
+            'name': path.split('/')[-1],
+            't': t_ten, 'u': u_ten, 'x': x_ten,
+            'y_rad': y_rad, 'v_rad': v_rad, 'u_norm': u_norm
+        })
+        print(f" -> {path.split('/')[-1]} carregado com {len(t_ten)} amostras.")
 
-J, b, Gu = phys_model.get_params()
-print("\nParâmetros Físicos Encontrados:")
-print(f"J (Inércia): {J.item():.4f} kg.m^2")
-print(f"b (Atrito): {b.item():.4f}")
-print(f"Gu (Ganho Motor): {Gu.item():.4f}\n")
+    model = PhysicsODE(J0=J0, b0=b0, Gu0=Gu0).to(device)
+    model.log_J.requires_grad_(treinar_J)
 
-# Treinando o modelo Caixa-Preta (MLP)
-bb_model = BlackBoxODE(hidden_dim=32)
-bb_model, bb_loss_hist = train_model_multi(
-    bb_model, "Black-Box Model (MLP)", train_datasets,
-    epochs=2500, lr=0.02, k_min=20, k_max=300, curriculum_stage_epochs=400,
-    state_std=state_std
-)
+    # Normalização do loss (mesmo raciocínio do treino principal): posição e
+    # velocidade em escalas comparáveis, calculada só sobre estes dados.
+    all_pos = np.concatenate([d['y_rad'] for d in datasets])
+    all_vel = np.concatenate([d['v_rad'] for d in datasets])
+    local_std = torch.tensor([np.std(all_pos), np.std(all_vel)], dtype=torch.float32, device=device)
+
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    optimizer = optim.Adam(trainable, lr=lr)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+
+    dt = (datasets[0]['t'][1] - datasets[0]['t'][0]).item()
+    t_eval = torch.arange(0, k_steps * dt, dt, device=device)[:k_steps]
+
+    print(f"\n--- Pré-treino físico (Gu, b{', J' if treinar_J else ''}) "
+          f"nos dados quase-estáticos ---")
+    for epoch in range(epochs + 1):
+        optimizer.zero_grad()
+
+        ds = np.random.choice(datasets)
+        t_ds = ds['t'].to(device)
+        u_ds = ds['u'].to(device)
+        x_ds = ds['x'].to(device)
+
+        model.t_series = t_ds
+        model.u_series = u_ds
+
+        bsz = min(batch_size, len(t_ds) - k_steps)
+        start_idx = np.random.randint(0, len(t_ds) - k_steps, size=bsz)
+        x0 = x_ds[start_idx]
+        model.batch_start_times = t_ds[start_idx].reshape(-1, 1)
+
+        pred_state = odeint(model, x0, t_eval, method='rk4')
+        y_target = torch.stack([x_ds[i:i + k_steps] for i in start_idx], dim=1)
+
+        loss = torch.mean(((pred_state - y_target) / local_std) ** 2)
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+
+        if epoch % 100 == 0:
+            J_now, b_now, Gu_now = model.get_params()
+            print(f"Epoch {epoch:4d} | Loss {loss.item():.6f} | "
+                  f"J={J_now.item():.4f} b={b_now.item():.4f} Gu={Gu_now.item():.4f}")
+
+    J_f, b_f, Gu_f = model.get_params()
+    print(f"\nParâmetros pré-treinados: J={J_f.item():.4f}  b={b_f.item():.4f}  Gu={Gu_f.item():.4f}")
+    return J_f.item(), b_f.item(), Gu_f.item()
+
+# %%
+# Arquivos de curva quase-estática -- coloque os CSVs na mesma pasta do
+# script (ou ajuste os caminhos abaixo). Eles NÃO entram em `train_files`:
+# servem só para pré-treinar Gu e b antes do treino dinâmico principal.
+caminhos_curva_estatica = [
+    "experimentos/dados_curva_semi_estatica_0807_17-36.csv",
+    "experimentos/dados_curva_semi_estatica-2_0807_17-40.csv",
+]
+
+if TREINAR_CAIXA_CINZA:
+    J0_pre, b0_pre, Gu0_pre = pretreinar_fisico_estatico(
+        caminhos_curva_estatica, decimacao=decimacao,
+        epochs=2000, lr=0.01, k_steps=200, batch_size=256, treinar_J=False
+    )
+
+    # %%
+    # Treinando o modelo Físico -- inicializado com J0/b0/Gu0 do pré-treino
+    # nos dados quase-estáticos (J0_pre é só o default, pois treinar_J=False
+    # acima manteve J congelado no pré-treino)
+    phys_model = PhysicsODE(J0=J0_pre, b0=b0_pre, Gu0=Gu0_pre)
+    phys_model, phys_loss_hist = train_model_multi(
+        phys_model, "Physics-Informed Model (Caixa-Cinza)", train_datasets,
+        epochs=5000, lr=0.025, k_min=20, k_max=1000, curriculum_stage_epochs=500,
+        state_std=state_std
+    )
+
+    J, b, Gu = phys_model.get_params()
+    print("\nParâmetros Físicos Encontrados:")
+    print(f"J (Inércia): {J.item():.4f} kg.m^2")
+    print(f"b (Atrito): {b.item():.4f}")
+    print(f"Gu (Ganho Motor): {Gu.item():.4f}\n")
+
+    # --- Salvando o modelo Físico (Caixa-Cinza) na máquina logo após o treino ---
+    caminho_cinza = 'node_caixa_cinza.pth'
+    torch.save(phys_model.state_dict(), caminho_cinza)
+    print(f'Modelo Físico (Caixa-Cinza) salvo em: {caminho_cinza}\n')
+
+if TREINAR_CAIXA_PRETA:
+    # Treinando o modelo Caixa-Preta (MLP)
+    bb_model = BlackBoxODE(hidden_dim=32)
+    bb_model, bb_loss_hist = train_model_multi(
+        bb_model, "Black-Box Model (MLP)", train_datasets,
+        epochs=2500, lr=0.02, k_min=20, k_max=300, curriculum_stage_epochs=400,
+        state_std=state_std
+    )
+
+    # --- Salvando o modelo Neural (Caixa-Preta) na máquina logo após o treino ---
+    caminho_preta = 'node_caixa_preta.pth'
+    torch.save(bb_model.state_dict(), caminho_preta)
+    print(f'Modelo Neural (Caixa-Preta) salvo em: {caminho_preta}\n')
 
 # %%
 # Histórico de loss (escala log) -- útil para conferir se o LR schedule
 # de fato reduziu a oscilação entre épocas em relação à v2.0.
 plt.figure(figsize=(10, 4))
-plt.plot(phys_loss_hist, label='Physics-Informed', alpha=0.8)
-plt.plot(bb_loss_hist, label='Black-Box', alpha=0.8)
+if TREINAR_CAIXA_CINZA:
+    plt.plot(phys_loss_hist, label='Physics-Informed', alpha=0.8)
+if TREINAR_CAIXA_PRETA:
+    plt.plot(bb_loss_hist, label='Black-Box', alpha=0.8)
 plt.yscale('log')
 plt.xlabel("Época"); plt.ylabel("Loss normalizada (log)")
 plt.title("Histórico de Loss")
@@ -361,68 +492,74 @@ print("\n--- Simulação Free-Run em cada conjunto de TESTE ---")
 
 results = []
 n_test = len(test_datasets)
-fig, axes = plt.subplots(n_test, 2, figsize=(14, 5 * n_test), squeeze=False)
+# Criando 1 coluna e n_test linhas (um gráfico por linha)
+fig, axes = plt.subplots(n_test, 1, figsize=(12, 5 * n_test), squeeze=False)
 
 for i, ds in enumerate(test_datasets):
     t_t = ds['t'].to(device)
     u_t = ds['u'].to(device)
     x_t = ds['x'].to(device)
+    
+    y_real_deg = x_t[:, 0].cpu().numpy() * (180.0 / np.pi)
+    t_np = t_t.cpu().numpy()
+    
+    rmse_phys = None
+    rmse_bb = None
 
     with torch.no_grad():
-        phys_model.u_series = u_t
-        phys_model.t_series = t_t
-        phys_model.batch_start_times = torch.zeros(1, 1, device=device)
-
-        bb_model.u_series = u_t
-        bb_model.t_series = t_t
-        bb_model.batch_start_times = torch.zeros(1, 1, device=device)
-
         x0 = x_t[0].unsqueeze(0)
+        
+        if TREINAR_CAIXA_CINZA:
+            phys_model.u_series = u_t
+            phys_model.t_series = t_t
+            phys_model.batch_start_times = torch.zeros(1, 1, device=device)
 
-        # dopri5 (Dormand-Prince, passo adaptativo) em vez de RK4 fixo: menos
-        # erro numérico acumulado em rollouts longos como este (free-run no
-        # horizonte inteiro do arquivo de teste).
-        pred_phys = odeint(phys_model, x0, t_t, method='dopri5',
-                            rtol=1e-5, atol=1e-6).squeeze(1).cpu().numpy()
-        pred_bb = odeint(bb_model, x0, t_t, method='dopri5',
-                          rtol=1e-5, atol=1e-6).squeeze(1).cpu().numpy()
+            pred_phys = odeint(phys_model, x0, t_t, method='dopri5',
+                                rtol=1e-5, atol=1e-6).squeeze(1).cpu().numpy()
+            phys_deg = pred_phys[:, 0] * (180.0 / np.pi)
+            rmse_phys = np.sqrt(mean_squared_error(y_real_deg, phys_deg))
+            
+        if TREINAR_CAIXA_PRETA:
+            bb_model.u_series = u_t
+            bb_model.t_series = t_t
+            bb_model.batch_start_times = torch.zeros(1, 1, device=device)
 
-    y_real_deg = x_t[:, 0].cpu().numpy() * (180.0 / np.pi)
-    phys_deg = pred_phys[:, 0] * (180.0 / np.pi)
-    bb_deg = pred_bb[:, 0] * (180.0 / np.pi)
-    t_np = t_t.cpu().numpy()
+            pred_bb = odeint(bb_model, x0, t_t, method='dopri5',
+                              rtol=1e-5, atol=1e-6).squeeze(1).cpu().numpy()
+            bb_deg = pred_bb[:, 0] * (180.0 / np.pi)
+            rmse_bb = np.sqrt(mean_squared_error(y_real_deg, bb_deg))
 
-    rmse_phys = np.sqrt(mean_squared_error(y_real_deg, phys_deg))
-    rmse_bb = np.sqrt(mean_squared_error(y_real_deg, bb_deg))
     results.append({'arquivo': ds['name'], 'rmse_phys': rmse_phys, 'rmse_bb': rmse_bb})
 
-    print(f"{ds['name']:45s} | Physics: {rmse_phys:6.2f}°  | Black-Box: {rmse_bb:6.2f}°")
+    msg = f"{ds['name']:45s} | "
+    if TREINAR_CAIXA_CINZA: msg += f"Physics: {rmse_phys:6.2f}°  "
+    if TREINAR_CAIXA_PRETA: msg += f"| Black-Box: {rmse_bb:6.2f}°"
+    print(msg)
 
-    axes[i, 0].plot(t_np, y_real_deg, 'k-', linewidth=2, label='Real')
-    axes[i, 0].plot(t_np, phys_deg, 'r--', linewidth=2, label='Physics-Informed')
-    axes[i, 0].set_title(f"{ds['name']}\nPhysics (RMSE {rmse_phys:.2f}°)")
-    axes[i, 0].set_xlabel("Tempo (s)"); axes[i, 0].set_ylabel("Ângulo (graus)")
-    axes[i, 0].legend(); axes[i, 0].grid(True)
-
-    axes[i, 1].plot(t_np, y_real_deg, 'k-', linewidth=2, label='Real')
-    axes[i, 1].plot(t_np, bb_deg, 'b--', linewidth=2, label='Black-Box')
-    axes[i, 1].set_title(f"{ds['name']}\nBlack-Box (RMSE {rmse_bb:.2f}°)")
-    axes[i, 1].set_xlabel("Tempo (s)"); axes[i, 1].set_ylabel("Ângulo (graus)")
-    axes[i, 1].legend(); axes[i, 1].grid(True)
+    ax = axes[i, 0]
+    ax.plot(t_np, y_real_deg, 'k-', linewidth=2, label='Real')
+    
+    title = f"{ds['name']}\n"
+    if TREINAR_CAIXA_CINZA:
+        ax.plot(t_np, phys_deg, 'r--', linewidth=2, label='Physics-Informed')
+        title += f"Physics (RMSE {rmse_phys:.2f}°)  "
+    if TREINAR_CAIXA_PRETA:
+        ax.plot(t_np, bb_deg, 'b--', linewidth=2, label='Black-Box')
+        title += f"Black-Box (RMSE {rmse_bb:.2f}°)"
+        
+    ax.set_title(title.strip())
+    ax.set_xlabel("Tempo (s)"); ax.set_ylabel("Ângulo (graus)")
+    ax.legend(); ax.grid(True)
 
 plt.tight_layout()
 plt.show()
 
 print("\nResumo comparativo:")
 for r in results:
-    print(f"  {r['arquivo']:45s} Physics={r['rmse_phys']:6.2f}°  BlackBox={r['rmse_bb']:6.2f}°")
+    msg = f"  {r['arquivo']:45s} "
+    if TREINAR_CAIXA_CINZA: msg += f"Physics={r['rmse_phys']:6.2f}°  "
+    if TREINAR_CAIXA_PRETA: msg += f"BlackBox={r['rmse_bb']:6.2f}°"
+    print(msg)
 
 # %%
-# --- Salvando os modelos na máquina ---
-caminho_cinza = 'node_caixa_cinza.pth'
-torch.save(phys_model.state_dict(), caminho_cinza)
-print(f'Modelo Físico (Caixa-Cinza) salvo em: {caminho_cinza}')
-
-caminho_preta = 'node_caixa_preta.pth'
-torch.save(bb_model.state_dict(), caminho_preta)
-print(f'Modelo Neural (Caixa-Preta) salvo em: {caminho_preta}')
+# Fim do script
