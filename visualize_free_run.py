@@ -12,7 +12,7 @@ print(f"Using device: {device}")
 
 # --- CONFIGURAÇÃO DOS MODELOS PARA VISUALIZAÇÃO ---
 # Coloque aqui o nome exato dos arquivos que você quer carregar
-ARQUIVO_BASELINE = 'node_v3_baseline_20260809_180823.pth'
+ARQUIVO_BASELINE = 'node_v4_baseline_20260810_000723.pth'
 ARQUIVO_ASSIMETRICO = 'node_v3_asymmetric_20260809_180823.pth'
 ARQUIVO_HIBRIDO = 'node_v3_hybrid_20260809_180823.pth'
 
@@ -135,18 +135,10 @@ class PhysicsODE_Hybrid(BaseODE):
 if __name__ == '__main__':
     BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
     test_files = [
-        "RODADA-2/multi-seno-2_0804_19-31.csv",
-        "RODADA-2/multi-seno-1_0804_19-06.csv",
-        "RODADA-2/seq-degraus-2_0804_19-38.csv",
-        "RODADA-2/multi-seno-3_0804_19-44.csv",
-        "RODADA-2/seq-degraus-1_0804_19-12.csv",
         "multi-seno-1_0807_16-57.csv",
-        "multi-seno-2_0807_17-13.csv",
-        "seq-degraus-1_0807_16-38.csv",
-        "seq-degraus-aprbs-2_0807_17-23.csv",
-        "seq-dragus-aprbs_0807_16-50.csv"
+        "seq-degraus-1_0807_16-38.csv"
     ]
-    decimacao = 2
+    decimacao = 5
 
     print("\nCarregando datasets de TESTE...")
     test_datasets = []
