@@ -174,9 +174,9 @@ if __name__ == '__main__':
     try:
         # Tenta carregar com weights_only=True (PyTorch mais novo) ou sem
         try:
-            model_cinza.load_state_dict(torch.load("node_v3_asymmetric_20260809_180823.pth", map_location=device, weights_only=True))
+            model_cinza.load_state_dict(torch.load("node_v4_asymmetric_20260811_190734.pth", map_location=device, weights_only=True))
         except TypeError:
-            model_cinza.load_state_dict(torch.load("node_comparative_hybrid.pth", map_location=device))
+            model_cinza.load_state_dict(torch.load("node_caixa_cinza.pth", map_location=device))
         model_cinza.eval()
         print("Modelo Caixa Cinza carregado com sucesso.")
     except Exception as e:
