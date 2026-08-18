@@ -21,7 +21,7 @@ print(f"Using device: {device}")
 
 MODELOS = {
     "V3 Hybrid": {"tipo": "Hybrid", "caminho": "modelos_salvos/node_v3_hybrid_20260809_180823.pth", "comparar": True},
-    "Comparative Hybrid": {"tipo": "Hybrid", "caminho": "modelos_salvos/node_comparative_hybrid.pth", "comparar": True},
+    "Black Box": {"tipo": "BlackBox", "caminho": "modelos_salvos/node_caixa_preta.pth", "comparar": True},
     "V4 Asymmetric": {"tipo": "Asymmetric", "caminho": "modelos_salvos/node_v4_asymmetric_20260811_190734.pth", "comparar": True}
 }
 
