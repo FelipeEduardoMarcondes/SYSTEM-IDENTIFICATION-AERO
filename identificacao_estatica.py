@@ -9,10 +9,22 @@ from scipy.signal import savgol_filter
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
-def carregar_semi_estatica(url):
-    df = pd.read_csv(url)
+def carregar_semi_estatica(paths):
+    dfs = []
+    for p in paths:
+        try:
+            df = pd.read_csv(p)
+            if 'tempo_ms' not in df.columns:
+                df = pd.read_csv(p, names=['tempo_ms', 'angulo_deg', 'u_pct', 'referencia'])
+            dfs.append(df)
+        except Exception as e:
+            print(f"Erro ao ler {p}: {e}")
+            
+    if not dfs: return None
+    
+    df = pd.concat(dfs, ignore_index=True)
     if 'referencia' in df.columns:
-        df = df[df['referencia'] > 0]
+        pass # Filtro removido para não apagar ângulos negativos nem o teste em malha aberta (escada)!
 
     if 'u_pct' in df.columns:
         u_full = df['u_pct'].values.astype(np.float64)
@@ -109,10 +121,14 @@ class StribeckStaticModel(nn.Module):
         return torque_efetivo, torque_atrito
 
 if __name__ == '__main__':
-    url = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/dados_curva_semi_estatica-2_0807_17-40.csv"
+    arquivos = [
+        r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\escada-atrito-1_0819_19-08.csv",
+        r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\degraus_0819_19-30.csv",
+        r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\degraus_0819_19-33.csv"
+    ]
     
-    print("1. Carregando dados quase-estáticos...")
-    t_ten, u_ten, theta_ten, v_ten, a_ten = carregar_semi_estatica(url)
+    print("1. Carregando e mesclando dados...")
+    t_ten, u_ten, theta_ten, v_ten, a_ten = carregar_semi_estatica(arquivos)
     
     t_ten = t_ten.to(device)
     u_ten = u_ten.to(device)
@@ -123,7 +139,7 @@ if __name__ == '__main__':
     model = StribeckStaticModel().to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.01)
     
-    epochs = 100000
+    epochs = 20000
     print("\n2. Otimizando Stribeck (com correção Inercial)...")
     for epoch in range(epochs+1):
         optimizer.zero_grad()

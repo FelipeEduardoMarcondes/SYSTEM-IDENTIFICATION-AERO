@@ -79,7 +79,7 @@ extern void I2C_ClearBus(void);
 
 /* ── Buffers de dados ────────────────────────────────────────────────────── */
 #define MAX_STEPS       50
-#define WAVE_MAX        20000  /* STM32F446 tem 128 KB SRAM; 16500*4=66 KB OK */
+#define WAVE_MAX        22000  /* STM32F446 tem 128 KB SRAM; 16500*4=66 KB OK */
 
 /* ── UART RX ─────────────────────────────────────────────────────────────── */
 #define RX_BUF_LEN      2048
