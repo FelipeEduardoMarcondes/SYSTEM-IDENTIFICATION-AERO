@@ -43,10 +43,15 @@ GRAV   = 9.81
 DT     = 0.010   # 100 Hz
 TAU_GRAV = (M1*L1 - M2*L2) * GRAV  # ~0.2795 N.m
 
+# Base do Github (igual ao node_v4.py)
+BASE_URL = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+
 # Arquivos: degraus 90->0 (motor desligado apos queda)
 PATHS = [
-    r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\degraus_0819_19-29.csv",
-    r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\degraus_0819_19-30.csv",
+    BASE_URL + "degraus_0819_19-29.csv",
+    BASE_URL + "degraus_0819_19-30.csv",
+    BASE_URL + "degraus_0819_19-33.csv",
+    BASE_URL + "queda-livre-1.csv"
 ]
 
 
@@ -55,7 +60,8 @@ PATHS = [
 # ===========================================================================
 def carregar_queda_livre(path):
     df = pd.read_csv(path)
-    nome = path.split('\\')[-1].replace('.csv', '')
+    # Ajuste para URLs (usando split com '/') ou caminho local ('\\')
+    nome = path.replace('\\', '/').split('/')[-1].replace('.csv', '')
 
     refs = df['referencia'].values
     theta_deg = df['angulo_deg'].values.astype(np.float64)

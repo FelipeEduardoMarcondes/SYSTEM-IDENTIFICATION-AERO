@@ -245,8 +245,8 @@ def processar_dataset(t_raw, u_raw, y_raw):
 if __name__ == '__main__':
     BASE_URL = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
     test_files = [
-        "multi-seno-1_0807_16-57.csv",
-        "seq-degraus-1_0807_16-38.csv"
+        "RODADA-3/multi-seno-1_0807_16-57.csv",
+        "RODADA-3/seq-degraus-1_0807_16-38.csv"
     ]
     decimacao = 2 # Decimação maior para simulação mais rápida
     

@@ -20,9 +20,9 @@ print(f"Using device: {device}")
 # Tipos disponíveis: "Baseline", "Asymmetric", "Hybrid", "BlackBox"
 
 MODELOS = {
-    "V3 Hybrid": {"tipo": "Hybrid", "caminho": "modelos_salvos/node_v3_hybrid_20260809_180823.pth", "comparar": True},
+    "V3 Hybrid": {"tipo": "Hybrid", "caminho": "modelos_salvos/node_v4_hybrid_20260822_105519.pth", "comparar": True},
     "Black Box": {"tipo": "BlackBox", "caminho": "modelos_salvos/node_caixa_preta.pth", "comparar": True},
-    "V4 Asymmetric": {"tipo": "Asymmetric", "caminho": "modelos_salvos/node_v4_asymmetric_20260811_190734.pth", "comparar": True}
+    "V4 Asymmetric": {"tipo": "Asymmetric", "caminho": "modelos_salvos/node_v4_asymmetric_20260822_105519.pth", "comparar": True}
 }
 
 # ==========================================
@@ -230,14 +230,15 @@ def processar_dataset(t_raw, u_raw, y_raw):
 if __name__ == '__main__':
     BASE_URL = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
     test_files = [
-        "multi-seno-1_0807_16-57.csv",
-        "seq-degraus-1_0807_16-38.csv",
-        "RODADA-2/chirp-1_0804_19-19.csv",
-        "RODADA-2/multi-seno-2_0804_19-28.csv",
-        "RODADA-2/multi-seno-2_0804_19-31.csv",
-        "RODADA-2/seq-degraus-1_0804_19-09.csv",
-        "RODADA-2/seq-degraus-1_0804_19-12.csv",
-        "RODADA-2/seq-degraus-2_0804_19-38.csv"
+        "aprbs-1_0819_18-48.csv",
+        "aprbs-2_0819_18-51.csv",
+        "aprbs-neg-1_0819_18-54.csv",
+        "multi-seno-1_0819_19-23.csv",
+        "multi-seno-2_0819_18-59.csv",
+        "multi-seno-2_0819_19-11.csv",
+        "multi-seno-3_0819_19-19.csv",
+        "seq-degraus-aprbs-2_0819_19-16.csv",
+        "swept-sine-1_0819_19-02.csv"
     ]
     decimacao = 2 # Decimação maior para simulação mais rápida
     
