@@ -196,23 +196,35 @@ class BlackBoxODE(nn.Module):
 # 3. FUNÇÕES AUXILIARES E EXECUÇÃO
 # ==========================================
 
-def carregar_experimento(url, decimacao=1):
+def carregar_experimento(url, decimacao=1, start_idx=None, end_idx=None):
     df = pd.read_csv(url)
     if 'referencia' in df.columns:
         df = df[df['referencia'] > 0]
+
     if 'u_pct' in df.columns:
         u_full = df['u_pct'].values.astype(np.float64)
     else:
         u_full = df['motor_percent'].values.astype(np.float64)
     y_full = df['angulo_deg'].values.astype(np.float64)
+
     if decimacao > 1:
-        u_raw = decimate(u_full, decimacao, ftype='iir', zero_phase=True)
         y_raw = decimate(y_full, decimacao, ftype='iir', zero_phase=True)
+        u_raw = u_full[::decimacao]
     else:
         u_raw = u_full
         y_raw = y_full
+
     dt = 0.010 * decimacao
     t_raw = np.arange(len(y_raw)) * dt
+
+    min_len = min(len(y_raw), len(u_raw))
+    t_raw, u_raw, y_raw = t_raw[:min_len], u_raw[:min_len], y_raw[:min_len]
+
+    if start_idx is not None and end_idx is not None:
+        t_raw = t_raw[start_idx:end_idx]
+        u_raw = u_raw[start_idx:end_idx]
+        y_raw = y_raw[start_idx:end_idx]
+
     return t_raw, u_raw, y_raw
 
 def processar_dataset(t_raw, u_raw, y_raw):
@@ -245,7 +257,7 @@ if __name__ == '__main__':
     print("\n[1] Carregando datasets de TESTE...")
     test_datasets = []
     for f in test_files:
-        t_raw, u_raw, y_raw = carregar_experimento(BASE_URL + f, decimacao=decimacao)
+        t_raw, u_raw, y_raw = carregar_experimento(BASE_URL + f, decimacao=decimacao, start_idx=250, end_idx=-200)
         t_ten, u_ten, x_ten, y_rad, v_rad, u_norm = processar_dataset(t_raw, u_raw, y_raw)
         test_datasets.append({
             'name': f,
