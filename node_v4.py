@@ -25,11 +25,11 @@ print(f"Using device: {device}")
 torch.manual_seed(0)
 np.random.seed(0)
 
-TREINAR_BASELINE = True
+TREINAR_BASELINE = False
 TREINAR_ASSIMETRICO = True
 TREINAR_HIBRIDO = True
 
-def carregar_experimento(url, decimacao=1):
+def carregar_experimento(url, decimacao=1, start_idx=None, end_idx=None):
     df = pd.read_csv(url)
     if 'referencia' in df.columns:
         df = df[df['referencia'] > 0]
@@ -55,6 +55,11 @@ def carregar_experimento(url, decimacao=1):
     # Pode haver divergência de tamanho de 1 amostra dependendo da paridade
     min_len = min(len(y_raw), len(u_raw))
     t_raw, u_raw, y_raw = t_raw[:min_len], u_raw[:min_len], y_raw[:min_len]
+
+    if start_idx is not None and end_idx is not None:
+        t_raw = t_raw[start_idx:end_idx]
+        u_raw = u_raw[start_idx:end_idx]
+        y_raw = y_raw[start_idx:end_idx]
 
     return t_raw, u_raw, y_raw
 
@@ -257,20 +262,46 @@ def avalia_validacao(model, val_datasets, state_std, integrator):
             val_loss += torch.mean(((pred - x_t) / state_std) ** 2).item()
     return val_loss / len(val_datasets)
 
+def plot_datasets(datasets, title):
+    import math
+    n = len(datasets)
+    cols = 3
+    rows = math.ceil(n / cols)
+    fig, axs = plt.subplots(rows, cols, figsize=(15, 4 * rows))
+    fig.suptitle(title, fontsize=16)
+    
+    if isinstance(axs, np.ndarray):
+        axs = axs.flatten()
+    else:
+        axs = [axs]
+        
+    for i, ax in enumerate(axs):
+        if i < n:
+            ds = datasets[i]
+            y_deg = ds['x'][:, 0].numpy() * (180.0 / np.pi)
+            ax.plot(y_deg, color='blue')
+            ax.set_title(ds['name'], fontsize=10)
+            ax.grid(True)
+        else:
+            ax.axis('off')
+            
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.90 if rows > 1 else 0.85)
+    plt.show()
 
 if __name__ == '__main__':
-    BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+    BASE2 = "experimentos/"
     
     train_files = [
-        "RODADA-2/multi-seno-1_0804_19-06.csv",
-        "RODADA-2/seq-degraus-2_0804_19-38.csv",
-        "RODADA-2/multi-seno-3_0804_19-44.csv",
-        "RODADA-2/seq-degraus-1_0804_19-12.csv",
-        "multi-seno-1_0807_16-57.csv",
-        "multi-seno-2_0807_17-13.csv",
-        "seq-degraus-1_0807_16-38.csv",
-        "seq-degraus-aprbs-2_0807_17-23.csv",
-        "seq-dragus-aprbs_0807_16-50.csv"
+        "aprbs-1_0819_18-48.csv",
+        "aprbs-2_0819_18-51.csv",
+        "aprbs-neg-1_0819_18-54.csv",
+        "multi-seno-1_0819_19-23.csv",
+        "multi-seno-2_0819_18-59.csv",
+        "multi-seno-2_0819_19-11.csv",
+        "multi-seno-3_0819_19-19.csv",
+        "seq-degraus-aprbs-2_0819_19-16.csv",
+        "swept-sine-1_0819_19-02.csv"
     ]
     
     # Estes arquivos não são vistos no treino, servem apenas para o Early Stopping / Checkpoint
@@ -284,16 +315,20 @@ if __name__ == '__main__':
     print("Carregando datasets de TREINO...")
     train_datasets = []
     for f in train_files:
-        t_raw, u_raw, y_raw = carregar_experimento(BASE2 + f, decimacao=decimacao)
+        t_raw, u_raw, y_raw = carregar_experimento(BASE2 + f, decimacao=decimacao, start_idx=250, end_idx=-200)
         t_ten, u_ten, x_ten, y_rad, v_rad, u_norm = processar_dataset(t_raw, u_raw, y_raw)
         train_datasets.append({'name': f, 't': t_ten, 'u': u_ten, 'x': x_ten})
+
+    plot_datasets(train_datasets, 'Conjuntos de Treino: Ângulo (Graus)')
 
     print("\nCarregando datasets de VALIDAÇÃO (Checkpoint)...")
     val_datasets = []
     for f in val_files:
-        t_raw, u_raw, y_raw = carregar_experimento(BASE2 + f, decimacao=decimacao)
+        t_raw, u_raw, y_raw = carregar_experimento(BASE2 + f, decimacao=decimacao, start_idx=250, end_idx=-200)
         t_ten, u_ten, x_ten, y_rad, v_rad, u_norm = processar_dataset(t_raw, u_raw, y_raw)
         val_datasets.append({'name': f, 't': t_ten, 'u': u_ten, 'x': x_ten})
+
+    plot_datasets(val_datasets, 'Conjuntos de Validação: Ângulo (Graus)')
 
     all_pos = np.concatenate([d['x'][:, 0].numpy() for d in train_datasets])
     all_vel = np.concatenate([d['x'][:, 1].numpy() for d in train_datasets])
@@ -307,7 +342,7 @@ if __name__ == '__main__':
         base_model = PhysicsODE_Baseline()
         base_model = train_model_v4(
             base_model, "Baseline", train_datasets, val_datasets,
-            epochs=2000, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
+            epochs=500, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
             state_std=state_std
         )
         torch.save(base_model.state_dict(), f'modelos_salvos/node_v4_baseline_{timestamp}.pth')
