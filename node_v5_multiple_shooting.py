@@ -99,8 +99,7 @@ class BaseODE(nn.Module):
         k = torch.clamp(k, 1, len(self.t_series) - 1)
         t1, t2 = self.t_series[k-1].unsqueeze(1), self.t_series[k].unsqueeze(1)
         u1, u2 = self.u_series[k-1], self.u_series[k]
-        denom = (t2 - t1)
-        denom[denom < 1e-6] = 1.0
+        denom = torch.where((t2 - t1) < 1e-6, torch.ones_like(t2 - t1), t2 - t1)
         alpha = (t_abs - t1) / denom
         return u1 + alpha * (u2 - u1)
 
@@ -232,12 +231,7 @@ def train_model_v5_ms(model, name, train_datasets, val_datasets, epochs=500, lr=
 
     best_val_loss = float('inf')
     best_state_dict = None
-
-    # Validação Inicial (Free-Run completo)
-    val_loss = avalia_validacao(model, val_datasets, state_std, integrator)
-
-    # Tempo relativo para o odeint (de 0 até dt*chunk_size)
-    t_eval = torch.arange(0, chunk_size * chunks[0]['dt'], chunks[0]['dt'], device=device)[:chunk_size]
+    val_loss = float('inf')
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -254,6 +248,10 @@ def train_model_v5_ms(model, name, train_datasets, val_datasets, epochs=500, lr=
             
             x0_k = X0_hat[i:i+1] # Shape [1, 2]
             target_x = chunk['x'].to(device)
+            
+            # Tempo relativo para o odeint — recalculado por chunk para suportar dt variável
+            dt_k = chunk['dt']
+            t_eval = torch.arange(0, chunk_size * dt_k, dt_k, device=device)[:chunk_size]
             
             # Predição do chunk inteiro
             pred_state = odeint(model, x0_k, t_eval, method=integrator).squeeze(1) # Shape [chunk_size, 2]
@@ -354,7 +352,7 @@ if __name__ == '__main__':
     os.makedirs('modelos_salvos', exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    chunk_size = 100 # Aproximadamente 2 segundos se dt = 0.02
+    chunk_size = 300 # Aproximadamente 2 segundos se dt = 0.02
     epochs = 400
     
     if TREINAR_BASELINE:
