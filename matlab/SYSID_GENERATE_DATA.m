@@ -24,7 +24,7 @@ amp2 = 50;
 [u2, t2] = gerarSeqDegraus(Ts, zeropad, valorDC, Tf2, Tduracao, amp2);
 
 %% Swept sine
-Fmax3 = 0.5;
+Fmax3 = 0.75;
 A3 = 55; % amplitude
 T03 = 60; % periodo [s]
 
@@ -42,7 +42,7 @@ ninp = 1;
 
 %% Sequencia Degraus Variado (APRBS)
 Tf5 = 140;           % Duracao total do sinal dinamico [s]
-TduracaoMin5 = 1.0;  % Duracao minima de cada degrau (degraus curtos/rapidos) [s]
+TduracaoMin5 = 2.0;  % Duracao minima de cada degrau (degraus curtos/rapidos) [s]
 TduracaoMax5 = 4.0;  % Duracao maxima de cada degrau (degraus longos/lentos) [s]
 amp5 = 55;           % Variacao de amplitude (vai saltar entre valorDC - 50 e valorDC + 50)
 [u5, t5] = gerarSeqDegrausAPRBS(Ts, zeropad, valorDC, Tf5, TduracaoMin5, TduracaoMax5, amp5);

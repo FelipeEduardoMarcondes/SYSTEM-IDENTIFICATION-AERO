@@ -16,16 +16,20 @@ function [u2, t2] = gerarSeqDegraus(Ts, zeropad, valorDC, Tf, Tduracao, amp)
 %
 %   Ao final, salva u2 e t2 em 'dados_seq_degraus.mat'
 
-rng(42)
+rng('shuffle');
 
 t = (0:Ts:Tf);
 N = length(t);
-Ndeg = Tduracao/Ts;
-Nrand = (N-1)/Ndeg;
+Ndeg = round(Tduracao/Ts);
+Nrand = ceil((N-1)/Ndeg);
 randSteps = amp*(2*rand(Nrand,1)-1);
 Umat = repmat(randSteps,1,Ndeg)';
 
 u2 = [zeropad zeropad ([zeropad zeropad Umat(:)' zeropad zeropad] + valorDC) zeropad zeropad];
+
+% Garante que nenhum valor fique negativo (clamp em 0)
+u2 = max(u2, 0);
+
 N2 = length(u2);
 t2 = ((1:N2)-1)*Ts;
 

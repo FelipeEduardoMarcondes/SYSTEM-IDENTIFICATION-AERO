@@ -19,10 +19,14 @@ function [u4, t4] = gerarMultiSine(Ts, zeropad, valorDC, Fmax, Amp, Tf, ninp)
 %
 %   Ao final, salva u4 e t4 em 'dados_multi_sine.mat'
 
-rng(545)
+rng('shuffle');
 [u, t] = multiSine(1/Ts, Fmax, Tf, Amp, ninp);
 
 u4 = [zeropad zeropad ([zeropad zeropad u' zeropad zeropad] + valorDC) zeropad zeropad];
+
+% Garante que nenhum valor fique negativo (clamp em 0)
+u4 = max(u4, 0);
+
 N4 = length(u4);
 t4 = ((1:N4)-1)*Ts;
 

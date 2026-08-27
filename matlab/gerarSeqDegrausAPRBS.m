@@ -44,6 +44,9 @@ u_aprbs = u_aprbs(1:N_esperado);
 
 % Constroi o sinal final mantendo as margens de zeropad e valorDC originais
 u2 = [zeropad zeropad ([zeropad zeropad u_aprbs zeropad zeropad] + valorDC) zeropad zeropad];
+
+% Garante que nenhum valor fique negativo (clamp em 0)
+u2 = max(u2, 0);
 N2 = length(u2);
 t2 = ((1:N2)-1)*Ts;
 

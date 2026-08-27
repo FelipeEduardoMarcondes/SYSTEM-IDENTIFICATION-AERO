@@ -28,6 +28,10 @@ t_chirp = 0:Ts:T0;
 u_chirp = A*sin((a*t_chirp+b).*t_chirp);
 
 u3 = [zeropad zeropad ([zeropad zeropad u_chirp zeropad zeropad] + valorDC) zeropad zeropad];
+
+% Garante que nenhum valor fique negativo (clamp em 0)
+u3 = max(u3, 0);
+
 N3 = length(u3);
 t3 = ((1:N3)-1)*Ts;
 
