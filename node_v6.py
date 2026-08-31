@@ -13,10 +13,9 @@
 # Experimentos (mesmo modelo, mesmo hiperparâmetro, treino diferente):
 #   A  — só APRBS
 #   B  — só Multi-seno
-#   C  — só Swept-sine
+#   C  — só Varredura (swept-sine + chirp unificados)
 #   D  — só Seq-degraus
-#   E  — só Chirp  (RODADA-3, excl. o chirp usado em val/test)
-#   F  — mix de todos  <- controle
+#   E  — mix de todos  <- controle
 
 import numpy as np
 import pandas as pd
@@ -102,8 +101,8 @@ def carregar_lista(file_list):
 # 2. DEFINIÇÃO DOS EXPERIMENTOS
 # ──────────────────────────────────────────────────────────────────────
 # Todos os arquivos de treino estao na raiz (Rodada 5, 27/08).
-# Nao ha chirp na raiz -> Exp E usa chirps da Rodada 3
-# (diferente do val=chirp-1_16-32 e test=RODADA-2/chirp-1_19-19).
+# Chirp e swept-sine sao ambos sinais de varredura de frequencia
+# (linear vs logaritmico), unificados no Exp C_Varredura.
 
 EXPERIMENTOS = {
     "A_APRBS": [
@@ -118,9 +117,12 @@ EXPERIMENTOS = {
         "multi-seno-3_0827_17-40.csv",
         "multi-seno-4_0827_17-43.csv",
     ],
-    "C_SweptSine": [
+    "C_Varredura": [
         "swept-sine-1_0827_17-58.csv",
         "swept-sine-4_0827_18-00.csv",
+        "RODADA-3/chirp-1_0807_16-34.csv",
+        "RODADA-3/chirp-2_0807_17-07.csv",
+        "RODADA-3/chirp-2_0807_17-09.csv",
     ],
     "D_Degraus": [
         "seq-degraus-1_0827_17-46.csv",
@@ -128,34 +130,27 @@ EXPERIMENTOS = {
         "seq-degraus-3_0827_17-52.csv",
         "seq-degraus-4_0827_17-55.csv",
     ],
-    # Chirp: usa chirps da Rodada 3 que NAO sao val nem test
-    "E_Chirp": [
-        "RODADA-3/chirp-1_0807_16-34.csv",
-        "RODADA-3/chirp-2_0807_17-07.csv",
-        "RODADA-3/chirp-2_0807_17-09.csv",
-    ],
 }
-# Exp F: mix de todos os anteriores (sem duplicatas)
+# Exp E: mix de todos os anteriores (sem duplicatas)
 all_files = [f for files in EXPERIMENTOS.values() for f in files]
-EXPERIMENTOS["F_Mix"] = list(dict.fromkeys(all_files))
+EXPERIMENTOS["E_Mix"] = list(dict.fromkeys(all_files))
 
 # Val: guia o early stopping via free-run RMSE (nunca entra no treino)
 VAL_FILES = [
     "RODADA-3/chirp-1_0807_16-32.csv",
 ]
 
-# Teste final por tipo (bloqueado, cross-session, 1 arquivo por tipo):
+# Teste final por tipo (bloqueado, cross-session, arquivos por tipo):
 # - APRBS    : RODADA-4 (nao usada no treino do v6)
 # - MultiSeno: RODADA-2 (nao usada no treino do v6)
-# - SweptSine: RODADA-4 (nao usada no treino do v6)
+# - Varredura: RODADA-4 + RODADA-2 (nao usadas no treino do v6)
 # - Degraus  : RODADA-2 (nao usada no treino do v6)
-# - Chirp    : RODADA-2 (nao usada no treino do v6)
 TEST_FILES_BY_TYPE = {
-    "APRBS":     "RODADA-4/aprbs-2_0819_18-51.csv",
-    "MultiSeno": "RODADA-2/multi-seno-1_0804_19-06.csv",
-    "SweptSine": "RODADA-4/swept-sine-1_0819_19-02.csv",
-    "Degraus":   "RODADA-2/seq-degraus-2_0804_19-38.csv",
-    "Chirp":     "RODADA-2/chirp-1_0804_19-19.csv",
+    "APRBS":     ["RODADA-4/aprbs-2_0819_18-51.csv"],
+    "MultiSeno": ["RODADA-2/multi-seno-1_0804_19-06.csv"],
+    "Varredura": ["RODADA-4/swept-sine-1_0819_19-02.csv",
+                   "RODADA-2/chirp-1_0804_19-19.csv"],
+    "Degraus":   ["RODADA-2/seq-degraus-2_0804_19-38.csv"],
 }
 
 
@@ -201,11 +196,11 @@ class PhysicsODE_Asymmetric(BaseODE):
         self.log_Gu_neg = nn.Parameter(torch.log(torch.tensor(float(Gu_neg0))))
 
     def forward(self, t, x):
-        J      = torch.exp(self.log_J)
-        b_pos  = torch.exp(self.log_b)
-        b_neg  = torch.exp(self.log_b_neg)
-        Gu_pos = torch.exp(self.log_Gu)
-        Gu_neg = torch.exp(self.log_Gu_neg)
+        J      = torch.clamp(torch.exp(self.log_J),       min=0.01, max=1.0)
+        b_pos  = torch.clamp(torch.exp(self.log_b),       min=0.001, max=1.0)
+        b_neg  = torch.clamp(torch.exp(self.log_b_neg),   min=0.001, max=1.0)
+        Gu_pos = torch.clamp(torch.exp(self.log_Gu),      min=0.01, max=10.0)
+        Gu_neg = torch.clamp(torch.exp(self.log_Gu_neg),  min=0.01, max=10.0)
         u_t    = self._get_u_t(t, x)
         theta, theta_dot = x[:, 0:1], x[:, 1:2]
 
@@ -307,6 +302,9 @@ def train_node(model, name, train_datasets, val_datasets,
             total_loss += loss
 
         total_loss = total_loss / len(train_datasets)
+        # Regularizacao L2 nos parametros assimetricos para evitar divergencia
+        reg_loss = 0.01 * (model.log_Gu_neg ** 2 + model.log_b_neg ** 2)
+        total_loss = total_loss + reg_loss
         total_loss.backward()
         optimizer.step()
         scheduler.step()
@@ -471,8 +469,8 @@ if __name__ == '__main__':
     print("Carregando Val e conjuntos de Teste por tipo...")
     val_datasets = carregar_lista(VAL_FILES)
     test_por_tipo = {
-        tipo: carregar_lista([arquivo])
-        for tipo, arquivo in TEST_FILES_BY_TYPE.items()
+        tipo: carregar_lista(arquivos)
+        for tipo, arquivos in TEST_FILES_BY_TYPE.items()
     }
     print(f"  Val  : {[d['name'] for d in val_datasets]}")
     for tipo, dsl in test_por_tipo.items():

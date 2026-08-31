@@ -1,48 +1,65 @@
-from sympy import false
 import os
+import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import torch
-import torch.nn as nn
 from torchdiffeq import odeint
 from scipy.signal import savgol_filter, decimate
-from sklearn.metrics import mean_squared_error
+import torch.nn as nn
 
+# ---------------------------------------------------------------------------
+# Copied/Adapted from node_v6.py to allow interactive matplotlib plotting
+# ---------------------------------------------------------------------------
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Using device: {device}")
 
-# ==========================================
-# 1. CONFIGURAÇÃO DOS MODELOS PARA COMPARAR
-# ==========================================
-# Dicionário de modelos que você deseja carregar e comparar.
-# Formato: "Nome no Gráfico": {"tipo": "TipoDoModelo", "caminho": "caminho/do/arquivo.pth"}
-# Tipos disponíveis: "Baseline", "Asymmetric", "Hybrid", "BlackBox"
+BASE = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+DECIMACAO  = 2
+START_IDX  = 200
+END_IDX    = -2000
 
-MODELOS = {}
-if os.path.exists("modelos_salvos"):
-    for file in os.listdir("modelos_salvos"):
-        if file.endswith(".pth"):
-            nome = file.replace(".pth", "")
-            if "tustin" in file.lower():
-                tipo = "Tustin"
-            elif "asymmetric" in file.lower():
-                tipo = "Asymmetric"
-            elif "hybrid" in file.lower() or "caixa_cinza" in file.lower():
-                tipo = "Hybrid"
-            elif "coulomb" in file.lower():
-                tipo = "Coulomb"
-            elif "baseline" in file.lower():
-                tipo = "Baseline"
-            elif "caixa_preta" in file.lower():
-                tipo = "BlackBox"
-            else:
-                continue
-            MODELOS[nome] = {"tipo": tipo, "caminho": os.path.join("modelos_salvos", file), "comparar": True}
+def carregar_experimento(url, decimacao=DECIMACAO, start_idx=START_IDX, end_idx=END_IDX):
+    df = pd.read_csv(url)
+    if 'referencia' in df.columns:
+        df = df[df['referencia'] > 0]
+    u_full = df['u_pct'].values.astype(np.float64) if 'u_pct' in df.columns else df['motor_percent'].values.astype(np.float64)
+    y_full = df['angulo_deg'].values.astype(np.float64)
+    if decimacao > 1:
+        y_raw = decimate(y_full, decimacao, ftype='iir', zero_phase=True)
+        u_raw = u_full[::decimacao]
+    else:
+        u_raw, y_raw = u_full, y_full
+    dt    = 0.010 * decimacao
+    t_raw = np.arange(len(y_raw)) * dt
+    min_l = min(len(y_raw), len(u_raw))
+    t_raw, u_raw, y_raw = t_raw[:min_l], u_raw[:min_l], y_raw[:min_l]
+    if start_idx is not None and end_idx is not None:
+        t_raw = t_raw[start_idx:end_idx]
+        u_raw = u_raw[start_idx:end_idx]
+        y_raw = y_raw[start_idx:end_idx]
+    return t_raw, u_raw, y_raw
 
-# ==========================================
-# 2. DEFINIÇÕES DOS MODELOS
-# ==========================================
+def processar_dataset(t_raw, u_raw, y_raw):
+    t_raw  = t_raw - t_raw[0]
+    y_rad  = y_raw * (np.pi / 180.0)
+    u_norm = np.clip(u_raw / 100.0, -1.0, 1.0)
+    dt_m   = np.mean(np.diff(t_raw))
+    v_rad  = savgol_filter(y_rad, 11, 3, deriv=1, delta=dt_m)
+    x_mat  = np.vstack((y_rad, v_rad)).T
+    return (
+        torch.tensor(t_raw, dtype=torch.float32),
+        torch.tensor(u_norm, dtype=torch.float32).unsqueeze(1),
+        torch.tensor(x_mat,  dtype=torch.float32),
+        y_rad, v_rad, u_norm,
+    )
+
+def carregar_lista(file_list):
+    datasets = []
+    for f in file_list:
+        t, u, y = carregar_experimento(BASE + f)
+        t_ten, u_ten, x_ten, *_ = processar_dataset(t, u, y)
+        datasets.append({'name': os.path.basename(f), 't': t_ten, 'u': u_ten, 'x': x_ten})
+    return datasets
+
 
 class BaseODE(nn.Module):
     def __init__(self, J0=1.0, b0=np.exp(-1.0), Gu0=1.0):
@@ -50,8 +67,8 @@ class BaseODE(nn.Module):
         self.m1, self.L1 = 0.122, 0.39
         self.m2, self.L2 = 0.055, 0.347
         self.g = 9.81
-        self.log_J = nn.Parameter(torch.log(torch.tensor(float(J0))))
-        self.log_b = nn.Parameter(torch.log(torch.tensor(float(b0))))
+        self.log_J  = nn.Parameter(torch.log(torch.tensor(float(J0))))
+        self.log_b  = nn.Parameter(torch.log(torch.tensor(float(b0))))
         self.log_Gu = nn.Parameter(torch.log(torch.tensor(float(Gu0))))
         self.u_series = None
         self.t_series = None
@@ -74,301 +91,128 @@ class BaseODE(nn.Module):
         alpha = (t_abs - t1) / denom
         return u1 + alpha * (u2 - u1)
 
-class PhysicsODE_Baseline(BaseODE):
-    def forward(self, t, x):
-        J, b, Gu = self.get_params()
-        u_t = self._get_u_t(t, x)
-        theta, theta_dot = x[:, 0:1], x[:, 1:2]
-        motor_torque = Gu * u_t * torch.abs(u_t)
-        gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
-        friction_torque = b * theta_dot
-        theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
-        return torch.cat([theta_dot, theta_ddot], dim=1)
-
-class PhysicsODE_Coulomb(BaseODE):
-    def __init__(self, J0=1.0, b0=np.exp(-1.0), Gu0=1.0, Tc0=0.01):
-        super().__init__(J0, b0, Gu0)
-        self.log_Tc = nn.Parameter(torch.log(torch.tensor(float(Tc0))))
-
-    def forward(self, t, x):
-        J, b, Gu = self.get_params()
-        Tc = torch.exp(self.log_Tc)
-        u_t = self._get_u_t(t, x)
-        theta, theta_dot = x[:, 0:1], x[:, 1:2]
-        
-        motor_torque = Gu * u_t * torch.abs(u_t)
-        gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
-        
-        friction_torque = b * theta_dot + Tc * torch.tanh(50.0 * theta_dot)
-        
-        theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
-        return torch.cat([theta_dot, theta_ddot], dim=1)
-
-class PhysicsODE_Tustin(BaseODE):
-    def __init__(self, J0=1.0, b0=np.exp(-1.0), Gu0=1.0, Tc0=0.01, Ts0=0.02, vs0=0.1):
-        super().__init__(J0, b0, Gu0)
-        self.log_Tc = nn.Parameter(torch.log(torch.tensor(float(Tc0))))
-        self.log_Ts = nn.Parameter(torch.log(torch.tensor(float(Ts0))))
-        self.log_vs = nn.Parameter(torch.log(torch.tensor(float(vs0))))
-
-    def forward(self, t, x):
-        J, b, Gu = self.get_params()
-        Tc = torch.exp(self.log_Tc)
-        Ts = torch.exp(self.log_Ts)
-        vs = torch.exp(self.log_vs)
-        
-        u_t = self._get_u_t(t, x)
-        theta, theta_dot = x[:, 0:1], x[:, 1:2]
-        
-        motor_torque = Gu * u_t * torch.abs(u_t)
-        gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
-        
-        stribeck_effect = Tc + (Ts - Tc) * torch.exp(-torch.abs(theta_dot / vs))
-        coulomb_stribeck = stribeck_effect * torch.tanh(50.0 * theta_dot)
-        
-        friction_torque = b * theta_dot + coulomb_stribeck
-        
-        theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
-        return torch.cat([theta_dot, theta_ddot], dim=1)
-
 class PhysicsODE_Asymmetric(BaseODE):
-    def __init__(self, J0=1.0, b_pos0=np.exp(-1.0), b_neg0=np.exp(-1.0), Gu_pos0=1.0, Gu_neg0=1.0):
+    def __init__(self, J0=1.0, b_pos0=np.exp(-1.0), b_neg0=np.exp(-1.0),
+                 Gu_pos0=1.0, Gu_neg0=1.0):
         super().__init__(J0, b_pos0, Gu_pos0)
-        self.log_b_neg = nn.Parameter(torch.log(torch.tensor(float(b_neg0))))
+        self.log_b_neg  = nn.Parameter(torch.log(torch.tensor(float(b_neg0))))
         self.log_Gu_neg = nn.Parameter(torch.log(torch.tensor(float(Gu_neg0))))
 
     def forward(self, t, x):
-        J = torch.exp(self.log_J)
-        b_pos = torch.exp(self.log_b)
-        b_neg = torch.exp(self.log_b_neg)
+        J      = torch.exp(self.log_J)
+        b_pos  = torch.exp(self.log_b)
+        b_neg  = torch.exp(self.log_b_neg)
         Gu_pos = torch.exp(self.log_Gu)
         Gu_neg = torch.exp(self.log_Gu_neg)
-        u_t = self._get_u_t(t, x)
+        u_t    = self._get_u_t(t, x)
         theta, theta_dot = x[:, 0:1], x[:, 1:2]
-        b = torch.where(theta_dot > 0, b_pos, b_neg)
-        Gu = torch.where(u_t > 0, Gu_pos, Gu_neg)
-        motor_torque = Gu * u_t * torch.abs(u_t)
-        gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
+
+        sigma_b  = torch.sigmoid(50.0 * theta_dot)
+        b        = sigma_b * b_pos + (1.0 - sigma_b) * b_neg
+        sigma_Gu = torch.sigmoid(50.0 * u_t)
+        Gu       = sigma_Gu * Gu_pos + (1.0 - sigma_Gu) * Gu_neg
+
+        motor_torque    = Gu * u_t * torch.abs(u_t)
+        gravity_torque  = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
         friction_torque = b * theta_dot
-        theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
+        theta_ddot      = (motor_torque - gravity_torque - friction_torque) / J
         return torch.cat([theta_dot, theta_ddot], dim=1)
 
-class PhysicsODE_Hybrid(BaseODE):
-    def __init__(self, J0=1.0, b0=np.exp(-1.0), Gu0=1.0, hidden_dim=32):
-        super().__init__(J0, b0, Gu0)
-        self.mlp = nn.Sequential(
-            nn.Linear(3, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, 1)
-        )
-        
-    def forward(self, t, x):
-        J, b, Gu = self.get_params()
-        u_t = self._get_u_t(t, x)
-        theta, theta_dot = x[:, 0:1], x[:, 1:2]
-        motor_torque = Gu * u_t * torch.abs(u_t)
-        gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
-        friction_torque = b * theta_dot
-        nn_input = torch.cat([theta, theta_dot, u_t], dim=1)
-        residual_torque = self.mlp(nn_input)
-        theta_ddot = (motor_torque - gravity_torque - friction_torque + residual_torque) / J
-        return torch.cat([theta_dot, theta_ddot], dim=1)
+def avalia_free_run(model, datasets, integrator='rk4'):
+    model.eval()
+    resultados = []
+    with torch.no_grad():
+        for ds in datasets:
+            t_t = ds['t'].to(device)
+            u_t = ds['u'].to(device)
+            x_t = ds['x'].to(device)
+            model.t_series          = t_t
+            model.u_series          = u_t
+            model.batch_start_times = torch.zeros(1, 1, device=device)
+            x0   = x_t[0].unsqueeze(0)
+            pred = odeint(model, x0, t_t, method=integrator).squeeze(1)
 
-class BlackBoxODE(nn.Module):
-    def __init__(self, hidden_dim=32):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(3, hidden_dim), # [theta, theta_dot, u]
-            nn.Tanh(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, 2)  # [theta_dot, theta_ddot]
-        )
-        self.u_series = None
-        self.t_series = None
-        self.batch_start_times = None
+            y_real = x_t[:, 0].cpu().numpy() * (180 / np.pi)
+            y_pred = pred[:, 0].cpu().numpy() * (180 / np.pi)
 
-    def _get_u_t(self, t, x):
-        if self.batch_start_times is not None:
-            t_abs = self.batch_start_times + t
-        else:
-            t_abs = t * torch.ones_like(x[:, 0:1])
-        k = torch.searchsorted(self.t_series, t_abs.reshape(-1), right=True)
-        k = torch.clamp(k, 1, len(self.t_series) - 1)
-        t1, t2 = self.t_series[k-1].unsqueeze(1), self.t_series[k].unsqueeze(1)
-        u1, u2 = self.u_series[k-1], self.u_series[k]
-        denom = (t2 - t1)
-        denom[denom < 1e-6] = 1.0
-        alpha = (t_abs - t1) / denom
-        return u1 + alpha * (u2 - u1)
+            rmse = float(np.sqrt(np.mean((y_pred - y_real) ** 2)))
+            ss_res = np.sum((y_real - y_pred) ** 2)
+            ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
+            r2   = float(1 - ss_res / (ss_tot + 1e-12))
+            fit  = float((1 - np.linalg.norm(y_pred - y_real) /
+                          (np.linalg.norm(y_real - np.mean(y_real)) + 1e-12)) * 100)
+            resultados.append({
+                'name': ds['name'], 'rmse': rmse, 'r2': r2, 'fit': fit,
+                'y_real': y_real, 'y_pred': y_pred, 't': ds['t'].numpy(),
+            })
+    return resultados
 
-    def forward(self, t, x):
-        u_t = self._get_u_t(t, x)
-        nn_input = torch.cat([x, u_t], dim=1)
-        return self.net(nn_input)
+TEST_FILES_BY_TYPE = {
+    "APRBS":     "RODADA-4/aprbs-2_0819_18-51.csv",
+    "MultiSeno": "RODADA-2/multi-seno-1_0804_19-06.csv",
+    "Degraus":   "RODADA-2/seq-degraus-2_0804_19-38.csv",
+    "Chirp":     "RODADA-2/chirp-1_0804_19-19.csv",
+}
 
-# ==========================================
-# 3. FUNÇÕES AUXILIARES E EXECUÇÃO
-# ==========================================
+def plot_free_run_interactive(resultado, exp_name):
+    n = len(resultado)
+    cols = min(3, n)
+    rows = -(-n // cols)
+    fig, axs = plt.subplots(rows, cols, figsize=(6 * cols, 3.5 * rows))
+    fig.suptitle(f'Free-Run NODE v6 — {exp_name}', fontsize=13)
+    axs = np.array(axs).reshape(rows, cols) if n > 1 else np.array([[axs]])
 
-def carregar_experimento(url, decimacao=1):
-    df = pd.read_csv(url)
-    if 'referencia' in df.columns:
-        df = df[df['referencia'] > 0]
-    if 'u_pct' in df.columns:
-        u_full = df['u_pct'].values.astype(np.float64)
-    else:
-        u_full = df['motor_percent'].values.astype(np.float64)
-    y_full = df['angulo_deg'].values.astype(np.float64)
-    if decimacao > 1:
-        u_raw = decimate(u_full, decimacao, ftype='iir', zero_phase=True)
-        y_raw = decimate(y_full, decimacao, ftype='iir', zero_phase=True)
-    else:
-        u_raw = u_full
-        y_raw = y_full
-    dt = 0.010 * decimacao
-    t_raw = np.arange(len(y_raw)) * dt
-    return t_raw, u_raw, y_raw
+    for i, r in enumerate(resultado):
+        ax = axs[i // cols, i % cols]
+        ax.plot(r['t'], r['y_real'], 'k',   lw=1.2, label='Real')
+        ax.plot(r['t'], r['y_pred'], 'r--', lw=1.0, label='Pred')
+        ax.set_title(
+            f"{r['name']}\nRMSE={r['rmse']:.2f}deg  R2={r['r2']:.3f}  FIT={r['fit']:.1f}%",
+            fontsize=8)
+        ax.set_xlabel('Tempo (s)', fontsize=7)
+        ax.set_ylabel('Angulo (deg)', fontsize=7)
+        ax.legend(fontsize=7)
+        ax.grid(True, lw=0.4)
 
-def processar_dataset(t_raw, u_raw, y_raw):
-    t_raw = t_raw - t_raw[0]
-    y_rad = y_raw * (np.pi / 180.0)
-    u_norm = np.clip(u_raw / 100.0, -1.0, 1.0)
-    dt_mean = np.mean(np.diff(t_raw))
-    v_rad_s = savgol_filter(y_rad, 11, 3, deriv=1, delta=dt_mean)
-    x_matrix = np.vstack((y_rad, v_rad_s)).T
-    return (torch.tensor(t_raw, dtype=torch.float32),
-            torch.tensor(u_norm, dtype=torch.float32).unsqueeze(1),
-            torch.tensor(x_matrix, dtype=torch.float32),
-            y_rad, v_rad_s, u_norm)
-
-if __name__ == '__main__':
-    BASE_URL = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
-    test_files = [
-        "RODADA-3/multi-seno-1_0807_16-57.csv",
-        "RODADA-3/seq-degraus-1_0807_16-38.csv"
-    ]
-    decimacao = 2 # Decimação maior para simulação mais rápida
-    
-    print("\n[1] Carregando datasets de TESTE...")
-    test_datasets = []
-    for f in test_files:
-        t_raw, u_raw, y_raw = carregar_experimento(BASE_URL + f, decimacao=decimacao)
-        t_ten, u_ten, x_ten, y_rad, v_rad, u_norm = processar_dataset(t_raw, u_raw, y_raw)
-        test_datasets.append({
-            'name': f,
-            't': t_ten, 'u': u_ten, 'x': x_ten,
-            'y_rad': y_rad, 'v_rad': v_rad, 'u_norm': u_norm
-        })
-        print(f"Dataset '{f}' carregado com {len(t_ten)} amostras.")
-
-    print("\n[2] Carregando modelos ODE...")
-    instancias_modelos = {}
-    
-    for nome, config in MODELOS.items():
-        if not config.get("comparar", True):
-            continue
-        
-        tipo = config["tipo"]
-        caminho = config["caminho"]
-        
-        try:
-            if tipo == "Baseline":
-                modelo = PhysicsODE_Baseline()
-            elif tipo == "Coulomb":
-                modelo = PhysicsODE_Coulomb()
-            elif tipo == "Tustin":
-                modelo = PhysicsODE_Tustin()
-            elif tipo == "Asymmetric":
-                modelo = PhysicsODE_Asymmetric()
-            elif tipo == "Hybrid":
-                modelo = PhysicsODE_Hybrid(hidden_dim=32)
-            elif tipo == "BlackBox":
-                modelo = BlackBoxODE(hidden_dim=32)
-            else:
-                print(f"Aviso: Tipo de modelo desconhecido '{tipo}' para '{nome}'. Ignorando.")
-                continue
-                
-            try:
-                try:
-                    modelo.load_state_dict(torch.load(caminho, map_location=device, weights_only=True))
-                except TypeError:
-                    modelo.load_state_dict(torch.load(caminho, map_location=device))
-            except RuntimeError:
-                if tipo == "Hybrid":
-                    modelo = PhysicsODE_Hybrid(hidden_dim=16)
-                elif tipo == "BlackBox":
-                    modelo = BlackBoxODE(hidden_dim=16)
-                try:
-                    modelo.load_state_dict(torch.load(caminho, map_location=device, weights_only=True))
-                except TypeError:
-                    modelo.load_state_dict(torch.load(caminho, map_location=device))
-                
-            modelo.to(device)
-            modelo.eval()
-            instancias_modelos[nome] = modelo
-            print(f"Sucesso: '{nome}' carregado do arquivo {caminho}")
-        except Exception as e:
-            print(f"Falha ao carregar '{nome}' do arquivo {caminho}: {e}")
-
-    if not instancias_modelos:
-        print("\nNenhum modelo foi carregado com sucesso. Verifique os caminhos dos arquivos em MODELOS.")
-        exit(1)
-
-    print("\n[3] Iniciando Simulação Free-Run (isso pode levar alguns segundos)...")
-    
-    n_test = len(test_datasets)
-    fig, axes = plt.subplots(n_test, 1, figsize=(14, 6 * n_test), squeeze=False)
-    colors = ['r--', 'g--', 'b--', 'm--', 'c--', 'y--']
-
-    for i, ds in enumerate(test_datasets):
-        t_t = ds['t'].to(device)
-        u_t = ds['u'].to(device)
-        x_t = ds['x'].to(device)
-        
-        y_real_deg = x_t[:, 0].cpu().numpy() * (180.0 / np.pi)
-        t_np = t_t.cpu().numpy()
-
-        ax = axes[i, 0]
-        ax.plot(t_np, y_real_deg, 'k-', linewidth=2, label='Real')
-        
-        print(f"\nSimulando para dataset: {ds['name']}")
-        
-        with torch.no_grad():
-            x0 = x_t[0].unsqueeze(0)
-            
-            resultados = []
-            
-            for j, (nome, modelo) in enumerate(instancias_modelos.items()):
-                modelo.u_series = u_t
-                modelo.t_series = t_t
-                modelo.batch_start_times = torch.zeros(1, 1, device=device)
-                
-                # Utiliza dopri5 para maior rapidez, ou rk4 se preferir. 
-                # dopri5 tem passo adaptativo e é muito mais eficiente em Python.
-                pred = odeint(modelo, x0, t_t, method='dopri5', rtol=1e-5, atol=1e-6).squeeze(1).cpu().numpy()
-                pred_deg = pred[:, 0] * (180.0 / np.pi)
-                rmse = np.sqrt(mean_squared_error(y_real_deg, pred_deg))
-                
-                print(f"  {nome:15s} | RMSE: {rmse:6.2f}°")
-                resultados.append((nome, rmse, pred_deg))
-                
-            # Ordena os resultados pelo RMSE e pega os 3 melhores
-            resultados.sort(key=lambda x: x[1])
-            melhores = resultados[:3]
-            
-            print(f"  -> Top 3 para este dataset: {[r[0] for r in melhores]}")
-            
-            for j, (nome, rmse, pred_deg) in enumerate(melhores):
-                color = colors[j % len(colors)]
-                ax.plot(t_np, pred_deg, color, linewidth=2.0, alpha=0.8, label=f'{nome} (RMSE={rmse:.2f}°)')
-                
-        ax.set_title(f"Simulação Free-Run: {ds['name']} (Top 3 Modelos)")
-        ax.set_xlabel("Tempo (s)")
-        ax.set_ylabel("Ângulo (graus)")
-        ax.legend()
-        ax.grid(True)
+    for i in range(n, rows * cols):
+        axs[i // cols, i % cols].axis('off')
 
     plt.tight_layout()
+    plt.subplots_adjust(top=0.88)
     plt.show()
-    print("\nVisualização concluída!")
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Visualize Free Run of a NODE Model')
+    parser.add_argument('--results_dir', type=str, default=r'c:\Users\vicio\Documents\SYSTEM-IDENTIFICATION-AERO-main\resultados_v6_20260830_125325')
+    parser.add_argument('--exp_name', type=str, default='F_Mix', help='Experiment Name to load e.g. A_APRBS, B_MultiSeno, F_Mix')
+    args = parser.parse_args()
+    
+    model_path = os.path.join(args.results_dir, f'model_{args.exp_name}.pth')
+    if not os.path.exists(model_path):
+        print(f"Model {model_path} not found.")
+        print("Available models in directory:")
+        if os.path.exists(args.results_dir):
+            for f in os.listdir(args.results_dir):
+                if f.endswith('.pth'):
+                    print("  - " + f.replace('model_', '').replace('.pth', ''))
+        exit(1)
+        
+    print(f"Loading model {model_path} ...")
+    model = PhysicsODE_Asymmetric().to(device)
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    
+    print("Loading test datasets (might take a moment to download) ...")
+    test_por_tipo = {
+        tipo: carregar_lista([arquivo])
+        for tipo, arquivo in TEST_FILES_BY_TYPE.items()
+    }
+    
+    todos_resultados = []
+    print("Running full free-run evaluation ...")
+    for tipo, dsl in test_por_tipo.items():
+        res = avalia_free_run(model, dsl)
+        todos_resultados.extend(res)
+        
+    print(f"Opening interactive plot for {args.exp_name} ...")
+    plot_free_run_interactive(todos_resultados, args.exp_name)
