@@ -267,68 +267,108 @@ def plot_datasets(datasets, title):
     n = len(datasets)
     cols = 3
     rows = math.ceil(n / cols)
-    fig, axs = plt.subplots(rows, cols, figsize=(15, 4 * rows))
+    # 2 subplots por dataset: ângulo (y) e entrada (u)
+    fig, axs = plt.subplots(rows * 2, cols, figsize=(18, 5 * rows))
     fig.suptitle(title, fontsize=16)
-    
-    if isinstance(axs, np.ndarray):
-        axs = axs.flatten()
-    else:
-        axs = [axs]
-        
-    for i, ax in enumerate(axs):
-        if i < n:
-            ds = datasets[i]
-            y_deg = ds['x'][:, 0].numpy() * (180.0 / np.pi)
-            ax.plot(y_deg, color='blue')
-            ax.set_title(ds['name'], fontsize=10)
-            ax.grid(True)
-        else:
-            ax.axis('off')
-            
+
+    if n == 1:
+        axs = np.array(axs).reshape(-1, 1)
+
+    for i in range(n):
+        row_y = (i // cols) * 2        # linha do subplot de ângulo
+        row_u = row_y + 1              # linha do subplot de entrada
+        col   = i % cols
+
+        ds = datasets[i]
+        t_np   = ds['t'].numpy()
+        y_deg  = ds['x'][:, 0].numpy() * (180.0 / np.pi)
+        u_pct  = ds['u'][:, 0].numpy() * 100.0  # volta a %
+        fname  = os.path.basename(ds['name'])
+
+        ax_y = axs[row_y, col]
+        ax_y.plot(t_np, y_deg, color='steelblue', linewidth=0.8)
+        ax_y.set_title(fname, fontsize=9)
+        ax_y.set_ylabel('Ângulo (°)', fontsize=8)
+        ax_y.grid(True, linewidth=0.4)
+        ax_y.tick_params(labelsize=7)
+
+        ax_u = axs[row_u, col]
+        ax_u.plot(t_np, u_pct, color='darkorange', linewidth=0.8)
+        ax_u.set_ylabel('u (%)', fontsize=8)
+        ax_u.set_xlabel('Tempo (s)', fontsize=8)
+        ax_u.grid(True, linewidth=0.4)
+        ax_u.tick_params(labelsize=7)
+
+    # Esconde subplots vazios nas últimas posições
+    total_subplots = rows * 2 * cols
+    used_rows = rows * 2
+    for idx in range(n, rows * cols):
+        r = (idx // cols) * 2
+        c = idx % cols
+        axs[r, c].axis('off')
+        if r + 1 < used_rows:
+            axs[r + 1, c].axis('off')
+
     plt.tight_layout()
-    plt.subplots_adjust(top=0.90 if rows > 1 else 0.85)
+    plt.subplots_adjust(top=0.93 if rows > 1 else 0.88)
     plt.show()
 
 if __name__ == '__main__':
-    BASE2 = "experimentos/"
-    
+    BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+
     train_files = [
-        "aprbs-1_0819_18-48.csv",
-        "aprbs-2_0819_18-51.csv",
-        "aprbs-neg-1_0819_18-54.csv",
-        "multi-seno-1_0819_19-23.csv",
-        "multi-seno-2_0819_18-59.csv",
-        "multi-seno-2_0819_19-11.csv",
-        "multi-seno-3_0819_19-19.csv",
-        "seq-degraus-aprbs-2_0819_19-16.csv",
-        "swept-sine-1_0819_19-02.csv"
+        # --- Rodada 5 (27/08) — sessao mais recente, maior confianca ---
+        "aprbs-1_0827_17-19.csv",
+        "aprbs-2_0827_17-25.csv",
+        "aprbs-3_0827_17-28.csv",
+        "multi-seno-1_0827_17-34.csv",
+        "multi-seno-2_0827_17-37.csv",
+        "multi-seno-3_0827_17-40.csv",
+        "seq-degraus-1_0827_17-46.csv",
+        "seq-degraus-2_0827_17-49.csv",
+        "swept-sine-1_0827_17-58.csv",
+        "RODADA-4/aprbs-1_0819_18-48.csv",
+        "RODADA-4/aprbs-neg-1_0819_18-54.csv",
+        "RODADA-4/multi-seno-1_0819_19-23.csv",
+        "RODADA-4/multi-seno-3_0819_19-19.csv",
+        "RODADA-4/swept-sine-1_0819_19-02.csv",
+        "RODADA-4/seq-degraus-aprbs-2_0819_19-16.csv",
     ]
-    
-    # Estes arquivos não são vistos no treino, servem apenas para o Early Stopping / Checkpoint
+
+    # ------------------------------------------------------------------
+    # VALIDACAO — Rodadas 2 (04/08) e 3 (07/08)
+    # Cross-session: datas distintas, condicoes ambientais distintas.
+    # Inclui chirp (excitacao nao vista no treino) para testar generalizacao.
+    # ------------------------------------------------------------------
     val_files = [
+        # Rodada 2 (04/08)
         "RODADA-2/chirp-1_0804_19-19.csv",
         "RODADA-2/multi-seno-2_0804_19-28.csv",
         "RODADA-2/seq-degraus-1_0804_19-09.csv",
+        "RODADA-3/chirp-1_0807_16-34.csv",
+        "RODADA-3/seq-degraus-1_0807_16-42.csv",
+        "RODADA-3/multi-seno-1_0807_16-57.csv",
     ]
+
     decimacao = 2
 
     print("Carregando datasets de TREINO...")
     train_datasets = []
     for f in train_files:
-        t_raw, u_raw, y_raw = carregar_experimento(BASE2 + f, decimacao=decimacao, start_idx=250, end_idx=-200)
+        t_raw, u_raw, y_raw = carregar_experimento(BASE2 + f, decimacao=decimacao, start_idx=200, end_idx=-200)
         t_ten, u_ten, x_ten, y_rad, v_rad, u_norm = processar_dataset(t_raw, u_raw, y_raw)
         train_datasets.append({'name': f, 't': t_ten, 'u': u_ten, 'x': x_ten})
 
-    plot_datasets(train_datasets, 'Conjuntos de Treino: Ângulo (Graus)')
+    plot_datasets(train_datasets, 'Conjuntos de Treino — Ângulo (°) e Entrada (%)')
 
     print("\nCarregando datasets de VALIDAÇÃO (Checkpoint)...")
     val_datasets = []
     for f in val_files:
-        t_raw, u_raw, y_raw = carregar_experimento(BASE2 + f, decimacao=decimacao, start_idx=250, end_idx=-200)
+        t_raw, u_raw, y_raw = carregar_experimento(BASE2 + f, decimacao=decimacao, start_idx=200, end_idx=-200)
         t_ten, u_ten, x_ten, y_rad, v_rad, u_norm = processar_dataset(t_raw, u_raw, y_raw)
         val_datasets.append({'name': f, 't': t_ten, 'u': u_ten, 'x': x_ten})
 
-    plot_datasets(val_datasets, 'Conjuntos de Validação: Ângulo (Graus)')
+    plot_datasets(val_datasets, 'Conjuntos de Validação — Ângulo (°) e Entrada (%)')
 
     all_pos = np.concatenate([d['x'][:, 0].numpy() for d in train_datasets])
     all_vel = np.concatenate([d['x'][:, 1].numpy() for d in train_datasets])

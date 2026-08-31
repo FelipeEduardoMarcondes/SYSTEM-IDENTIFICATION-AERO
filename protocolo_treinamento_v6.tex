@@ -1,0 +1,657 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[portuguese]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows.meta,positioning,fit,backgrounds}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+
+\title{Protocolo de Treinamento e Metodologia Experimental — NODE v6}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{center}
+\Large\textbf{Estudo Comparativo de Sinais de Excitação para Identificação de Sistemas via Neural ODEs}
+\end{center}
+
+\vspace{0.5cm}
+
+\section{Introdução e Objetivo}
+
+O presente estudo investiga a influência do tipo de sinal de excitação utilizado no treinamento sobre a capacidade de generalização de modelos baseados em \textbf{Neural Ordinary Differential Equations} (Neural ODEs) aplicados à identificação de um aeropêndulo.
+
+A pergunta central é:
+
+\begin{tcolorbox}
+\textit{Dado um mesmo modelo e os mesmos hiperparâmetros, qual tipo de sinal de excitação no conjunto de treino produz o modelo NODE mais generalizável?}
+\end{tcolorbox}
+
+Para responder, seis experimentos (A--F) são conduzidos sob condições idênticas, variando-se exclusivamente o conjunto de dados de treinamento. A avaliação é feita em \textbf{simulação livre} (\textit{free-run}) sobre datasets de teste de sessões experimentais completamente distintas (\textit{cross-session}), cobrindo todos os cinco tipos de excitação.
+
+\section{Descrição da Planta}
+
+O sistema sob estudo é um \textbf{aeropêndulo de 1 grau de liberdade (1-DOF)}: uma haste articulada em torno de um eixo horizontal, acionada por um motor com hélice em uma extremidade e balanceada por um contrapeso na outra.
+
+\subsection{Parâmetros Físicos Conhecidos}
+
+\begin{table}[hbt!]
+\centering
+\caption{Parâmetros Físicos Conhecidos}
+\vspace{0.2cm}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Parâmetro} & \textbf{Símbolo} & \textbf{Valor} & \textbf{Unidade} \\
+\midrule
+Massa da hélice + motor & $m_1$ & 0.122 & kg \\
+Comprimento ao motor & $L_1$ & 0.39 & m \\
+Massa do contrapeso & $m_2$ & 0.055 & kg \\
+Comprimento ao contrapeso & $L_2$ & 0.347 & m \\
+Aceleração gravitacional & $g$ & 9.81 & m/s$^2$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Variáveis do Sistema}
+
+\begin{table}[hbt!]
+\centering
+\caption{Variáveis do Sistema}
+\vspace{0.2cm}
+\begin{tabular}{lcl}
+\toprule
+\textbf{Variável} & \textbf{Símbolo} & \textbf{Descrição} \\
+\midrule
+Entrada & $u(t)$ & Comando do motor (\% do PWM), normalizado para $[-1, 1]$ \\
+Saída & $\theta(t)$ & Ângulo da haste (rad) \\
+Estado & $\mathbf{x}(t) = [\theta,\, \dot{\theta}]^\top$ & Posição angular e velocidade angular \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Instrumentação e Aquisição}
+
+\begin{itemize}
+    \item \textbf{Sensor de ângulo}: encoder ou potenciômetro no eixo de rotação
+    \item \textbf{Taxa de amostragem nativa}: $f_s = 100$ Hz ($\Delta t_{\text{raw}} = 0{,}010$ s)
+    \item \textbf{Taxa efetiva após decimação}: $f_s' = 50$ Hz ($\Delta t = 0{,}020$ s)
+    \item \textbf{Controlador}: microcontrolador (Arduino/STM32) com comunicação serial
+\end{itemize}
+
+\section{Modelo — Physics-Informed Neural ODE Assimétrico}
+
+\subsection{Formulação Dinâmica}
+
+O modelo segue a forma de uma equação diferencial ordinária parametrizada, onde os parâmetros físicos desconhecidos são estimados via otimização baseada em gradiente:
+%
+\begin{equation}
+\dot{\mathbf{x}}(t) = f_\phi(\mathbf{x}(t),\, u(t))
+\end{equation}
+
+Especificamente, a dinâmica é descrita por:
+%
+\begin{align}
+\dot{\theta} &= \dot{\theta} \\
+\ddot{\theta} &= \frac{1}{J} \left[ \tau_{\text{motor}}(u) - \tau_{\text{grav}}(\theta) - \tau_{\text{atrito}}(\dot{\theta}) \right]
+\end{align}
+
+onde:
+
+\begin{table}[hbt!]
+\centering
+\caption{Componentes de Torque}
+\vspace{0.2cm}
+\begin{tabular}{lll}
+\toprule
+\textbf{Torque} & \textbf{Expressão} & \textbf{Descrição} \\
+\midrule
+Motor & $\tau_{\text{motor}} = G_u(u) \cdot u \cdot |u|$ & Torque aerodinâmico (quadrático em $u$) \\
+Gravitacional & $\tau_{\text{grav}} = (m_1 L_1 - m_2 L_2)\, g\, \sin\theta$ & Torque restaurador/desestabilizador \\
+Atrito & $\tau_{\text{atrito}} = b(\dot{\theta}) \cdot \dot{\theta}$ & Atrito viscoso assimétrico \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Assimetria Direção-Dependente}
+
+Para capturar a assimetria física do sistema (diferenças no atrito e no empuxo entre rotação horária/anti-horária e entre comando positivo/negativo), os coeficientes de atrito e ganho do motor são modelados como funções suaves da direção:
+%
+\begin{align}
+b(\dot{\theta}) &= \sigma(50\,\dot{\theta}) \cdot b^+ + \left[1 - \sigma(50\,\dot{\theta})\right] \cdot b^- \\
+G_u(u) &= \sigma(50\,u) \cdot G_u^+ + \left[1 - \sigma(50\,u)\right] \cdot G_u^-
+\end{align}
+
+onde $\sigma(\cdot)$ é a função sigmóide logística e o fator 50 produz uma transição rápida (quase-degrau) próxima à origem.
+
+\subsection{Parâmetros Treináveis}
+
+Todos os parâmetros são parametrizados em escala logarítmica para garantir positividade:
+
+\begin{table}[hbt!]
+\centering
+\caption{Parâmetros Treináveis}
+\vspace{0.2cm}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Parâmetro} & \textbf{Notação Interna} & \textbf{Valor Inicial} \\
+\midrule
+Momento de inércia & $J = e^{\log J}$ & 1.0 \\
+Atrito viscoso (positivo) & $b^+ = e^{\log b^+}$ & $e^{-1} \approx 0.368$ \\
+Atrito viscoso (negativo) & $b^- = e^{\log b^-}$ & $e^{-1} \approx 0.368$ \\
+Ganho do motor (positivo) & $G_u^+ = e^{\log G_u^+}$ & 1.0 \\
+Ganho do motor (negativo) & $G_u^- = e^{\log G_u^-}$ & 1.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Total: 5 parâmetros treináveis.}
+
+\subsection{Integração Numérica}
+
+A integração da ODE é realizada pelo pacote \texttt{torchdiffeq} utilizando o método \textbf{Runge-Kutta de 4ª ordem (RK4)} a passo fixo, com interpolação linear do sinal de entrada $u(t)$ via \texttt{torch.searchsorted}.
+
+\section{Dados Experimentais}
+
+\subsection{Campanhas de Coleta (Rodadas)}
+
+Os dados experimentais foram coletados em cinco sessões (rodadas) independentes, em datas distintas, cada uma potencialmente sob condições ambientais e de setup ligeiramente diferentes:
+
+\begin{table}[hbt!]
+\centering
+\caption{Campanhas de Coleta (Rodadas)}
+\vspace{0.2cm}
+\begin{tabular}{clll}
+\toprule
+\textbf{Rodada} & \textbf{Data} & \textbf{Conteúdo Principal} & \textbf{Uso no v6} \\
+\midrule
+1 & 31/07 e 03/08 & Multi-seno, swept-sine, chirp (piloto) & --- (não utilizada) \\
+2 & 04/08 & Multi-seno, seq-degraus, chirp & \textbf{Teste} \\
+3 & 07/08 & Chirp, seq-degraus, multi-seno, curva & \textbf{Val} + \textbf{Treino (Exp E)} \\
+4 & 19/08 & APRBS, multi-seno, swept-sine, degraus & \textbf{Teste} \\
+5 (raiz) & 27/08 & APRBS, multi-seno, swept-sine, seq-degraus & \textbf{Treino (Exp A--D)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Tipos de Sinais de Excitação}
+
+\begin{table}[hbt!]
+\centering
+\caption{Tipos de Sinais de Excitação}
+\vspace{0.2cm}
+\begin{tabular}{lp{2cm}p{9.5cm}}
+\toprule
+\textbf{Tipo} & \textbf{Abreviatura} & \textbf{Característica Espectral} \\
+\midrule
+APRBS & APRBS & Sinal binário pseudo-aleatório de amplitude, espectro largo e rico em baixas frequências \\
+Multi-seno & MultiSeno & Soma de senóides com frequências escolhidas, espectro discreto controlado \\
+Swept-sine & SweptSine & Varredura contínua de frequência (chirp linear), cobertura espectral progressiva \\
+Seq. degraus & Degraus & Degraus de amplitude variada, rico em conteúdo DC e transientes \\
+Chirp & Chirp & Varredura logarítmica de frequência, ênfase proporcional em cada década \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Inventário Completo dos Arquivos Utilizados}
+
+\subsubsection*{Treino — Experimentos A--D (Rodada 5, 27/08)}
+
+\begin{table}[hbt!]
+\centering
+\caption{Treino --- Experimentos A--D}
+\vspace{0.2cm}
+\begin{tabular}{llc}
+\toprule
+\textbf{Experimento} & \textbf{Arquivo} & \textbf{Tipo} \\
+\midrule
+A\_APRBS & \texttt{aprbs-1\_0827\_17-19.csv} & APRBS \\
+ & \texttt{aprbs-2\_0827\_17-25.csv} & APRBS \\
+ & \texttt{aprbs-3\_0827\_17-28.csv} & APRBS \\
+ & \texttt{aprbs-4\_0827\_17-31.csv} & APRBS \\
+\midrule
+B\_MultiSeno & \texttt{multi-seno-1\_0827\_17-34.csv} & Multi-seno \\
+ & \texttt{multi-seno-2\_0827\_17-37.csv} & Multi-seno \\
+ & \texttt{multi-seno-3\_0827\_17-40.csv} & Multi-seno \\
+ & \texttt{multi-seno-4\_0827\_17-43.csv} & Multi-seno \\
+\midrule
+C\_SweptSine & \texttt{swept-sine-1\_0827\_17-58.csv} & Swept-sine \\
+ & \texttt{swept-sine-4\_0827\_18-00.csv} & Swept-sine \\
+\midrule
+D\_Degraus & \texttt{seq-degraus-1\_0827\_17-46.csv} & Seq-degraus \\
+ & \texttt{seq-degraus-2\_0827\_17-49.csv} & Seq-degraus \\
+ & \texttt{seq-degraus-3\_0827\_17-52.csv} & Seq-degraus \\
+ & \texttt{seq-degraus-4\_0827\_17-55.csv} & Seq-degraus \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection*{Treino — Experimento E (Rodada 3, 07/08)}
+
+\begin{table}[hbt!]
+\centering
+\caption{Treino --- Experimento E}
+\vspace{0.2cm}
+\begin{tabular}{llc}
+\toprule
+\textbf{Experimento} & \textbf{Arquivo} & \textbf{Tipo} \\
+\midrule
+E\_Chirp & \texttt{RODADA-3/chirp-1\_0807\_16-34.csv} & Chirp \\
+ & \texttt{RODADA-3/chirp-2\_0807\_17-07.csv} & Chirp \\
+ & \texttt{RODADA-3/chirp-2\_0807\_17-09.csv} & Chirp \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{tcolorbox}[colback=blue!5!white,colframe=blue!75!black,title=Nota]
+Não há arquivos de chirp na Rodada 5 (raiz). Os chirps do Exp E são da Rodada 3, porém nenhum deles coincide com o arquivo de validação (\texttt{chirp-1\_0807\_16-32.csv}) nem com o de teste (\texttt{RODADA-2/chirp-1\_0804\_19-19.csv}).
+\end{tcolorbox}
+
+\subsubsection*{Treino — Experimento F: Mix (Controle)}
+
+Concatenação sem duplicatas de todos os arquivos dos Experimentos A--E (17 arquivos no total).
+
+\subsubsection*{Validação (\textit{early stopping})}
+
+\begin{table}[hbt!]
+\centering
+\caption{Validação (\textit{early stopping})}
+\vspace{0.2cm}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Arquivo} & \textbf{Rodada} & \textbf{Tipo} \\
+\midrule
+\texttt{RODADA-3/chirp-1\_0807\_16-32.csv} & 3 & Chirp \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Função: monitorar o RMSE em simulação livre a cada 50 épocas. O checkpoint com menor RMSE de validação é restaurado ao final do treinamento.
+
+\subsubsection*{Teste (avaliação final, \textit{locked})}
+
+\begin{table}[hbt!]
+\centering
+\caption{Teste (avaliação final, \textit{locked})}
+\vspace{0.2cm}
+\begin{tabular}{llc}
+\toprule
+\textbf{Tipo de Teste} & \textbf{Arquivo} & \textbf{Rodada} \\
+\midrule
+APRBS & \texttt{RODADA-4/aprbs-2\_0819\_18-51.csv} & 4 \\
+MultiSeno & \texttt{RODADA-2/multi-seno-1\_0804\_19-06.csv} & 2 \\
+SweptSine & \texttt{RODADA-4/swept-sine-1\_0819\_19-02.csv} & 4 \\
+Degraus & \texttt{RODADA-2/seq-degraus-2\_0804\_19-38.csv} & 2 \\
+Chirp & \texttt{RODADA-2/chirp-1\_0804\_19-19.csv} & 2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{tcolorbox}[colback=blue!5!white,colframe=blue!75!black,title=Princípio de separação cross-session]
+Nenhum arquivo de teste pertence à mesma rodada dos dados de treino dos Experimentos A--D (Rodada 5). Todos os testes são de sessões anteriores (Rodadas 2 e 4), garantindo avaliação em condições experimentais independentes.
+\end{tcolorbox}
+
+\section{Protocolo de Divisão dos Dados}
+
+A divisão dos dados segue o princípio de \textbf{cross-session validation} recomendado na literatura de identificação de sistemas (Ljung, 1999; Schoukens \& Ljung, 2019):
+
+\begin{figure}[hbt!]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners, align=center, minimum height=1cm, fill=gray!10},
+  train/.style={box, fill=green!70!black, text=white},
+  val/.style={box, fill=yellow!60!orange, text=black},
+  test/.style={box, fill=orange!80!red, text=white},
+  group/.style={draw, dashed, inner sep=10pt},
+  >=stealth
+]
+\node[box] (r1) {Rodada 1\\31/07 -- 03/08};
+\node[box, below=0.2cm of r1] (r2) {Rodada 2\\04/08};
+\node[box, below=0.2cm of r2] (r3) {Rodada 3\\07/08};
+\node[box, below=0.2cm of r3] (r4) {Rodada 4\\19/08};
+\node[box, below=0.2cm of r4] (r5) {Rodada 5 (raiz)\\27/08};
+\node[group, fit=(r1)(r2)(r3)(r4)(r5), label=above:Campanhas Experimentais] (rodadas) {};
+
+\node[train, right=3cm of r3] (train) {TREINO\\(Exp A--D: Rodada 5)\\(Exp E: Rodada 3)};
+\node[val, below=1cm of train] (val) {VALIDAÇÃO\\(Rodada 3)\\chirp-1\_16-32};
+\node[test, below=1cm of val] (test) {TESTE\\(Rodadas 2 e 4)\\5 arquivos};
+\node[group, fit=(train)(val)(test), label=above:Divisão dos Dados] (splits) {};
+
+\draw[->] (r5.east) -- (train.west);
+\draw[->] (r3.east) -- node[above, sloped, font=\scriptsize] {chirps excl. val} (train.west);
+\draw[->] (r3.east) -- node[above, sloped, font=\scriptsize] {chirp-1\_16-32} (val.west);
+\draw[->] (r2.east) -- (test.west);
+\draw[->] (r4.east) -- (test.west);
+\end{tikzpicture}
+\caption{Protocolo de Divisão dos Dados}
+\end{figure}
+
+\subsection{Regras de Separação}
+
+\begin{enumerate}
+    \item \textbf{Nenhum arquivo aparece em mais de um split} (treino, validação ou teste).
+    \item \textbf{O conjunto de teste é fixo e bloqueado}: jamais influencia decisões de treinamento ou seleção de modelo.
+    \item \textbf{A validação guia exclusivamente o early stopping}, não é usada para ajuste de hiperparâmetros entre experimentos (todos usam os mesmos hiperparâmetros).
+    \item \textbf{Separação temporal/por sessão}: treino e teste vêm de rodadas diferentes, minimizando viés por condições experimentais compartilhadas.
+\end{enumerate}
+
+\section{Pré-Processamento}
+
+O pipeline de pré-processamento é idêntico para todos os conjuntos (treino, validação e teste):
+
+\subsection{Etapas}
+
+\begin{figure}[hbt!]
+\centering
+\begin{tikzpicture}[
+  node distance=0.8cm,
+  box/.style={draw, rectangle, align=center, minimum height=0.8cm, fill=blue!5},
+  >=stealth
+]
+\node[box] (A) {CSV bruto\\($f_s = 100$ Hz)};
+\node[box, below=of A] (B) {Filtrar referência > 0\\(remover repouso)};
+\node[box, below=of B] (C) {Decimação $\times 2$\\$y$: filtro IIR anti-aliasing\\$u$: subsampling direto (ZOH)};
+\node[box, below=of C] (D) {Recorte temporal\\$[200 : -200]$ amostras\\(remover transitórios)};
+\node[box, below=of D] (E) {Normalização\\$\theta \to$ rad $\mid$ $u \to [-1, 1]$};
+\node[box, below=of E] (F) {Derivada numérica\\Savitzky-Golay (janela=11, ordem=3)};
+\node[box, below=of F] (G) {Estado final\\$x = [\theta \text{ (rad)}, d\theta/dt \text{ (rad/s)}]$};
+
+\draw[->] (A) -- (B);
+\draw[->] (B) -- (C);
+\draw[->] (C) -- (D);
+\draw[->] (D) -- (E);
+\draw[->] (E) -- (F);
+\draw[->] (F) -- (G);
+\end{tikzpicture}
+\caption{Etapas de Pré-Processamento}
+\end{figure}
+
+\subsection{Parâmetros}
+
+\begin{table}[hbt!]
+\centering
+\caption{Parâmetros de Pré-Processamento}
+\vspace{0.2cm}
+\begin{tabular}{lp{3.5cm}p{7cm}}
+\toprule
+\textbf{Parâmetro} & \textbf{Valor} & \textbf{Justificativa} \\
+\midrule
+Fator de decimação & 2 & Reduz custo computacional mantendo banda útil ($f_{\text{Nyquist}}' = 25$ Hz $\gg$ banda do sistema) \\
+Amostras cortadas (início) & 200 & Remove transitório inicial e artefatos de acionamento \\
+Amostras cortadas (fim) & 200 & Remove artefatos de desligamento \\
+Savitzky-Golay: janela & 11 amostras & Suavização moderada da derivada \\
+Savitzky-Golay: ordem & 3 & Polinômio cúbico — adequado para capturar dinâmica suave \\
+Normalização de $u$ & $u_{\text{norm}} = \text{clip}(u_{\%} / 100,\; -1,\; 1)$ & Escala unitária, saturação nos limites físicos \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Protocolo de Treinamento}
+
+\subsection{Variável Controlada}
+
+Todos os seis experimentos utilizam:
+\begin{itemize}
+    \item \textbf{Mesmo modelo}: \texttt{PhysicsODE\_Asymmetric} (5 parâmetros)
+    \item \textbf{Mesma inicialização}: \texttt{torch.manual\_seed(0)} e \texttt{np.random.seed(0)} resetados antes de cada experimento
+    \item \textbf{Mesmos hiperparâmetros}: descritos na Tabela abaixo
+\end{itemize}
+
+A \textbf{única variável} entre experimentos é o \textbf{conjunto de dados de treino}.
+
+\subsection{Hiperparâmetros (Fixos)}
+
+\begin{table}[hbt!]
+\centering
+\caption{Hiperparâmetros (Fixos)}
+\vspace{0.2cm}
+\begin{tabular}{lcl}
+\toprule
+\textbf{Hiperparâmetro} & \textbf{Valor} & \textbf{Descrição} \\
+\midrule
+Épocas & 2000 & Número total de iterações de treinamento \\
+Learning rate inicial & 0.015 & Taxa de aprendizado do Adam \\
+Scheduler & CosineAnnealing & Decaimento suave do LR até 0 em $T_{\max} = 2000$ \\
+$k_{\min}$ & 20 passos & Horizonte mínimo de predição (0.4 s) \\
+$k_{\max}$ & 400 passos & Horizonte máximo de predição (8.0 s) \\
+Estágio do currículo & 400 épocas & Intervalo entre dobras do horizonte \\
+Batch size base & 1024 & Nº de janelas amostradas por época (total, todos os datasets) \\
+Integrador & RK4 & Runge-Kutta 4ª ordem a passo fixo \\
+Val check & cada 50 épocas & Frequência da avaliação de validação \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Curriculum Learning}
+
+O horizonte de predição $k$ cresce exponencialmente ao longo do treinamento, em estágios discretos:
+%
+\begin{equation}
+k(\text{epoch}) = \min\left(k_{\min} \cdot 2^{\lfloor \text{epoch} / E_{\text{stage}} \rfloor},\; k_{\max}\right)
+\end{equation}
+
+\begin{table}[hbt!]
+\centering
+\caption{Curriculum Learning}
+\vspace{0.2cm}
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Estágio} & \textbf{Épocas} & \textbf{$k$ (passos)} & \textbf{Horizonte temporal} & \textbf{Batch size efetivo} \\
+\midrule
+0 & 1--399 & 20 & 0.40 s & 1024 \\
+1 & 400--799 & 40 & 0.80 s & 512 \\
+2 & 800--1199 & 80 & 1.60 s & 256 \\
+3 & 1200--1599 & 160 & 3.20 s & 128 \\
+4 & 1600--2000 & 320 & 6.40 s & 64 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Motivação:} iniciar com horizontes curtos estabiliza os gradientes nas primeiras épocas (quando os parâmetros ainda estão longe dos valores corretos) e progressivamente força o modelo a capturar dinâmica de longo prazo (Chen et al., 2018; Turan et al., 2022).
+
+O batch size é reduzido inversamente ao horizonte para manter a carga computacional aproximadamente constante.
+
+\subsection{Função de Perda}
+
+A perda é o erro quadrático médio normalizado pelo desvio padrão de cada estado, acumulado sobre todos os datasets de treino:
+%
+\begin{equation}
+\mathcal{L} = \frac{1}{|\mathcal{D}|} \sum_{d \in \mathcal{D}} \frac{1}{B_d \cdot k} \sum_{i=1}^{B_d} \sum_{j=1}^{k} \left\| \frac{\hat{\mathbf{x}}_d^{(i)}(t_j) - \mathbf{x}_d^{(i)}(t_j)}{\boldsymbol{\sigma}_{\mathbf{x}}} \right\|^2
+\end{equation}
+
+onde:
+\begin{itemize}
+    \item $\mathcal{D}$ é o conjunto de datasets de treino do experimento
+    \item $B_d$ é o número de janelas amostradas do dataset $d$
+    \item $\hat{\mathbf{x}}$ é o estado predito pela integração da ODE
+    \item $\mathbf{x}$ é o estado real (medido)
+    \item $\boldsymbol{\sigma}_{\mathbf{x}} = [\sigma_\theta,\, \sigma_{\dot\theta}]$ é o desvio padrão de cada componente do estado calculado sobre todos os dados de treino
+\end{itemize}
+
+A normalização por $\boldsymbol{\sigma}_{\mathbf{x}}$ garante que a posição ($\theta$, tipicamente em dezenas de graus) e a velocidade ($\dot\theta$, tipicamente em rad/s) contribuam de forma equilibrada para a perda.
+
+\subsection{Amostragem de Janelas}
+
+Em cada época, para cada dataset $d$:
+\begin{enumerate}
+    \item Sorteia-se aleatoriamente $B_d = \max(1,\, \lfloor B_{\text{base}} / |\mathcal{D}| \rfloor)$ índices iniciais $i_0$
+    \item Extrai-se a janela $\mathbf{x}_d[i_0 : i_0 + k]$ como alvo
+    \item Integra-se a ODE a partir de $\mathbf{x}_d[i_0]$ por $k$ passos com a entrada $u_d$ interpolada
+\end{enumerate}
+
+\subsection{Early Stopping com Validação Free-Run}
+
+A cada 50 épocas, avalia-se o modelo em \textbf{simulação livre completa} sobre o conjunto de validação (chirp da Rodada 3). Se o RMSE em graus for inferior ao melhor registrado, salva-se o checkpoint (\textit{state\_dict}). Ao final das 2000 épocas, o modelo é restaurado ao checkpoint com menor RMSE de validação.
+
+\section{Definição dos Experimentos}
+
+\begin{figure}[hbt!]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw, align=center, fill=gray!10, rounded corners, font=\scriptsize},
+  group/.style={draw, dashed, inner sep=5pt},
+  >=stealth,
+  node distance=0.3cm and 0.5cm
+]
+\node[box] (A) {A: APRBS\\4 arquivos\\Rodada 5};
+\node[box, right=of A] (B) {B: Multi-seno\\4 arquivos\\Rodada 5};
+\node[box, right=of B] (C) {C: Swept-sine\\2 arquivos\\Rodada 5};
+\node[box, below=of A] (D) {D: Seq-degraus\\4 arquivos\\Rodada 5};
+\node[box, right=of D] (E) {E: Chirp\\3 arquivos\\Rodada 3};
+\node[box, right=of E] (F) {F: Mix (todos)\\17 arquivos\\Rodadas 3+5};
+\node[group, fit=(A)(B)(C)(D)(E)(F), label=above:6 Experimentos] (EXP) {};
+
+\node[box, below=1cm of D] (VAL) {Val: chirp\\Rodada 3};
+\node[box, right=1cm of VAL] (TEST) {Teste: 5 tipos\\Rodadas 2+4};
+
+\node[box, fill=blue!10, below=2cm of EXP] (TRAIN) {train\_node()};
+\node[box, fill=green!10, below=1cm of TRAIN] (EVAL) {avalia\_free\_run()};
+\node[box, fill=orange!10, below=1cm of EVAL] (RES) {RMSE / R² / FIT\%\\por tipo de teste};
+
+\draw[->] (EXP.south) -- node[right, font=\scriptsize] {mesmo modelo, seed, hparams} (TRAIN.north);
+\draw[->] (VAL.east) -- node[above, font=\scriptsize] {early stopping} (TRAIN.west);
+\draw[->] (TRAIN.south) -- node[right, font=\scriptsize] {modelo treinado} (EVAL.north);
+\draw[->] (TEST.south) |- (EVAL.east);
+\draw[->] (EVAL.south) -- (RES.north);
+\end{tikzpicture}
+\caption{Definição dos Experimentos}
+\end{figure}
+
+\begin{table}[hbt!]
+\centering
+\caption{Resumo dos Experimentos}
+\vspace{0.2cm}
+\begin{tabular}{clccl}
+\toprule
+\textbf{Exp} & \textbf{Treino} & \textbf{Nº Arq.} & \textbf{Rodada(s)} & \textbf{Propósito} \\
+\midrule
+A & Somente APRBS & 4 & 5 & Avaliar excitação binária pseudo-aleatória \\
+B & Somente Multi-seno & 4 & 5 & Avaliar excitação multi-harmônica \\
+C & Somente Swept-sine & 2 & 5 & Avaliar varredura contínua de frequência \\
+D & Somente Seq-degraus & 4 & 5 & Avaliar excitação por transientes de degrau \\
+E & Somente Chirp & 3 & 3 & Avaliar varredura logarítmica de frequência \\
+F & Mix de A--E & 17 & 3 + 5 & \textbf{Controle} — diversidade vs. especialização \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Avaliação e Métricas}
+
+\subsection{Simulação Livre (\textit{Free-Run})}
+
+A avaliação é feita em \textbf{simulação open-loop completa}: dada a condição inicial real $\mathbf{x}(t_0)$ e a sequência de entrada real $u(t)$, integra-se a ODE por toda a duração do dataset \textbf{sem qualquer correção ou reinicialização} do estado. Esta é a métrica definitiva para identificação de sistemas, pois testa a capacidade do modelo de reproduzir a dinâmica autonomamente (Ljung, 1999).
+
+\subsection{Métricas}
+
+Sejam $y_k = \theta_{\text{real}}(t_k)$ e $\hat{y}_k = \theta_{\text{pred}}(t_k)$ em graus, com $N$ amostras:
+
+\subsubsection*{RMSE — Root Mean Square Error}
+\begin{equation}
+\text{RMSE} = \sqrt{\frac{1}{N} \sum_{k=1}^{N} (y_k - \hat{y}_k)^2} \quad [\text{graus}]
+\end{equation}
+
+\subsubsection*{R² — Coeficiente de Determinação}
+\begin{equation}
+R^2 = 1 - \frac{\sum_{k=1}^{N} (y_k - \hat{y}_k)^2}{\sum_{k=1}^{N} (y_k - \bar{y})^2}
+\end{equation}
+
+\subsubsection*{FIT\% — Normalized Root Mean Square Error}
+\begin{equation}
+\text{FIT} = \left(1 - \frac{\| \mathbf{y} - \hat{\mathbf{y}} \|}{\| \mathbf{y} - \bar{y}\,\mathbf{1} \|}\right) \times 100\%
+\end{equation}
+
+Equivalente à métrica utilizada pela função \texttt{compare} do MATLAB System Identification Toolbox.
+
+\subsection{Matriz de Generalização}
+
+Cada modelo treinado (linhas) é avaliado em cada tipo de teste (colunas), formando uma \textbf{matriz 6 × 5} de métricas:
+
+\begin{table}[hbt!]
+\centering
+\caption{Matriz de Generalização}
+\vspace{0.2cm}
+\begin{tabular}{lccccc}
+\toprule
+ & \textbf{APRBS} & \textbf{MultiSeno} & \textbf{SweptSine} & \textbf{Degraus} & \textbf{Chirp} \\
+\midrule
+A\_APRBS & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ \\
+B\_MultiSeno & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ \\
+C\_SweptSine & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ \\
+D\_Degraus & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ \\
+E\_Chirp & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ \\
+F\_Mix & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Essa matriz permite identificar não apenas qual treino é melhor \textit{em média}, mas também padrões de especialização (e.g., treino X é superior no teste Y mas inferior em Z).
+
+\subsection{Visualizações Geradas}
+
+\begin{table}[hbt!]
+\centering
+\caption{Visualizações Geradas}
+\vspace{0.2cm}
+\begin{tabular}{lp{10cm}}
+\toprule
+\textbf{Arquivo} & \textbf{Conteúdo} \\
+\midrule
+\texttt{treino\_\{EXP\}.png} & Sinais de treino (ângulo e entrada vs. tempo) \\
+\texttt{freerun\_\{EXP\}.png} & Sobreposição real vs. predito em todos os testes \\
+\texttt{heatmap\_rmse.png} & Matriz 6$\times$5 colorida — RMSE \\
+\texttt{heatmap\_r2.png} & Matriz 6$\times$5 colorida — R² \\
+\texttt{heatmap\_fit.png} & Matriz 6$\times$5 colorida — FIT\% \\
+\texttt{comparativo\_geral.png} & Barras de média geral (RMSE, R², FIT\%) por experimento \\
+\texttt{resumo.json} & Todas as métricas em formato estruturado \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Reprodutibilidade}
+
+\begin{table}[hbt!]
+\centering
+\caption{Garantias de Reprodutibilidade}
+\vspace{0.2cm}
+\begin{tabular}{lp{11cm}}
+\toprule
+\textbf{Aspecto} & \textbf{Garantia} \\
+\midrule
+Seed determinística & \texttt{torch.manual\_seed(0)} + \texttt{np.random.seed(0)} resetados antes de cada experimento \\
+Inicialização idêntica & Mesmo construtor \texttt{PhysicsODE\_Asymmetric()} com valores default \\
+Dados versionados & Todos os CSVs hospedados no repositório GitHub com URLs fixas \\
+Resultados salvos & Diretório \texttt{resultados\_v6\_\{timestamp\}/} com modelos \texttt{.pth}, plots \texttt{.png} e \texttt{resumo.json} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Limitações Conhecidas}
+
+\begin{enumerate}
+    \item \textbf{Desbalanceamento de dados}: o Experimento C (Swept-sine) possui apenas 2 arquivos enquanto os demais possuem 3--4. O Experimento F (Mix) possui 17 arquivos. Diferenças no volume de dados podem confundir o efeito do tipo de excitação com o efeito da quantidade de dados.
+    \item \textbf{Seed única}: a ausência de múltiplas execuções com sementes diferentes impede a quantificação de intervalos de confiança. Recomenda-se rodar com 3--5 seeds e reportar média $\pm$ desvio padrão.
+    \item \textbf{Validação com um único arquivo}: o early stopping depende de um único chirp (Rodada 3). Uma anomalia nesse arquivo específico enviesaria todos os experimentos igualmente.
+    \item \textbf{Proximidade temporal entre val e treino no Exp E}: tanto o treino do Exp E quanto a validação provêm da Rodada 3 (mesma sessão, minutos de diferença), o que pode criar condições experimentais mais similares que para os demais experimentos.
+\end{enumerate}
+
+\section*{Referências}
+
+\begin{enumerate}[label={[\arabic*]}]
+    \item \textbf{Chen, R. T. Q., Rubanova, Y., Bettencourt, J., \& Duvenaud, D.} (2018). Neural Ordinary Differential Equations. \textit{Advances in Neural Information Processing Systems (NeurIPS)}, 31.
+    \item \textbf{Ljung, L.} (1999). \textit{System Identification: Theory for the User} (2nd ed.). Prentice Hall.
+    \item \textbf{Schoukens, J., \& Ljung, L.} (2019). Nonlinear System Identification: A User-Oriented Road Map. \textit{IEEE Control Systems Magazine}, 39(6), 28--99.
+    \item \textbf{Kidger, P., Morrill, J., Foster, J., \& Lyons, T.} (2021). Neural Controlled Differential Equations for Irregular Time Series. \textit{Advances in Neural Information Processing Systems (NeurIPS)}, 34.
+    \item \textbf{Turan, C., Shaker, H. R., \& Shardt, Y. A. W.} (2022). Physics-informed neural ODEs for learning process dynamics. \textit{Journal of Process Control}, 120, 1--12.
+    \item \textbf{Rackauckas, C., Ma, Y., Martensen, J., et al.} (2020). Universal Differential Equations for Scientific Machine Learning. \textit{arXiv preprint arXiv:2001.04385}.
+\end{enumerate}
+
+\end{document}
