@@ -223,7 +223,8 @@ def plotar(caminho: str):
     ax2.set_ylabel("Controle  (%)", fontsize=10)
     ax2.set_ylim(-85, 85)
     ax2.grid(True)
-    ax2.set_xticklabels([])
+    if tem_erro:
+        ax2.set_xticklabels([])
     ax2.legend(loc="upper right", framealpha=0, fontsize=9)
 
     if tem_erro:
@@ -239,7 +240,6 @@ def plotar(caminho: str):
                          ls=":", alpha=0.5)
         ax3.set_ylabel("Erro  (deg)", fontsize=10)
         ax3.grid(True)
-        ax3.set_xticklabels([])
         ax3.legend(loc="upper right", framealpha=0, fontsize=9)
         ultimo_ax = ax3
         stats_idx = 3

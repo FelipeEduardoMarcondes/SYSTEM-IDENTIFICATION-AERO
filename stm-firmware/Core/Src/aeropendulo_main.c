@@ -98,6 +98,7 @@ typedef struct {
 typedef enum {
     ESTADO_IDLE,
     ESTADO_LOADING_WAVE,
+    ESTADO_ARMING_ESC,
     ESTADO_RUNNING,
     ESTADO_FREE_RUN
 } Estado_t;
@@ -646,21 +647,10 @@ static void processar_comando(const char *cmd)
     }
 
     if (strcmp(cmd, "START") == 0 && estado == ESTADO_IDLE) {
-        angulo_filtrado = angulo_acelerometro();
-        resetar_controlador();
+        esc_set_us(ESC_NEUTRO_US);
+        estado = ESTADO_ARMING_ESC;
         tempo_inicio = HAL_GetTick();
-        ultimo_dado_us = micros();
-        proxima_amostra_us = ultimo_dado_us + 10000UL;
-        idx_degrau   = 0;
-        wave_idx     = 0;
-
-        if      (chirp_ativo)  r = chirp_dc;
-        else if (wave_ativo)   r = wave_buf[0];
-        else if (n_degraus > 0) r = degraus[0].ref;
-
-        estado = ESTADO_RUNNING;
-        uart_println("# EXP_START");
-        uart_println("tempo_ms,angulo_deg,u_pct,referencia");
+        uart_println("# ARMANDO ESC... (3s)");
         return;
     }
 
@@ -880,6 +870,27 @@ void aeropendulo_loop(void)
     }
 
     if (estado == ESTADO_LOADING_WAVE || estado == ESTADO_IDLE) {
+        return;
+    }
+    
+    if (estado == ESTADO_ARMING_ESC) {
+        if (HAL_GetTick() - tempo_inicio >= 3000) {
+            angulo_filtrado = angulo_acelerometro();
+            resetar_controlador();
+            tempo_inicio = HAL_GetTick();
+            ultimo_dado_us = micros();
+            proxima_amostra_us = ultimo_dado_us + 10000UL;
+            idx_degrau   = 0;
+            wave_idx     = 0;
+
+            if      (chirp_ativo)  r = chirp_dc;
+            else if (wave_ativo)   r = wave_buf[0];
+            else if (n_degraus > 0) r = degraus[0].ref;
+
+            estado = ESTADO_RUNNING;
+            uart_println("# EXP_START");
+            uart_println("tempo_ms,angulo_deg,u_pct,referencia");
+        }
         return;
     }
 

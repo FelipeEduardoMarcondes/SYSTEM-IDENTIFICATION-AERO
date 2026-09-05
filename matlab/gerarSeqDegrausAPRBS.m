@@ -40,6 +40,9 @@ end
 
 % Corta o vetor para ter exatamente o tamanho de Tf para garantir consistencia
 N_esperado = round(Tf / Ts) + 1;
+if length(u_aprbs) < N_esperado
+    u_aprbs(end+1 : N_esperado) = u_aprbs(end);
+end
 u_aprbs = u_aprbs(1:N_esperado);
 
 % Constroi o sinal final mantendo as margens de zeropad e valorDC originais
