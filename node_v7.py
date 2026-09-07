@@ -273,42 +273,44 @@ MODELOS = {
 # ──────────────────────────────────────────────────────────────────────
 EXCITACOES = {
     "APRBS": [
-        "aprbs-1_0827_17-19.csv",
-        "aprbs-2_0827_17-25.csv",
-        "aprbs-3_0827_17-28.csv",
-        "aprbs-4_0827_17-31.csv",
+        "aprbs-45-1_0904_19-54.csv",
+        "aprbs-45-2_0904_19-57.csv",
+        "aprbs-60-1_0904_20-04.csv",
+        "aprbs-60-2_0904_20-07.csv",
+        "aprbs-60-3_0904_20-10.csv",
     ],
     "MultiSeno": [
-        "multi-seno-1_0827_17-34.csv",
-        "multi-seno-2_0827_17-37.csv",
-        "multi-seno-3_0827_17-40.csv",
-        "multi-seno-4_0827_17-43.csv",
+        "multi-seno-45-030Hz_0904_20-23.csv",
+        "multi-seno-45-030Hz_0905_00-47.csv",
+        "multi-seno-45-040Hz_0904_20-26.csv",
+        "multi-seno-45-050Hz_0904_20-29.csv",
+        "multi-seno-60-030Hz_0904_20-32.csv",
+        "multi-seno-60-040Hz_0904_20-35.csv",
     ],
     "Varredura": [
-        "swept-sine-1_0827_17-58.csv",
-        "swept-sine-4_0827_18-00.csv",
-        "RODADA-3/chirp-1_0807_16-34.csv",
-        "RODADA-3/chirp-2_0807_17-07.csv",
-        "RODADA-3/chirp-2_0807_17-09.csv",
+        "chirp-45-amp35_0904_20-13.csv",
+        "chirp-45-amp45_0904_20-15.csv",
+        "chirp-60-amp40_0904_20-16.csv",
+        "chirp-60-amp50_0904_20-18.csv",
     ],
     "Degraus": [
-        "seq-degraus-1_0827_17-46.csv",
-        "seq-degraus-2_0827_17-49.csv",
-        "seq-degraus-3_0827_17-52.csv",
-        "seq-degraus-4_0827_17-55.csv",
+        "seq-degraus-45-1_0904_20-41.csv",
+        "seq-degraus-45-2_0904_20-45.csv",
+        "seq-degraus-60-1_0904_20-51.csv",
+        "seq-degraus-60-2_0904_20-54.csv",
     ],
 }
 all_files = [f for files in EXCITACOES.values() for f in files]
 EXCITACOES["Mix"] = list(dict.fromkeys(all_files))
 
-VAL_FILES = ["RODADA-3/chirp-1_0807_16-32.csv"]
+VAL_FILES = ["chirp-45-amp25_0904_20-11.csv"]
 
 TEST_FILES_BY_TYPE = {
-    "APRBS":     ["RODADA-4/aprbs-2_0819_18-51.csv"],
-    "MultiSeno": ["RODADA-2/multi-seno-1_0804_19-06.csv"],
-    "Varredura": ["RODADA-4/swept-sine-1_0819_19-02.csv",
-                   "RODADA-2/chirp-1_0804_19-19.csv"],
-    "Degraus":   ["RODADA-2/seq-degraus-2_0804_19-38.csv"],
+    "APRBS":     ["aprbs-45-3_0904_20-01.csv"],
+    "MultiSeno": ["multi-seno-60-050Hz_0904_20-38.csv"],
+    "Varredura": ["chirp-60-amp60_0904_20-20.csv"],
+    "Degraus":   ["seq-degraus-45-3_0904_20-48.csv",
+                   "seq-degraus-60-3_0904_20-57.csv"],
 }
 
 
