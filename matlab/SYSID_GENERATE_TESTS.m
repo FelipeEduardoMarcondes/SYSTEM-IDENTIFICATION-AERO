@@ -17,7 +17,7 @@ clc
 Ts = 1/1e2;              % Periodo de amostragem (100 Hz)
 zeropad = zeros(1, 300); % 3 segundos de repouso no inicio e no fim (adaptável)
 Tf = 120;                % Duracao padrao dos sinais dinamicos [s]
-Tf_chirp = 45;           % Duracao especifica dos chirps
+Tf_chirp = 120;           % Duracao especifica dos chirps
 
 disp('=============================================================')
 disp(' GERANDO SINAIS DE IDENTIFICACAO - TABELA FINAL              ')
