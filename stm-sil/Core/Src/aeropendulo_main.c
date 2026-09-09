@@ -854,14 +854,18 @@ static void ciclo_controle(void)
         nn_in[10+i] = r; 
     }
 
-    uint32_t c1 = DWT->CYCCNT;
+    uint32_t c_ann1 = DWT->CYCCNT;
     float u = ann_predict(nn_in);
-    uint32_t c2 = DWT->CYCCNT;
-    
-    float exec_time_ms = (float)(c2 - c1) / (float)(hclk_mhz * 1000.0f);
+    uint32_t c_ann2 = DWT->CYCCNT;
 
     // Apply control to virtual plant
+    uint32_t c_narx1 = DWT->CYCCNT;
     simulate_narx(u);
+    uint32_t c_narx2 = DWT->CYCCNT;
+
+    float t_ann_ms  = (float)(c_ann2  - c_ann1)  / (float)(hclk_mhz * 1000.0f);
+    float t_narx_ms = (float)(c_narx2 - c_narx1) / (float)(hclk_mhz * 1000.0f);
+    float t_total_ms = t_ann_ms + t_narx_ms;
 #endif
 #ifndef SIL_MODE
     e_1 = e;
@@ -879,17 +883,24 @@ static void ciclo_controle(void)
     uart_print(buf);
 
 #ifdef SIL_MODE
-    static uint32_t ann_calls = 0;
-    static float ann_total_time = 0.0f;
-    ann_calls++;
-    ann_total_time += exec_time_ms;
-    if (ann_calls % 100 == 0) { // a cada 1 segundo (100 ticks de 10ms)
-        char t_buf[64];
-        char s_time[16];
-        fmt_float(s_time, ann_total_time / 100.0f);
-        snprintf(t_buf, sizeof(t_buf), "# ANN Avg Time: %s ms", s_time);
+    static uint32_t sil_calls = 0;
+    static float sum_ann  = 0.0f;
+    static float sum_narx = 0.0f;
+    static float sum_total = 0.0f;
+    sil_calls++;
+    sum_ann   += t_ann_ms;
+    sum_narx  += t_narx_ms;
+    sum_total += t_total_ms;
+    if (sil_calls % 100 == 0) { // a cada 1 segundo (100 ticks de 10ms)
+        char t_buf[96];
+        char s_a[16], s_n[16], s_t[16];
+        fmt_float(s_a, sum_ann   / 100.0f);
+        fmt_float(s_n, sum_narx  / 100.0f);
+        fmt_float(s_t, sum_total / 100.0f);
+        snprintf(t_buf, sizeof(t_buf),
+                 "# PROFILE ANN=%s NARX=%s TOTAL=%s ms", s_a, s_n, s_t);
         uart_println(t_buf);
-        ann_total_time = 0.0f;
+        sum_ann = 0.0f; sum_narx = 0.0f; sum_total = 0.0f;
     }
 #endif
 }

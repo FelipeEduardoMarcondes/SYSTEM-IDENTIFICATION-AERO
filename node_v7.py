@@ -275,42 +275,53 @@ EXCITACOES = {
     "APRBS": [
         "aprbs-45-1_0904_19-54.csv",
         "aprbs-45-2_0904_19-57.csv",
+        "aprbs-45-3_0904_20-01.csv",
         "aprbs-60-1_0904_20-04.csv",
         "aprbs-60-2_0904_20-07.csv",
         "aprbs-60-3_0904_20-10.csv",
     ],
     "MultiSeno": [
         "multi-seno-45-030Hz_0904_20-23.csv",
-        "multi-seno-45-030Hz_0905_00-47.csv",
         "multi-seno-45-040Hz_0904_20-26.csv",
         "multi-seno-45-050Hz_0904_20-29.csv",
         "multi-seno-60-030Hz_0904_20-32.csv",
         "multi-seno-60-040Hz_0904_20-35.csv",
+        "multi-seno-60-050Hz_0904_20-38.csv",
     ],
     "Varredura": [
+        "chirp-45-amp25_0904_20-11.csv",
         "chirp-45-amp35_0904_20-13.csv",
         "chirp-45-amp45_0904_20-15.csv",
         "chirp-60-amp40_0904_20-16.csv",
         "chirp-60-amp50_0904_20-18.csv",
+        "chirp-60-amp60_0904_20-20.csv",
     ],
     "Degraus": [
         "seq-degraus-45-1_0904_20-41.csv",
         "seq-degraus-45-2_0904_20-45.csv",
+        "seq-degraus-45-3_0904_20-48.csv",
         "seq-degraus-60-1_0904_20-51.csv",
         "seq-degraus-60-2_0904_20-54.csv",
+        "seq-degraus-60-3_0904_20-57.csv",
     ],
 }
 all_files = [f for files in EXCITACOES.values() for f in files]
 EXCITACOES["Mix"] = list(dict.fromkeys(all_files))
 
-VAL_FILES = ["chirp-45-amp25_0904_20-11.csv"]
+VAL_FILES = [
+    "RODADA-5/aprbs-3_0827_17-28.csv",
+    "RODADA-4/aprbs-2_0819_18-51.csv",
+    "RODADA-2/multi-seno-1_0804_19-03.csv",
+    "RODADA-3/chirp-1_0807_16-32.csv",
+    "RODADA-5/seq-degraus-1_0827_17-46.csv",
+    "RODADA-2/seq-degraus-2_0804_19-35.csv"
+]
 
 TEST_FILES_BY_TYPE = {
-    "APRBS":     ["aprbs-45-3_0904_20-01.csv"],
-    "MultiSeno": ["multi-seno-60-050Hz_0904_20-38.csv"],
-    "Varredura": ["chirp-60-amp60_0904_20-20.csv"],
-    "Degraus":   ["seq-degraus-45-3_0904_20-48.csv",
-                   "seq-degraus-60-3_0904_20-57.csv"],
+    "APRBS":     ["RODADA-5/aprbs-1_0827_17-19.csv", "RODADA-5/aprbs-2_0827_17-25.csv"],
+    "MultiSeno": ["RODADA-5/multi-seno-1_0827_17-34.csv", "RODADA-5/multi-seno-2_0827_17-37.csv"],
+    "Varredura": ["RODADA-2/chirp-1_0804_19-17.csv", "RODADA-3/chirp-1_0807_16-34.csv"],
+    "Degraus":   ["RODADA-5/seq-degraus-3_0827_17-52.csv", "RODADA-5/seq-degraus-4_0827_17-55.csv"],
 }
 
 
@@ -365,11 +376,11 @@ def train_node(model, name, train_datasets, val_datasets,
         mlp_p  = [p for n, p in model.named_parameters() if 'mlp' in n]
         phys_p = [p for n, p in model.named_parameters() if 'mlp' not in n]
         optimizer = optim.Adam([
-            {'params': phys_p,  'weight_decay': 0.0},
+            {'params': phys_p,  'weight_decay': 1e-4},
             {'params': mlp_p,   'weight_decay': 1e-4},
         ], lr=lr)
     else:
-        optimizer = optim.Adam(model.parameters(), lr=lr)
+        optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
 
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
@@ -407,7 +418,12 @@ def train_node(model, name, train_datasets, val_datasets,
             pred_state    = odeint(model, x0, t_eval, method=integrator)
             batch_targets = torch.stack([x_ds[i:i + k_steps] for i in start_idx], dim=1)
             loss = torch.mean(((pred_state - batch_targets) / state_std) ** 2)
-            total_loss += loss
+            
+            # Penalidade de estabilidade para evitar free-runs explosivos
+            # Limites baseados em radianos: ~ -0.5 rad (-30°) a 3.14 rad (180°)
+            pred_theta = pred_state[:, :, 0]
+            penalty = torch.mean(torch.relu(pred_theta - 3.14)**2 + torch.relu(-0.5 - pred_theta)**2) * 1e4
+            total_loss += (loss + penalty)
 
         total_loss = total_loss / len(train_datasets) + model.reg_loss()
         total_loss.backward()
@@ -632,14 +648,14 @@ if __name__ == '__main__':
             print(f"{'='*60}")
 
             # Resetar seed para reprodutibilidade
-            torch.manual_seed(0)
-            np.random.seed(0)
+            torch.manual_seed(42)
+            np.random.seed(42)
             model = ModelClass()
 
             model, best_val = train_node(
                 model, tag, exc_datasets[exc_nome], val_datasets,
                 epochs=1500, lr=0.015,
-                k_min=20, k_max=400, curriculum_stage_epochs=300,
+                k_min=20, k_max=400, curriculum_stage_epochs=300, patience=500
             )
 
             torch.save(model.state_dict(), f"{out_dir}/model_{tag}.pth")
@@ -653,9 +669,9 @@ if __name__ == '__main__':
                 rmse_m = np.mean([r['rmse'] for r in res])
                 r2_m   = np.mean([r['r2']   for r in res])
                 fit_m  = np.mean([r['fit']  for r in res])
-                por_tipo[test_tipo] = {'rmse': round(rmse_m, 4),
-                                       'r2':   round(r2_m, 4),
-                                       'fit':  round(fit_m, 2)}
+                por_tipo[test_tipo] = {'rmse': round(float(rmse_m), 4),
+                                       'r2':   round(float(r2_m), 4),
+                                       'fit':  round(float(fit_m), 2)}
                 print(f"  [TESTE {test_tipo:<10}] RMSE={rmse_m:.3f}° "
                       f"R²={r2_m:.4f} FIT={fit_m:.1f}%")
 
@@ -663,21 +679,21 @@ if __name__ == '__main__':
             rmse_g = np.mean([v['rmse'] for v in por_tipo.values()])
             r2_g   = np.mean([v['r2']   for v in por_tipo.values()])
             fit_g  = np.mean([v['fit']  for v in por_tipo.values()])
+            
             resumo[mod_nome][exc_nome] = {
                 'por_tipo': por_tipo,
-                'media': {'RMSE': round(rmse_g, 4),
-                          'R2':   round(r2_g, 4),
-                          'FIT':  round(fit_g, 2)},
-                'best_val': round(best_val, 4),
+                'media': {'RMSE': round(float(rmse_g), 4),
+                          'R2':   round(float(r2_g), 4),
+                          'FIT':  round(float(fit_g), 2)},
+                'best_val': round(float(best_val), 4),
                 'n_params': model.n_params(),
             }
             print(f"  [MÉDIA GERAL] RMSE={rmse_g:.3f}° R²={r2_g:.4f} FIT={fit_g:.1f}%")
 
             # Free-run plot
-            plot_free_run(todos_res, tag,
-                          out_path=f"{out_dir}/freerun_{tag}.png")
+            plot_free_run(todos_res, tag, out_path=f"{out_dir}/freerun_{tag}.png")
 
-            # Salvar JSON incremental (evita perder tudo se crashar)
+            # Salvar JSON incremental
             with open(f"{out_dir}/resumo.json", 'w', encoding='utf-8') as fp:
                 json.dump(resumo, fp, indent=2, ensure_ascii=False)
 
