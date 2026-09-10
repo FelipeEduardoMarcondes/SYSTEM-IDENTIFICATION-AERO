@@ -33,8 +33,8 @@ EXTENDED_TESTS = {
     ]
 }
 
-RESULT_DIR = "resultados_v7_20260906_224337"
-OUT_DIR = "resultados_v7_20260906_224337_extended_test"
+RESULT_DIR = "resultados_v7_20260908_134648"
+OUT_DIR = "resultados_v7_20260908_134648_extended_test"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 print("Carregando datasets estendidos...")
