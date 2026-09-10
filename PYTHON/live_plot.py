@@ -150,7 +150,7 @@ class LivePlot:
         erro = anga - refa
 
         t_max = ta[-1]
-        t_min = 0.0 # Removemos o limite da janela (max(0.0, t_max - self.janela_s))
+        t_min = max(0.0, t_max - self.janela_s)
         mask  = ta >= t_min
 
         self.ln_ang.set_data(ta[mask], anga[mask])

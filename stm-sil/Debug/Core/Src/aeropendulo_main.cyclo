@@ -28,7 +28,7 @@
 ../Core/Src/aeropendulo_main.c:714:21:relu	2
 ../Core/Src/aeropendulo_main.c:718:14:ann_predict	9
 ../Core/Src/aeropendulo_main.c:762:13:ciclo_controle	15
-../Core/Src/aeropendulo_main.c:905:6:HAL_UART_RxCpltCallback	6
-../Core/Src/aeropendulo_main.c:929:6:HAL_TIM_PeriodElapsedCallback	2
-../Core/Src/aeropendulo_main.c:940:6:aeropendulo_init	1
-../Core/Src/aeropendulo_main.c:1000:6:aeropendulo_loop	10
+../Core/Src/aeropendulo_main.c:916:6:HAL_UART_RxCpltCallback	6
+../Core/Src/aeropendulo_main.c:940:6:HAL_TIM_PeriodElapsedCallback	2
+../Core/Src/aeropendulo_main.c:951:6:aeropendulo_init	1
+../Core/Src/aeropendulo_main.c:1011:6:aeropendulo_loop	10
