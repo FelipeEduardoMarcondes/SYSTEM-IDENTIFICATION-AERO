@@ -34,14 +34,29 @@ from aerodata import readData
 # Closed-loop 1/4 drone acquisitions. Each signal is sliced to a fixed useful time window (20–80 s) and decimated by a common factor, then stored in a `data` dictionary.
 
 # %%
-DECIMATION = 1
-T_START, T_END = 0.0, None   # usar o dataset completo
+DECIMATION = 5
+TRIM_START_PCT = 0.02  # Descarta os primeiros 5% do sinal
+TRIM_END_PCT = 0.05    # Descarta os ultimos 5% do sinal
 
-def load_processed(name, t0=T_START, t1=T_END, decimation=DECIMATION):
-    """Load a dataset from aerodata, keep t in [t0, t1] s and decimate. Returns u, y, t, ref."""
-    y, u, t, ref = readData(dataset_name=name, decimar=decimation, return_ref=True, start_time=t0, end_time=t1)
-    if len(ref) == 0:
+def load_processed(name, trim_start=TRIM_START_PCT, trim_end=TRIM_END_PCT, decimation=DECIMATION):
+    """Load a dataset from aerodata, trim by percentage, and decimate. Returns u, y, t, ref."""
+    # Carrega o sinal original inteiro do aerodata
+    y, u, t, ref = readData(dataset_name=name, return_ref=True)
+    
+    # Calcula os índices de corte baseado na porcentagem
+    N = len(y)
+    idx_start = int(N * trim_start)
+    idx_end = int(N * (1.0 - trim_end))
+    
+    # Aplica o corte e a decimação
+    sl = slice(idx_start, idx_end, decimation)
+    u, y, t = u[sl], y[sl], t[sl]
+    
+    if len(ref) > 0:
+        ref = ref[sl]
+    else:
         ref = np.full_like(t, np.nan)
+        
     return u, y, t, ref
 
 def plot_io(u, y, t, ref, title):
@@ -63,7 +78,7 @@ train_datasets = {
 val_datasets = {
     'multisine': load_processed('data/experimentos/RODADA-7/multi-seno-60-030Hz_0904_20-32.csv'),
     'chirp':     load_processed('data/experimentos/RODADA-7/chirp-60-amp50_0904_20-18.csv'),
-    'steps':     load_processed('data/experimentos/RODADA-7/degraus_0905_00-42.csv'),
+    'steps':     load_processed('data/experimentos/RODADA-7/seq-degraus-45-2_0904_20-45.csv'),
 }
 
 # %% [markdown]
