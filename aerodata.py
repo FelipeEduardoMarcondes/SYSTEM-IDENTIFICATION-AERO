@@ -24,11 +24,11 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False):
     base_url = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/"
     
     urls = {
-        "multiseno": base_url + "experimentos/sysid_multiseno_validation_ref_0909_14-42.csv",
-        "degraus": base_url + "experimentos/degraus_0908_23-01.csv",
-        "chirp": base_url + "experimentos/chirp-60-amp50_0908_23-09.csv",
-        "mpc_100hz": base_url + "experimentos/referencia_mpc_0920_19-19.csv",
-        "multiseno_2": base_url + "experimentos/multi-seno-60-030Hz_0908_23-13.csv"
+        "multiseno": base_url + "data/experimentos/sysid_multiseno_validation_ref_0909_14-42.csv",
+        "degraus": base_url + "data/experimentos/degraus_0908_23-01.csv",
+        "chirp": base_url + "data/experimentos/chirp-60-amp50_0908_23-09.csv",
+        "mpc_100hz": base_url + "data/experimentos/referencia_mpc_0920_19-19.csv",
+        "multiseno_2": base_url + "data/experimentos/multi-seno-60-030Hz_0908_23-13.csv"
     }
     
     if dataset_name not in urls:
