@@ -10,7 +10,7 @@ import os
 # ──────────────────────────────────────────────────────────────────────
 # 1. PRÉ-PROCESSAMENTO (Idêntico ao node_v7.py)
 # ──────────────────────────────────────────────────────────────────────
-BASE = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+BASE = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/data/experimentos/"
 DECIMACAO = 2
 START_IDX = 200
 END_IDX = -150

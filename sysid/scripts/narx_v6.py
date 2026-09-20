@@ -34,7 +34,7 @@ np.random.seed(0)
 # ──────────────────────────────────────────────────────────────────────
 # 1. DEFINIÇÃO DOS EXPERIMENTOS
 # ──────────────────────────────────────────────────────────────────────
-BASE = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+BASE = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/data/experimentos/"
 
 EXPERIMENTOS = {
     "A_APRBS": [

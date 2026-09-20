@@ -304,7 +304,7 @@ def train_model_multi(model, name, datasets, epochs=1500, lr=0.015,
     return model, loss_history
 
 if __name__ == '__main__':
-    BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+    BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/data/experimentos/"
 
     train_files = [
         "RODADA-7/MIX_DC_45.csv",

@@ -417,7 +417,7 @@ def avalia_validacao(model, val_datasets, state_std, integrator):
 # ---------------------------------------------------------------------------
 if __name__ == '__main__':
     # Carregamento online — mesmo padrao do notebook ANN_NARX_AEROPENDULO_v4
-    BASE = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+    BASE = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/data/experimentos/"
 
     # ------------------------------------------------------------------
     # TREINO — Rodada 5 (27/08, raiz) + Rodada 4 (19/08, RODADA-4/)

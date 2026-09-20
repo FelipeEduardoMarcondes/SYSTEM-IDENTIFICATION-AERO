@@ -97,7 +97,7 @@ def processar_dataset(t_raw, u_raw, y_raw):
             torch.tensor(x_matrix, dtype=torch.float32),
             y_rad, v_rad_s, u_norm)
 
-BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/data/experimentos/"
 
 # Arquivos utilizados para treino (variações ricas de dinâmica)
 train_files = [

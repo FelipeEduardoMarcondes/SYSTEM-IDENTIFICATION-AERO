@@ -43,7 +43,7 @@ print(f"Using device: {device}")
 # ──────────────────────────────────────────────────────────────────────
 # 1. PRÉ-PROCESSAMENTO
 # ──────────────────────────────────────────────────────────────────────
-BASE = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+BASE = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/data/experimentos/"
 
 DECIMACAO  = 1
 START_IDX  = 150

@@ -38,7 +38,7 @@ np.random.seed(0)
 # ──────────────────────────────────────────────────────────────────────
 # 1. PRÉ-PROCESSAMENTO
 # ──────────────────────────────────────────────────────────────────────
-BASE = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+BASE = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/data/experimentos/"
 
 DECIMACAO  = 2
 START_IDX  = 200    # amostras cortadas no inicio (apos decimacao)

@@ -44,7 +44,7 @@ DT     = 0.010   # 100 Hz
 TAU_GRAV = (M1*L1 - M2*L2) * GRAV  # ~0.2795 N.m
 
 # Base do Github (igual ao node_v4.py)
-BASE_URL = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+BASE_URL = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/data/experimentos/"
 
 # Arquivos: degraus 90->0 (motor desligado apos queda)
 PATHS = [

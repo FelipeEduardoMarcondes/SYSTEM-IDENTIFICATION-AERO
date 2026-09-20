@@ -220,7 +220,7 @@ def avalia_validacao(model, val_datasets, state_std, integrator):
 
 
 if __name__ == '__main__':
-    BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+    BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/data/experimentos/"
     
     train_files = [
         "RODADA-2/multi-seno-1_0804_19-06.csv",

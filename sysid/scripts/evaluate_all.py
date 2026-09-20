@@ -15,7 +15,7 @@ from visualize_custom import PhysicsODE_Hybrid as PhysicsODE_Hybrid_32, BlackBox
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-BASE_URL = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+BASE_URL = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/data/experimentos/"
 test_files = [
     "multi-seno-1_0807_16-57.csv",
     "seq-degraus-1_0807_16-38.csv"

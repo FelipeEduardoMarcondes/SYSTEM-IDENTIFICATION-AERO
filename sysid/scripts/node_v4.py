@@ -314,7 +314,7 @@ def plot_datasets(datasets, title):
     plt.show()
 
 if __name__ == '__main__':
-    BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
+    BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/data/experimentos/"
 
     train_files = [
         # --- Rodada 5 (27/08) — sessao mais recente, maior confianca ---
