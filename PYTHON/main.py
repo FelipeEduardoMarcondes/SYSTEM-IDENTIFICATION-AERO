@@ -256,6 +256,44 @@ def rodar_repouso(porta: str) -> str | None:
     if len(linhas) < 2: return None
     return salvar_csv(linhas, prefixo="repouso")
 
+def rodar_malha_aberta(porta: str) -> str | None:
+    mgr = _conectar_e_aguardar(porta)
+    if not mgr: return None
+    
+    u_pct = _pedir_float("Valor do PWM (%) [0-100]", 30.0)
+    duracao_s = _pedir_float("Duracao DO DEGRAU (s)", 20.0)
+    
+    _pedir_recal(mgr)
+
+    print(f"\n  Configurando malha aberta (PWM = {u_pct}%)...")
+    print("  NOTA: Os primeiros 5 segundos serão com PWM = 0 para baseline.")
+    mgr.enviar(f"OPENLOOP={u_pct:.1f}")
+    if not mgr.aguardar_token("OPENLOOP_OK", timeout_s=5.0):
+        print("  [ERRO] Falha ao configurar OPENLOOP no STM32.")
+        mgr.fechar()
+        return None
+
+    live = LivePlot(nome=f"MALHA ABERTA {u_pct:.1f}%", janela_s=min(30.0, duracao_s / 2))
+    
+    print("  Aguardando 2 segundos antes de começar (teste ESC)...")
+    import time
+    time.sleep(2.0)
+
+    if not mgr.iniciar_experimento():
+        live.fechar()
+        mgr.fechar()
+        return None
+
+    aq = Aquisicao(mgr, live)
+    linhas = aq.rodar(duracao_s=duracao_s + 5.0, modo="wave")
+    live.fechar()
+    mgr.fechar()
+
+    if len(linhas) < 2: return None
+    # Converte para int para não ficar "30.0" no nome do arquivo se for redondo
+    str_pwm = f"{int(u_pct)}" if u_pct.is_integer() else f"{u_pct:.1f}".replace('.', '_')
+    return salvar_csv(linhas, prefixo=f"malha_aberta_{str_pwm}")
+
 def recalibrar(porta: str):
     mgr = _conectar_e_aguardar(porta)
     if not mgr: return
@@ -271,12 +309,13 @@ def _menu() -> str:
         print("  [3] Coleta em repouso (sem controle)")
         print("  [4] Recalibrar giroscopio")
         print("  [5] Plotar CSV existente")
+        print("  [6] Coleta de malha aberta (PWM fixo)")
     else:
         print("  [5] Plotar CSV existente")
         print("\n  OBS: pyserial nao instalado.")
     print("  [0] Sair")
 
-    validas = {"0", "5"} | ({"1", "2", "3", "4"} if SERIAL_OK else set())
+    validas = {"0", "5"} | ({"1", "2", "3", "4", "6"} if SERIAL_OK else set())
     while True:
         op = input("\n  Opcao: ").strip()
         if op in validas: return op
@@ -294,7 +333,7 @@ if __name__ == "__main__":
     op = _menu()
 
     if op == "0": sys.exit(0)
-    elif op in ("1", "2", "3", "4"):
+    elif op in ("1", "2", "3", "4", "6"):
         porta = selecionar_porta()
         if not porta: sys.exit(1)
 
@@ -307,6 +346,8 @@ if __name__ == "__main__":
         elif op == "4":
             recalibrar(porta)
             caminho = None
+        elif op == "6":
+            caminho = rodar_malha_aberta(porta)
 
         if caminho:
             print(f"\n  Plotando resultado: {caminho}")

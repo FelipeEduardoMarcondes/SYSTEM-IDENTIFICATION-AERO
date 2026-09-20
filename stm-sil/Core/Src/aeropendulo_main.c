@@ -32,9 +32,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-
-#define SIL_MODE 1
-
+#define SIL_MODE 1 // <-- Habilitado para o STM simular a bancada (NARX) e fazer o controle preditivo
 #ifdef SIL_MODE
 #include "ann_weights.h"
 #endif
@@ -145,6 +143,10 @@ static float    chirp_dc      = 0.0f;
 static float    chirp_pad_s   = 0.0f;
 static float    chirp_a       = 0.0f;
 static float    chirp_b       = 0.0f;
+
+/* --- OPENLOOP ------------------------------------------------------------ */
+static uint8_t  openloop_ativo = 0;
+static float    openloop_u     = 0.0f;
 
 /* --- Temporização --------------------------------------------------------- */
 static uint32_t tempo_inicio = 0;
@@ -605,6 +607,7 @@ static void processar_comando(const char *cmd)
         resetar_controlador();
         wave_ativo  = 0;
         chirp_ativo = 0;
+        openloop_ativo = 0;
         wave_idx    = 0;
         n_degraus   = 0;
         estado = ESTADO_IDLE;
@@ -649,6 +652,16 @@ static void processar_comando(const char *cmd)
 
     if (strncmp(cmd, "CHIRP=", 6) == 0 && estado == ESTADO_IDLE) {
         parsear_chirp(cmd);
+        return;
+    }
+
+    if (strncmp(cmd, "OPENLOOP=", 9) == 0 && estado == ESTADO_IDLE) {
+        openloop_u = strtof(cmd + 9, NULL);
+        openloop_ativo = 1;
+        wave_ativo = 0;
+        chirp_ativo = 0;
+        n_degraus = 0;
+        uart_println("# OPENLOOP_OK");
         return;
     }
 
@@ -826,44 +839,63 @@ static void ciclo_controle(void)
 #ifndef SIL_MODE
     float y_med = angulo_filtrado + 90.0f;
     float e     = r - y_med;
+    float u;
 
-    float u_p = KP * e;
-    u_i       = u_i + KI * (TS / 2.0f) * (e + e_1);          /* Tustin      */
-    float u_d = -(KD / TS) * (y_med - y_1);                   /* backward    */
-    float u   = u_p + u_i + u_d;
+    if (openloop_ativo) {
+        if (t_exp < 5000) {
+            u = 0.0f;
+        } else {
+            u = openloop_u;
+        }
+    } else {
+        float u_p = KP * e;
+        u_i       = u_i + KI * (TS / 2.0f) * (e + e_1);          /* Tustin      */
+        float u_d = -(KD / TS) * (y_med - y_1);                   /* backward    */
+        u   = u_p + u_i + u_d;
 
-    /* Anti-windup por back-calculation */
-    float u_sat = u;
-    if (u_sat >  U_MAX) u_sat =  U_MAX;
-    if (u_sat < -U_MAX) u_sat = -U_MAX;
-    if (u != u_sat) u_i -= (u - u_sat);
-    u = u_sat;
+        /* Anti-windup por back-calculation */
+        float u_sat = u;
+        if (u_sat >  U_MAX) u_sat =  U_MAX;
+        if (u_sat < -U_MAX) u_sat = -U_MAX;
+        if (u != u_sat) u_i -= (u - u_sat);
+        u = u_sat;
+    }
 
     esc_set_us(pct_para_us(u));
 #else
     float y_med = sil_y_hist[0];
+    float u;
+    float t_ann_ms = 0.0f;
     
-    // Assemble ANN input: [x, ref_window]
-    float nn_in[20];
-    for(int i=0; i<5; i++) nn_in[i] = sil_y_hist[i];
-    for(int i=0; i<5; i++) nn_in[5+i] = sil_u_hist[i];
-    
-    // ref_window: N=10 points
-    for(int i=0; i<10; i++) {
-        // Assume constant reference for the horizon N=10 (okay for steps)
-        nn_in[10+i] = r; 
-    }
+    if (openloop_ativo) {
+        if (t_exp < 5000) {
+            u = 0.0f;
+        } else {
+            u = openloop_u;
+        }
+    } else {
+        // Assemble ANN input: [x, ref_window]
+        float nn_in[20];
+        for(int i=0; i<5; i++) nn_in[i] = sil_y_hist[i];
+        for(int i=0; i<5; i++) nn_in[5+i] = sil_u_hist[i];
+        
+        // ref_window: N=10 points
+        for(int i=0; i<10; i++) {
+            // Assume constant reference for the horizon N=10 (okay for steps)
+            nn_in[10+i] = r; 
+        }
 
-    uint32_t c_ann1 = DWT->CYCCNT;
-    float u = ann_predict(nn_in);
-    uint32_t c_ann2 = DWT->CYCCNT;
+        uint32_t c_ann1 = DWT->CYCCNT;
+        u = ann_predict(nn_in);
+        uint32_t c_ann2 = DWT->CYCCNT;
+        t_ann_ms  = (float)(c_ann2  - c_ann1)  / (float)(hclk_mhz * 1000.0f);
+    }
 
     // Apply control to virtual plant
     uint32_t c_narx1 = DWT->CYCCNT;
     simulate_narx(u);
     uint32_t c_narx2 = DWT->CYCCNT;
 
-    float t_ann_ms  = (float)(c_ann2  - c_ann1)  / (float)(hclk_mhz * 1000.0f);
     float t_narx_ms = (float)(c_narx2 - c_narx1) / (float)(hclk_mhz * 1000.0f);
     float t_total_ms = t_ann_ms + t_narx_ms;
 #endif
@@ -877,7 +909,7 @@ static void ciclo_controle(void)
     char s_y[16], s_u[16], s_r[16];
     fmt_float(s_y, y_med);
     fmt_float(s_u, u);
-    fmt_float(s_r, r);
+    fmt_float(s_r, openloop_ativo ? 0.0f : r);
     snprintf(buf, sizeof(buf), "%lu,%s,%s,%s\r\n",
              (unsigned long)t_exp, s_y, s_u, s_r);
     uart_print(buf);

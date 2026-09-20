@@ -140,6 +140,10 @@ static float    chirp_pad_s   = 0.0f;
 static float    chirp_a       = 0.0f;
 static float    chirp_b       = 0.0f;
 
+/* --- OPENLOOP ------------------------------------------------------------ */
+static uint8_t  openloop_ativo = 0;
+static float    openloop_u     = 0.0f;
+
 /* --- Temporização --------------------------------------------------------- */
 static uint32_t tempo_inicio = 0;
 static uint32_t ultimo_dado_us = 0;
@@ -599,6 +603,7 @@ static void processar_comando(const char *cmd)
         resetar_controlador();
         wave_ativo  = 0;
         chirp_ativo = 0;
+        openloop_ativo = 0;
         wave_idx    = 0;
         n_degraus   = 0;
         estado = ESTADO_IDLE;
@@ -628,6 +633,16 @@ static void processar_comando(const char *cmd)
         n_degraus   = 0;
         chirp_ativo = 0;
         iniciar_wave(cmd);
+        return;
+    }
+
+    if (strncmp(cmd, "OPENLOOP=", 9) == 0 && estado == ESTADO_IDLE) {
+        openloop_u = strtof(cmd + 9, NULL);
+        openloop_ativo = 1;
+        wave_ativo = 0;
+        chirp_ativo = 0;
+        n_degraus = 0;
+        uart_println("# OPENLOOP_OK");
         return;
     }
 
@@ -736,18 +751,27 @@ static void ciclo_controle(void)
     /* --- PID discreto ----------------------------------------------------- */
     float y_med = angulo_filtrado + 90.0f;
     float e     = r - y_med;
+    float u;
 
-    float u_p = KP * e;
-    u_i       = u_i + KI * (TS / 2.0f) * (e + e_1);          /* Tustin      */
-    float u_d = -(KD / TS) * (y_med - y_1);                   /* backward    */
-    float u   = u_p + u_i + u_d;
+    if (openloop_ativo) {
+        if (t_exp < 5000) {
+            u = 0.0f;
+        } else {
+            u = openloop_u;
+        }
+    } else {
+        float u_p = KP * e;
+        u_i       = u_i + KI * (TS / 2.0f) * (e + e_1);          /* Tustin      */
+        float u_d = -(KD / TS) * (y_med - y_1);                   /* backward    */
+        u   = u_p + u_i + u_d;
 
-    /* Anti-windup por back-calculation */
-    float u_sat = u;
-    if (u_sat >  U_MAX) u_sat =  U_MAX;
-    if (u_sat < -U_MAX) u_sat = -U_MAX;
-    if (u != u_sat) u_i -= (u - u_sat);
-    u = u_sat;
+        /* Anti-windup por back-calculation */
+        float u_sat = u;
+        if (u_sat >  U_MAX) u_sat =  U_MAX;
+        if (u_sat < -U_MAX) u_sat = -U_MAX;
+        if (u != u_sat) u_i -= (u - u_sat);
+        u = u_sat;
+    }
 
     esc_set_us(pct_para_us(u));
     e_1 = e;
@@ -758,7 +782,7 @@ static void ciclo_controle(void)
     char s_y[16], s_u[16], s_r[16];
     fmt_float(s_y, y_med);
     fmt_float(s_u, u);
-    fmt_float(s_r, r);
+    fmt_float(s_r, openloop_ativo ? 0.0f : r);
     snprintf(buf, sizeof(buf), "%lu,%s,%s,%s\r\n",
              (unsigned long)t_exp, s_y, s_u, s_r);
     uart_print(buf);
