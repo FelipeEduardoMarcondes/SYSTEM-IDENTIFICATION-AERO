@@ -1,0 +1,17 @@
+{
+  "Asymmetric": {
+    "RODADA-2/chirp-1_0804_19-19.csv": 14.621080704809836,
+    "RODADA-2/multi-seno-2_0804_19-28.csv": 22.174988219592418,
+    "RODADA-2/seq-degraus-1_0804_19-09.csv": 12.859042750871854
+  },
+  "AsymmAero": {
+    "RODADA-2/chirp-1_0804_19-19.csv": 14.138972300691679,
+    "RODADA-2/multi-seno-2_0804_19-28.csv": 22.02311186128535,
+    "RODADA-2/seq-degraus-1_0804_19-09.csv": 12.304130691766815
+  },
+  "AsymmAeroCoulomb": {
+    "RODADA-2/chirp-1_0804_19-19.csv": 19.728472215729145,
+    "RODADA-2/multi-seno-2_0804_19-28.csv": 29.366775984746457,
+    "RODADA-2/seq-degraus-1_0804_19-09.csv": 18.26775760780666
+  }
+}

@@ -31,7 +31,7 @@ np.random.seed(0)
 
 # %%
 # Configuração: Escolha quais modelos treinar
-TREINAR_BASELINE = True
+TREINAR_BASELINE = False
 TREINAR_ASSIMETRICO = True
 TREINAR_ASSIMETRICO_AERO = True
 TREINAR_ASSIMETRICO_AERO_COULOMB = True
@@ -348,62 +348,66 @@ if __name__ == '__main__':
 
     modelos = {}
 
-    os.makedirs('modelos_salvos', exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = f"resultados_v3_{timestamp}"
+    os.makedirs(out_dir, exist_ok=True)
+    print(f"Resultados em: {out_dir}/\n")
 
     if TREINAR_BASELINE:
         base_model = PhysicsODE_Baseline()
         base_model, hist = train_model_multi(
             base_model, "Baseline", train_datasets,
-            epochs=2000, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
-            state_std=state_std
+            epochs=2800, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
+            state_std=state_std, base_batch_size=2048
         )
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        torch.save(base_model.state_dict(), f'modelos_salvos/node_v3_baseline_{timestamp}.pth')
+        torch.save(base_model.state_dict(), f'{out_dir}/model_baseline.pth')
         modelos["Baseline"] = base_model
 
     if TREINAR_ASSIMETRICO:
         asymm_model = PhysicsODE_Asymmetric()
         asymm_model, hist = train_model_multi(
             asymm_model, "Assimétrico", train_datasets,
-            epochs=2000, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
-            state_std=state_std
+            epochs=2800, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
+            state_std=state_std, base_batch_size=2048
         )
-        torch.save(asymm_model.state_dict(), f'modelos_salvos/node_v3_asymmetric_{timestamp}.pth')
+        torch.save(asymm_model.state_dict(), f'{out_dir}/model_asymmetric.pth')
         modelos["Asymmetric"] = asymm_model
 
     if TREINAR_ASSIMETRICO_AERO:
         aero_model = PhysicsODE_AsymmetricAero()
         aero_model, hist = train_model_multi(
             aero_model, "Assimétrico+Aero", train_datasets,
-            epochs=2000, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
-            state_std=state_std
+            epochs=2800, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
+            state_std=state_std, base_batch_size=2048
         )
-        torch.save(aero_model.state_dict(), f'modelos_salvos/node_v3_asymm_aero_{timestamp}.pth')
+        torch.save(aero_model.state_dict(), f'{out_dir}/model_asymm_aero.pth')
         modelos["AsymmAero"] = aero_model
 
     if TREINAR_ASSIMETRICO_AERO_COULOMB:
         aero_coulomb_model = PhysicsODE_AsymmetricAeroCoulomb()
         aero_coulomb_model, hist = train_model_multi(
             aero_coulomb_model, "Assimétrico+Aero+Coulomb", train_datasets,
-            epochs=2000, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
-            state_std=state_std
+            epochs=2800, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
+            state_std=state_std, base_batch_size=2048
         )
-        torch.save(aero_coulomb_model.state_dict(), f'modelos_salvos/node_v3_asymm_aero_coulomb_{timestamp}.pth')
+        torch.save(aero_coulomb_model.state_dict(), f'{out_dir}/model_asymm_aero_coulomb.pth')
         modelos["AsymmAeroCoulomb"] = aero_coulomb_model
 
     if TREINAR_HIBRIDO:
         hybrid_model = PhysicsODE_Hybrid(hidden_dim=16)
         hybrid_model, hist = train_model_multi(
             hybrid_model, "Híbrido", train_datasets,
-            epochs=2000, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
-            state_std=state_std
+            epochs=2800, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
+            state_std=state_std, base_batch_size=2048
         )
-        torch.save(hybrid_model.state_dict(), f'modelos_salvos/node_v3_hybrid_{timestamp}.pth')
+        torch.save(hybrid_model.state_dict(), f'{out_dir}/model_hybrid.pth')
         modelos["Hybrid"] = hybrid_model
 
     print("\n--- Simulação Free-Run (Testes) ---")
-    resultados_rmse = {nome: [] for nome in modelos.keys()}
-
+    resultados_rmse = {nome: {} for nome in modelos.keys()}
+    
+    import json
+    
     for i, ds in enumerate(test_datasets):
         t_t = ds['t'].to(device)
         u_t = ds['u'].to(device)
@@ -423,7 +427,25 @@ if __name__ == '__main__':
                 pred = odeint(modelo, x0, t_t, method='dopri5', rtol=1e-5, atol=1e-6).squeeze(1).cpu().numpy()
                 pred_deg = pred[:, 0] * (180.0 / np.pi)
                 rmse = np.sqrt(mean_squared_error(y_real_deg, pred_deg))
-                resultados_rmse[nome].append(rmse)
+                resultados_rmse[nome][ds['name']] = float(rmse)
                 msg += f" | {nome}: {rmse:6.2f}°"
+                
+                # Plotting
+                plt.figure(figsize=(10, 4))
+                plt.plot(t_t.cpu().numpy(), y_real_deg, 'k-', lw=1.2, label='Real')
+                plt.plot(t_t.cpu().numpy(), pred_deg, 'r--', lw=1.2, label=f'Pred ({nome})')
+                plt.title(f"Teste: {ds['name']} | Modelo: {nome} | RMSE: {rmse:.2f}°")
+                plt.xlabel("Tempo (s)")
+                plt.ylabel("Ângulo (°)")
+                plt.legend()
+                plt.grid(True, alpha=0.4)
+                
+                safe_name = ds['name'].replace('/', '_').replace('\\', '_')
+                plt.savefig(f"{out_dir}/freerun_{nome}_{safe_name}.png", dpi=100, bbox_inches='tight')
+                plt.close()
 
         print(msg)
+        
+    with open(f"{out_dir}/resultados.json", "w", encoding="utf-8") as f:
+        json.dump(resultados_rmse, f, indent=2, ensure_ascii=False)
+    print(f"\nResultados salvos em {out_dir}/")
