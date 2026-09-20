@@ -22,6 +22,7 @@ from torchdiffeq import odeint
 from scipy.signal import savgol_filter, decimate
 from sklearn.metrics import mean_squared_error
 
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
@@ -32,7 +33,9 @@ np.random.seed(0)
 # Configuração: Escolha quais modelos treinar
 TREINAR_BASELINE = True
 TREINAR_ASSIMETRICO = True
-TREINAR_HIBRIDO = True
+TREINAR_ASSIMETRICO_AERO = True
+TREINAR_ASSIMETRICO_AERO_COULOMB = True
+TREINAR_HIBRIDO = False
 
 # %%
 def carregar_experimento(url, decimacao=1):
@@ -61,14 +64,14 @@ def carregar_experimento(url, decimacao=1):
 def processar_dataset(t_raw, u_raw, y_raw):
     t_raw = t_raw - t_raw[0]
     y_rad = y_raw * (np.pi / 180.0)
-    
+
     # CORREÇÃO v3: u pode ser negativo, então clipamos em [-1.0, 1.0]
     u_norm = np.clip(u_raw / 100.0, -1.0, 1.0)
-    
+
     dt_mean = np.mean(np.diff(t_raw))
     v_rad_s = savgol_filter(y_rad, 11, 3, deriv=1, delta=dt_mean)
     x_matrix = np.vstack((y_rad, v_rad_s)).T
-    
+
     return (torch.tensor(t_raw, dtype=torch.float32),
             torch.tensor(u_norm, dtype=torch.float32).unsqueeze(1),
             torch.tensor(x_matrix, dtype=torch.float32),
@@ -111,11 +114,11 @@ class PhysicsODE_Baseline(BaseODE):
         J, b, Gu = self.get_params()
         u_t = self._get_u_t(t, x)
         theta, theta_dot = x[:, 0:1], x[:, 1:2]
-        
+
         motor_torque = Gu * u_t * torch.abs(u_t)
         gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
         friction_torque = b * theta_dot
-        
+
         theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
         return torch.cat([theta_dot, theta_ddot], dim=1)
 
@@ -131,17 +134,96 @@ class PhysicsODE_Asymmetric(BaseODE):
         b_neg = torch.exp(self.log_b_neg)
         Gu_pos = torch.exp(self.log_Gu)
         Gu_neg = torch.exp(self.log_Gu_neg)
-        
+
         u_t = self._get_u_t(t, x)
         theta, theta_dot = x[:, 0:1], x[:, 1:2]
-        
+
         b = torch.where(theta_dot > 0, b_pos, b_neg)
         Gu = torch.where(u_t > 0, Gu_pos, Gu_neg)
-        
+
         motor_torque = Gu * u_t * torch.abs(u_t)
         gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
         friction_torque = b * theta_dot
-        
+
+        theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
+        return torch.cat([theta_dot, theta_ddot], dim=1)
+
+class PhysicsODE_AsymmetricAero(BaseODE):
+    """Assimétrico + Arrasto aerodinâmico quadrático. 7 params.
+    tau_atrito = b*theta_dot + c*theta_dot*|theta_dot|
+    onde b e c são assimétricos (positivo/negativo).
+    """
+    def __init__(self, J0=1.0, b_pos0=np.exp(-1.0), b_neg0=np.exp(-1.0),
+                 Gu_pos0=1.0, Gu_neg0=1.0, c_pos0=0.01, c_neg0=0.01):
+        super().__init__(J0, b_pos0, Gu_pos0)
+        self.log_b_neg = nn.Parameter(torch.log(torch.tensor(float(b_neg0))))
+        self.log_Gu_neg = nn.Parameter(torch.log(torch.tensor(float(Gu_neg0))))
+        self.log_c_pos = nn.Parameter(torch.log(torch.tensor(float(c_pos0))))
+        self.log_c_neg = nn.Parameter(torch.log(torch.tensor(float(c_neg0))))
+
+    def forward(self, t, x):
+        J = torch.exp(self.log_J)
+        b_pos = torch.exp(self.log_b)
+        b_neg = torch.exp(self.log_b_neg)
+        Gu_pos = torch.exp(self.log_Gu)
+        Gu_neg = torch.exp(self.log_Gu_neg)
+        c_pos = torch.exp(self.log_c_pos)
+        c_neg = torch.exp(self.log_c_neg)
+
+        u_t = self._get_u_t(t, x)
+        theta, theta_dot = x[:, 0:1], x[:, 1:2]
+
+        b = torch.where(theta_dot > 0, b_pos, b_neg)
+        Gu = torch.where(u_t > 0, Gu_pos, Gu_neg)
+        c = torch.where(theta_dot > 0, c_pos, c_neg)
+
+        motor_torque = Gu * u_t * torch.abs(u_t)
+        gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
+        friction_torque = b * theta_dot + c * theta_dot * torch.abs(theta_dot)
+
+        theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
+        return torch.cat([theta_dot, theta_ddot], dim=1)
+
+class PhysicsODE_AsymmetricAeroCoulomb(BaseODE):
+    """Assimétrico + Arrasto + Coulomb. 9 params.
+    tau_atrito = b*theta_dot + c*theta_dot*|theta_dot| + Tc*tanh(100*theta_dot)
+    onde b, c e Tc são assimétricos.
+    """
+    def __init__(self, J0=1.0, b_pos0=np.exp(-1.0), b_neg0=np.exp(-1.0),
+                 Gu_pos0=1.0, Gu_neg0=1.0, c_pos0=0.01, c_neg0=0.01,
+                 Tc_pos0=0.01, Tc_neg0=0.01):
+        super().__init__(J0, b_pos0, Gu_pos0)
+        self.log_b_neg = nn.Parameter(torch.log(torch.tensor(float(b_neg0))))
+        self.log_Gu_neg = nn.Parameter(torch.log(torch.tensor(float(Gu_neg0))))
+        self.log_c_pos = nn.Parameter(torch.log(torch.tensor(float(c_pos0))))
+        self.log_c_neg = nn.Parameter(torch.log(torch.tensor(float(c_neg0))))
+        self.log_Tc_pos = nn.Parameter(torch.log(torch.tensor(float(Tc_pos0))))
+        self.log_Tc_neg = nn.Parameter(torch.log(torch.tensor(float(Tc_neg0))))
+
+    def forward(self, t, x):
+        J = torch.exp(self.log_J)
+        b_pos = torch.exp(self.log_b)
+        b_neg = torch.exp(self.log_b_neg)
+        Gu_pos = torch.exp(self.log_Gu)
+        Gu_neg = torch.exp(self.log_Gu_neg)
+        c_pos = torch.exp(self.log_c_pos)
+        c_neg = torch.exp(self.log_c_neg)
+        Tc_pos = torch.exp(self.log_Tc_pos)
+        Tc_neg = torch.exp(self.log_Tc_neg)
+
+        u_t = self._get_u_t(t, x)
+        theta, theta_dot = x[:, 0:1], x[:, 1:2]
+
+        b = torch.where(theta_dot > 0, b_pos, b_neg)
+        Gu = torch.where(u_t > 0, Gu_pos, Gu_neg)
+        c = torch.where(theta_dot > 0, c_pos, c_neg)
+        Tc = torch.where(theta_dot > 0, Tc_pos, Tc_neg)
+
+        motor_torque = Gu * u_t * torch.abs(u_t)
+        gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
+        # Atrito: viscoso + arrasto quadrático + Coulomb (atrito seco)
+        friction_torque = b * theta_dot + c * theta_dot * torch.abs(theta_dot) + Tc * torch.tanh(100.0 * theta_dot)
+
         theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
         return torch.cat([theta_dot, theta_ddot], dim=1)
 
@@ -153,19 +235,19 @@ class PhysicsODE_Hybrid(BaseODE):
             nn.Tanh(),
             nn.Linear(hidden_dim, 1)
         )
-        
+
     def forward(self, t, x):
         J, b, Gu = self.get_params()
         u_t = self._get_u_t(t, x)
         theta, theta_dot = x[:, 0:1], x[:, 1:2]
-        
+
         motor_torque = Gu * u_t * torch.abs(u_t)
         gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
         friction_torque = b * theta_dot
-        
+
         nn_input = torch.cat([theta, theta_dot, u_t], dim=1)
         residual_torque = self.mlp(nn_input)
-        
+
         theta_ddot = (motor_torque - gravity_torque - friction_torque + residual_torque) / J
         return torch.cat([theta_dot, theta_ddot], dim=1)
 
@@ -223,19 +305,12 @@ def train_model_multi(model, name, datasets, epochs=1500, lr=0.015,
 
 if __name__ == '__main__':
     BASE2 = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/experimentos/"
-    
+
     train_files = [
-        "RODADA-2/multi-seno-1_0804_19-06.csv",
-        "RODADA-2/seq-degraus-2_0804_19-38.csv",
-        "RODADA-2/multi-seno-3_0804_19-44.csv",
-        "RODADA-2/seq-degraus-1_0804_19-12.csv",
-        "multi-seno-1_0807_16-57.csv",
-        "multi-seno-2_0807_17-13.csv",
-        "seq-degraus-1_0807_16-38.csv",
-        "seq-degraus-aprbs-2_0807_17-23.csv",
-        "seq-dragus-aprbs_0807_16-50.csv"
+        "RODADA-7/MIX_DC_45.csv",
+        "RODADA-7/MIX_DC_60.csv"
     ]
-    
+
     test_files = [
         "RODADA-2/chirp-1_0804_19-19.csv",
         "RODADA-2/multi-seno-2_0804_19-28.csv",
@@ -272,7 +347,7 @@ if __name__ == '__main__':
     state_std = torch.tensor([float(np.std(all_pos)), float(np.std(all_vel))], dtype=torch.float32, device=device)
 
     modelos = {}
-    
+
     os.makedirs('modelos_salvos', exist_ok=True)
 
     if TREINAR_BASELINE:
@@ -295,7 +370,27 @@ if __name__ == '__main__':
         )
         torch.save(asymm_model.state_dict(), f'modelos_salvos/node_v3_asymmetric_{timestamp}.pth')
         modelos["Asymmetric"] = asymm_model
-        
+
+    if TREINAR_ASSIMETRICO_AERO:
+        aero_model = PhysicsODE_AsymmetricAero()
+        aero_model, hist = train_model_multi(
+            aero_model, "Assimétrico+Aero", train_datasets,
+            epochs=2000, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
+            state_std=state_std
+        )
+        torch.save(aero_model.state_dict(), f'modelos_salvos/node_v3_asymm_aero_{timestamp}.pth')
+        modelos["AsymmAero"] = aero_model
+
+    if TREINAR_ASSIMETRICO_AERO_COULOMB:
+        aero_coulomb_model = PhysicsODE_AsymmetricAeroCoulomb()
+        aero_coulomb_model, hist = train_model_multi(
+            aero_coulomb_model, "Assimétrico+Aero+Coulomb", train_datasets,
+            epochs=2000, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
+            state_std=state_std
+        )
+        torch.save(aero_coulomb_model.state_dict(), f'modelos_salvos/node_v3_asymm_aero_coulomb_{timestamp}.pth')
+        modelos["AsymmAeroCoulomb"] = aero_coulomb_model
+
     if TREINAR_HIBRIDO:
         hybrid_model = PhysicsODE_Hybrid(hidden_dim=16)
         hybrid_model, hist = train_model_multi(
@@ -314,9 +409,9 @@ if __name__ == '__main__':
         u_t = ds['u'].to(device)
         x_t = ds['x'].to(device)
         y_real_deg = x_t[:, 0].cpu().numpy() * (180.0 / np.pi)
-        
+
         msg = f"{ds['name']:40s}"
-        
+
         with torch.no_grad():
             x0 = x_t[0].unsqueeze(0)
             for nome, modelo in modelos.items():
@@ -324,11 +419,11 @@ if __name__ == '__main__':
                 modelo.u_series = u_t
                 modelo.t_series = t_t
                 modelo.batch_start_times = torch.zeros(1, 1, device=device)
-                
+
                 pred = odeint(modelo, x0, t_t, method='dopri5', rtol=1e-5, atol=1e-6).squeeze(1).cpu().numpy()
                 pred_deg = pred[:, 0] * (180.0 / np.pi)
                 rmse = np.sqrt(mean_squared_error(y_real_deg, pred_deg))
                 resultados_rmse[nome].append(rmse)
                 msg += f" | {nome}: {rmse:6.2f}°"
-                
+
         print(msg)

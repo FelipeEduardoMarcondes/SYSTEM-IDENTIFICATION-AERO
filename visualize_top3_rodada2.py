@@ -20,9 +20,9 @@ print(f"Using device: {device}")
 # Tipos disponíveis: "Baseline", "Asymmetric", "Hybrid", "BlackBox"
 
 MODELOS = {
-    "V3 Hybrid": {"tipo": "Hybrid", "caminho": "modelos_salvos/node_v4_hybrid_20260821_231304.pth", "comparar": True},
-    "Black Box": {"tipo": "BlackBox", "caminho": "modelos_salvos/node_caixa_preta.pth", "comparar": True},
-    "V4 Asymmetric": {"tipo": "Asymmetric", "caminho": "modelos_salvos/node_v4_asymmetric_20260822_105519.pth", "comparar": True}
+    "V3 Hybrid": {"tipo": "Hybrid", "caminho": "modelos_salvos/node_v4_hybrid_20260821_231304.pth", "comparar": False},
+    "Black Box": {"tipo": "BlackBox", "caminho": "modelos_salvos/node_caixa_preta.pth", "comparar": False},
+    "V4 Asymmetric": {"tipo": "Asymmetric", "caminho": "modelos_salvos/node_v3_asymmetric_20260919_232541.pth", "comparar": True}
 }
 
 # ==========================================
