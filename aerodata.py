@@ -57,7 +57,7 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False, start_idx=0,
     
     try:
         print(f"Baixando dataset '{dataset_name}' do GitHub...")
-        df = pd.read_csv(url)
+        df = pd.read_csv(url, on_bad_lines='skip')
     except Exception as e:
         raise RuntimeError(f"Erro ao baixar {url}: {e}")
         
