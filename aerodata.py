@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-def readData(dataset_name="multiseno", decimar=1, return_ref=False):
+def readData(dataset_name="multiseno", decimar=1, return_ref=False, start_idx=0, end_idx=None, start_time=None, end_time=None):
     """
     Funcao oficial para baixar os dados do Aeropendulo direto do GitHub.
     
@@ -13,6 +13,14 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False):
         Fator de subamostragem (1 = 100 Hz, 2 = 50 Hz, 5 = 20 Hz, etc)
     return_ref : bool
         Se True, retorna a referencia (se disponivel) como 4o elemento.
+    start_idx : int
+        Indice inicial de corte do dataset (padrao 0).
+    end_idx : int
+        Indice final de corte do dataset (padrao None).
+    start_time : float
+        Tempo inicial em segundos para o corte (sobrepoe start_idx se fornecido).
+    end_time : float
+        Tempo final em segundos para o corte (sobrepoe end_idx se fornecido).
         
     Retorna
     -------
@@ -31,10 +39,21 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False):
         "multiseno_2": base_url + "data/experimentos/multi-seno-60-030Hz_0908_23-13.csv"
     }
     
-    if dataset_name not in urls:
-        raise ValueError(f"Dataset nao encontrado. Escolha um destes: {list(urls.keys())}")
-                         
-    url = urls[dataset_name]
+    if dataset_name in urls:
+        url = urls[dataset_name]
+    elif dataset_name.startswith("http"):
+        url = dataset_name
+    elif dataset_name.endswith(".csv"):
+        # Trata caminhos com subpastas (ex: "RODADA-1/ensaio.csv" ou "data/controle/ref.csv")
+        # Se o usuario ja especificou "data/", vai direto da raiz do repo
+        if dataset_name.startswith("data/"):
+            url = base_url + dataset_name
+        else:
+            # Senao, assume que esta dentro de data/experimentos/ por padrao
+            url = base_url + "data/experimentos/" + dataset_name
+    else:
+        raise ValueError(f"Dataset nao encontrado. Escolha um destes: {list(urls.keys())}\n"
+                         "Ou passe o nome do arquivo exato (ex: 'ensaio.csv') ou a URL.")
     
     try:
         print(f"Baixando dataset '{dataset_name}' do GitHub...")
@@ -67,6 +86,19 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False):
         ref = df['referencia'].values
     elif 'referencia_deg' in df.columns:
         ref = df['referencia_deg'].values
+        
+    # Converte tempos (se fornecidos) para indices
+    if start_time is not None:
+        start_idx = np.searchsorted(tempo_s, start_time)
+    if end_time is not None:
+        end_idx = np.searchsorted(tempo_s, end_time)
+        
+    # Corte inicial e final (Trimming)
+    u = u[start_idx:end_idx]
+    y = y[start_idx:end_idx]
+    tempo_s = tempo_s[start_idx:end_idx]
+    if len(ref) > 0:
+        ref = ref[start_idx:end_idx]
         
     # Subamostragem (Decimacao por slicing simples para manter degraus)
     if decimar > 1:
