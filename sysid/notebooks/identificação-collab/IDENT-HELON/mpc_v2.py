@@ -27,13 +27,19 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score
 
 # sysid library (used to load the measured 1/4 drone datasets)
-from sysid import readData
+import os, sys
+current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
+root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
 
-Ts = 0.01  # Sampling time in seconds
+from aerodata import readData
+
+Ts = 0.05  # Sampling time in seconds (DECIMATION=5 -> 5 * 10ms = 50ms)
 
 import json
 try:
-    with open('narx_model.json', 'r') as f:
+    with open(os.path.join(current_dir, 'narx_model.json'), 'r') as f:
         model_data = json.load(f)
         ny_model = model_data['ny']
         nu_model = model_data['nu']
@@ -76,16 +82,20 @@ F = Function('F', [x, u_sym], [x_next, y_k], ['x0', 'p'], ['xf', 'yk'])
 # %%
 # 2b. Open-loop validation: free-run the CasADi state-space over the measured
 #     multisine data (same selection used for identification) and compare.
-T_START, T_END, DECIMATION = 15.0, 85.0, 5
+TRIM_START_SEC, TRIM_END_SEC, DECIMATION = 10.0, 13.0, 5
 
-def load_processed(name, t0=T_START, t1=T_END, dec=DECIMATION):
-    """Load a 1/4 drone dataset, keep t in [t0, t1] s and decimate. Returns u, y, t, ref."""
-    y, u, t, ref = readData('quarter_drone', name, return_ref=True)
-    idx = np.where((t >= t0) & (t <= t1))[0]
-    sl = slice(idx[0], idx[-1] + 1, dec)
-    return u[sl], y[sl], t[sl], ref[sl]
+def load_processed(name, trim_start=TRIM_START_SEC, trim_end=TRIM_END_SEC, decimation=DECIMATION):
+    """Load a dataset from aerodata, trim by fixed time margins, and decimate. Returns u, y, t, ref."""
+    y, u, t, ref = readData(dataset_name=name, return_ref=True)
+    t_start_target = t[0] + trim_start
+    t_end_target = t[-1] - trim_end
+    idx_start = np.searchsorted(t, t_start_target)
+    idx_end = np.searchsorted(t, t_end_target)
+    if idx_start >= idx_end: idx_start, idx_end = 0, len(t)
+    sl = slice(idx_start, idx_end, decimation)
+    return u[sl], y[sl], t[sl], ref[sl] if len(ref) > 0 else np.full_like(t[sl], np.nan)
 
-u_ms, y_ms, t_ms, ref_ms = load_processed('multiseno')
+u_ms, y_ms, t_ms, ref_ms = load_processed('data/experimentos/RODADA-7/multi-seno-60-030Hz_0904_20-32.csv')
 ml = max(ny_model, nu_model)
 
 # initial state from measured history: [y(k-1..k-ny), u(k-1..k-nu)] at k=ml
@@ -179,10 +189,10 @@ solver = nlpsol('solver', 'ipopt', nlp, {'ipopt.print_level': 0, 'print_time': 0
 
 # %%
 # 4. Reference Sequence Generation
-# Sequence of 5s each, from 0 to 90 with step of 10
+# Sequence of 5s each, from 30 to 70 with step of 10
 step_duration = 5.0
 samples_per_step = int(round(step_duration / Ts))
-step_levels = np.arange(0, 100, 10)  # 0, 10, ..., 90
+step_levels = np.arange(30, 80, 10)  # 30, 40, 50, 60, 70
 
 t_total = len(step_levels) * step_duration
 steps = len(step_levels) * samples_per_step
@@ -194,7 +204,7 @@ for i, level in enumerate(step_levels):
     x2ref[i*samples_per_step : (i+1)*samples_per_step] = level
 
 # Padding for MPC horizon
-x2ref_full = np.concatenate([x2ref, np.full(N, 90.0)])
+x2ref_full = np.concatenate([x2ref, np.full(N, 70.0)])
 
 # %%
 # 5. Simulation Loop
@@ -264,42 +274,62 @@ plt.show()
 # 7. Training Reference Signal Generation (multisine + random steps)
 np.random.seed(42)
 
-SETPOINT = 45.0     # operating point [deg]
-HOLD_45 = 5.0       # 45-deg holds at start and end [s]
+HOLD_TIME = 5.0       # holds at start and between segments [s]
 
-# --- Multisine segment: fmax = 0.25 Hz, centered at 45 deg, +/- 30 deg ---
-ms_duration = 60.0
-f_max = 0.25
-ms_amp = 30.0
-n_ms = int(round(ms_duration / Ts))
-t_ms_seg = np.arange(n_ms) * Ts
-df = 1.0 / ms_duration                       # frequency resolution
-freqs = np.arange(df, f_max + 1e-9, df)      # harmonics up to f_max
-phases = np.random.uniform(0, 2 * np.pi, len(freqs))
-ms = np.sum([np.sin(2*np.pi*f*t_ms_seg + ph) for f, ph in zip(freqs, phases)], axis=0)
-ms = ms / np.max(np.abs(ms)) * ms_amp + SETPOINT
+# --- 1. Multisine segment (DC = 45, fmax = 0.50 Hz) ---
+ms_duration_45 = 60.0
+f_max = 0.50
+n_ms_45 = int(round(ms_duration_45 / Ts))
+t_ms_45 = np.arange(n_ms_45) * Ts
+df = 1.0 / ms_duration_45
+freqs = np.arange(df, f_max + 1e-9, df)
+phases_45 = np.random.uniform(0, 2 * np.pi, len(freqs))
+ms_45 = np.sum([np.sin(2*np.pi*f*t_ms_45 + ph) for f, ph in zip(freqs, phases_45)], axis=0)
+ms_45 = ms_45 / np.max(np.abs(ms_45)) * 35.0 + 45.0  # Range: ~10 to 80 deg
 
-# --- Random-steps segment: amplitude [10, 80] deg, duration 2-6 s ---
-n_steps = 30
-amp_min, amp_max = 10.0, 80.0
-dur_min, dur_max = 2.0, 6.0
-step_pieces = []
-for _ in range(n_steps):
-    S = np.random.uniform(amp_min, amp_max)
-    dur = np.random.uniform(dur_min, dur_max)
-    step_pieces.append(np.full(int(round(dur / Ts)), S))
-steps_seg = np.concatenate(step_pieces)
+# --- 2. Random-steps segment (DC = 45) ---
+n_steps_45 = 25
+step_pieces_45 = []
+for _ in range(n_steps_45):
+    S = np.random.uniform(10.0, 80.0)
+    dur = np.random.uniform(2.0, 6.0)
+    step_pieces_45.append(np.full(int(round(dur / Ts)), S))
+steps_45 = np.concatenate(step_pieces_45)
 
-# --- Assemble: [45 hold] + multisine + random steps + [45 hold] ---
-hold = np.full(int(round(HOLD_45 / Ts)), SETPOINT)
-x2ref_train = np.concatenate([hold, ms, steps_seg, hold])
+# --- 3. Multisine segment (DC = 60, fmax = 0.50 Hz) ---
+ms_duration_60 = 60.0
+n_ms_60 = int(round(ms_duration_60 / Ts))
+t_ms_60 = np.arange(n_ms_60) * Ts
+phases_60 = np.random.uniform(0, 2 * np.pi, len(freqs))
+ms_60 = np.sum([np.sin(2*np.pi*f*t_ms_60 + ph) for f, ph in zip(freqs, phases_60)], axis=0)
+ms_60 = ms_60 / np.max(np.abs(ms_60)) * 50.0 + 60.0  # Range: ~10 to 110 deg
+
+# --- 4. Random-steps segment (DC = 60, Max Amp = 120) ---
+n_steps_60 = 25
+step_pieces_60 = []
+for _ in range(n_steps_60):
+    S = np.random.uniform(20.0, 120.0)  # Amplitude maxima 120
+    dur = np.random.uniform(2.0, 6.0)
+    step_pieces_60.append(np.full(int(round(dur / Ts)), S))
+steps_60 = np.concatenate(step_pieces_60)
+
+# --- Assemble: [Hold 45] + [DC 45 dynamics] + [Hold 60] + [DC 60 dynamics] + [Hold 45] ---
+hold_45 = np.full(int(round(HOLD_TIME / Ts)), 45.0)
+hold_60 = np.full(int(round(HOLD_TIME / Ts)), 60.0)
+
+x2ref_train = np.concatenate([
+    hold_45, ms_45, steps_45, 
+    hold_60, ms_60, steps_60, 
+    hold_45
+])
 
 steps_train = len(x2ref_train)
 tvec_train = np.arange(steps_train) * Ts
 
 plt.figure(figsize=(13, 3))
 plt.plot(tvec_train, x2ref_train, label='Training Reference')
-plt.axhline(SETPOINT, color='gray', ls=':', lw=1)
+plt.axhline(45.0, color='gray', ls=':', lw=1)
+plt.axhline(60.0, color='gray', ls=':', lw=1)
 plt.xlabel('Time [s]'); plt.ylabel('Reference Angle [deg]')
 plt.title(f'Training Reference — multisine (fmax={f_max} Hz) + random steps  (total {steps_train*Ts:.0f} s)')
 plt.legend(); plt.grid(True); plt.show()
@@ -621,22 +651,24 @@ plt.legend(); plt.grid(True); plt.tight_layout(); plt.show()
 
 # %%
 # 12. Export to CSV for STM comparison
+csv_filename = os.path.join(current_dir, 'simulacao_python.csv')
 df_export = pd.DataFrame({
     'tempo_ms': (tvec_val * 1000).astype(int),
     'angulo_deg': y_sim,
     'u_pct': u_sim,
     'referencia': x2ref_val
 })
-csv_filename = 'simulacao_python.csv'
 df_export.to_csv(csv_filename, index=False)
 print(f'\nSimulation data exported to {csv_filename}!')
 
 # Exporta referencia formato WAVE da Interface GUI
 import os
-os.makedirs('../python/controle', exist_ok=True)
+gui_dir = os.path.join(root_dir, 'python', 'controle')
+os.makedirs(gui_dir, exist_ok=True)
+ref_filename = os.path.join(gui_dir, 'referencia_mpc.csv')
 df_ref = pd.DataFrame({'tempo_s': df_export['tempo_ms'] / 1000.0, 'referencia_deg': x2ref_val})
-df_ref.to_csv('../python/controle/referencia_mpc.csv', index=False)
-print("Reference waveform exported to ../python/controle/referencia_mpc.csv for GUI!")
+df_ref.to_csv(ref_filename, index=False)
+print(f"Reference waveform exported to {ref_filename} for GUI!")
 
 # (Optional) We can also export ANN weights as before
 def export_ann_to_c(model, scaler, filename="ann_weights.h", narx_terms=None, narx_theta=None, ny=15, nu=15):
@@ -738,5 +770,6 @@ def export_ann_to_c(model, scaler, filename="ann_weights.h", narx_terms=None, na
 
         f.write("\n#endif\n")
 
-export_ann_to_c(model, scaler, narx_terms=NARX_TERMS, narx_theta=NARX_THETA, ny=ny_model, nu=nu_model)
-print("Arquivo ann_weights.h gerado com sucesso!")
+ann_filename = os.path.join(current_dir, 'ann_weights.h')
+export_ann_to_c(model, scaler, filename=ann_filename, narx_terms=NARX_TERMS, narx_theta=NARX_THETA, ny=ny_model, nu=nu_model)
+print(f"Arquivo {ann_filename} gerado com sucesso!")
