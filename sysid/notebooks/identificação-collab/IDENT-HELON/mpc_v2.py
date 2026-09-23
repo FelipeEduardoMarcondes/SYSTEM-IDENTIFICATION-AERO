@@ -341,9 +341,6 @@ plt.legend(); plt.grid(True); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if 
 # %%
 # 8. Simulation Loop (Rich Signal Dataset Collection)
 xsim_train = np.zeros((nx, 1))
-# Initialize at equilibrium (45 deg, ~45% PWM) to avoid NARX instability from zero
-xsim_train[:ny_model, 0] = 45.0
-xsim_train[ny_model:, 0] = 45.0
 ysim_train = []
 usim_train = []
 w0_val = np.zeros(w.shape[0])
@@ -590,14 +587,11 @@ plt.grid(True); plt.legend(); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if 
 Kp, Ki, Kd = 0.5793, 0.6647, 0.2
 
 xs = np.zeros((nx, 1)) # State vector for the NARX
-# Initialize at equilibrium (45 deg, ~45% PWM) to avoid NARX instability from zero
-xs[:ny_model, 0] = 45.0
-xs[ny_model:, 0] = 45.0
 
 y_sim = []
 u_sim = []
 
-e_1 = 0.0; u_i = 45.0; y_1 = 45.0; y_atual = 45.0
+e_1 = 0.0; u_i = 0.0; y_1 = 0.0; y_atual = 0.0
 
 model.eval()
 
