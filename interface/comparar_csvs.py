@@ -89,13 +89,13 @@ def comparar_arquivos(arquivos):
 
     ax1.set_ylabel("Angulo (deg)", fontsize=10)
     ax1.grid(True, color="#21262d")
-    ax1.legend(loc="upper right", framealpha=0, fontsize=9)
+    ax1.legend(loc="lower right", framealpha=0.9, facecolor="#0d1117", edgecolor="#30363d", fontsize=9)
     ax1.axhline(0, color=CORES["zero"], lw=0.7, ls=":")
     
     ax2.set_ylabel("Controle (%)", fontsize=10)
     ax2.set_xlabel("Tempo (s)", fontsize=10)
     ax2.grid(True, color="#21262d")
-    ax2.legend(loc="upper right", framealpha=0, fontsize=9)
+    ax2.legend(loc="lower right", framealpha=0.9, facecolor="#0d1117", edgecolor="#30363d", fontsize=9)
     ax2.axhline(0, color=CORES["zero"], lw=0.7, ls=":")
     ax2.set_ylim(-85, 85)
     

@@ -216,7 +216,7 @@ def plotar(caminho: str):
     ax1.set_ylim(y_min - margem, y_max + margem)
     ax1.grid(True)
     ax1.set_xticklabels([])
-    ax1.legend(loc="upper right", framealpha=0, fontsize=9)
+    ax1.legend(loc="lower right", framealpha=0.9, facecolor="#0d1117", edgecolor="#30363d", fontsize=9)
 
     ax2 = fig.add_subplot(gs[1], sharex=ax1)
     ax2.fill_between(t, u, alpha=0.2, color=CORES["fill_c"])
@@ -227,7 +227,7 @@ def plotar(caminho: str):
     ax2.grid(True)
     if tem_erro:
         ax2.set_xticklabels([])
-    ax2.legend(loc="upper right", framealpha=0, fontsize=9)
+    ax2.legend(loc="lower right", framealpha=0.9, facecolor="#0d1117", edgecolor="#30363d", fontsize=9)
 
     if tem_erro:
         ax3 = fig.add_subplot(gs[2], sharex=ax1)
@@ -242,7 +242,7 @@ def plotar(caminho: str):
                          ls=":", alpha=0.5)
         ax3.set_ylabel("Erro  (deg)", fontsize=10)
         ax3.grid(True)
-        ax3.legend(loc="upper right", framealpha=0, fontsize=9)
+        ax3.legend(loc="lower right", framealpha=0.9, facecolor="#0d1117", edgecolor="#30363d", fontsize=9)
         ultimo_ax = ax3
         stats_idx = 3
     else:

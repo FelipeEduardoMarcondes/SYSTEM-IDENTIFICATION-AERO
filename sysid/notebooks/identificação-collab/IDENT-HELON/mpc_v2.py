@@ -772,6 +772,12 @@ ann_filename = os.path.join(current_dir, 'ann_weights.h')
 export_ann_to_c(model, scaler, filename=ann_filename, narx_terms=NARX_TERMS, narx_theta=NARX_THETA, ny=ny_model, nu=nu_model)
 print(f"Arquivo {ann_filename} gerado com sucesso!")
 
+stm_inc_dir = os.path.join(root_dir, "firmware", "stm32-sil", "Core", "Inc")
+if os.path.exists(stm_inc_dir):
+    stm_ann_filename = os.path.join(stm_inc_dir, 'ann_weights.h')
+    export_ann_to_c(model, scaler, filename=stm_ann_filename, narx_terms=NARX_TERMS, narx_theta=NARX_THETA, ny=ny_model, nu=nu_model)
+    print(f"Arquivo {stm_ann_filename} exportado direto para o firmware STM32 com sucesso!")
+
 # %%
 # 10. Validation Test Signal Generation (Custom: PID -> ANN -> PID)
 np.random.seed(99)

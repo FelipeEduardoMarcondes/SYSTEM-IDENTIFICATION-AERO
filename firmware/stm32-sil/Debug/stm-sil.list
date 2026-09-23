@@ -2644,7 +2644,7 @@ static float ann_predict(float *input) {
  8001b04:	08009e38 	.word	0x08009e38
  8001b08:	0800a038 	.word	0x0800a038
  8001b0c:	08009c38 	.word	0x08009c38
- 8001b10:	3f12273e 	.word	0x3f12273e
+ 8001b10:	3efbc36b 	.word	0x3efbc36b
  8001b14:	42a00000 	.word	0x42a00000
  8001b18:	3f144d01 	.word	0x3f144d01
  8001b1c:	200174d0 	.word	0x200174d0

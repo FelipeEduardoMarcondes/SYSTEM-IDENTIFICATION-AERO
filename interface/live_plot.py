@@ -83,8 +83,8 @@ class LivePlot:
 
         self.ax1.axhline(0, color=CORES["zero"], lw=0.6, ls=":")
         self.ax2.axhline(0, color=CORES["zero"], lw=0.6, ls=":")
-        self.ax1.legend(loc="upper right", framealpha=0, fontsize=9)
-        self.ax2.legend(loc="upper right", framealpha=0, fontsize=9)
+        self.ax1.legend(loc="lower right", framealpha=0.9, facecolor="#0d1117", edgecolor="#30363d", fontsize=9)
+        self.ax2.legend(loc="lower right", framealpha=0.9, facecolor="#0d1117", edgecolor="#30363d", fontsize=9)
 
         # Marcadores de transição de referência
         if transicoes:
