@@ -672,20 +672,7 @@ df_export = pd.DataFrame({
 df_export.to_csv(csv_filename, index=False)
 print(f'\nSimulation data exported to {csv_filename}!')
 
-# Exporta referencia formato WAVE da Interface GUI
-import os
-gui_dir = os.path.join(root_dir, 'python', 'controle')
-os.makedirs(gui_dir, exist_ok=True)
-
-# Salva tambem a simulação lá para o Auto Sim-to-Real
-sim_filename = os.path.join(gui_dir, 'simulacao_mpc.csv')
-df_export.to_csv(sim_filename, index=False)
-
-ref_filename = os.path.join(gui_dir, 'referencia_mpc.csv')
-df_ref = pd.DataFrame({'tempo_s': df_export['tempo_ms'] / 1000.0, 'referencia_deg': x2ref_val})
-df_ref.to_csv(ref_filename, index=False)
-print(f"Reference waveform exported to {ref_filename} for GUI!")
-print(f"Simulation data exported to {sim_filename} for GUI!")
+# Os exports para GUI foram movidos para o final do script
 
 # (Optional) We can also export ANN weights as before
 def export_ann_to_c(model, scaler, filename="ann_weights.h", narx_terms=None, narx_theta=None, ny=15, nu=15):
@@ -853,14 +840,16 @@ x2ref_full_val = np.concatenate([x2ref_val, np.full(N, 45.0)])
 # %%
 # 11. Simulation Loop (Python SIL generation)
 xs = np.zeros((nx, 1))
-y_atual = 0.0
+xs[:ny_model, 0] = 45.0
+xs[ny_model:, 0] = 45.0
+y_atual = 45.0
 y_sim = []
 u_sim = []
 
 Kp, Ki, Kd = 0.5793, 0.6647, 0.2
-u_i = 0.0
+u_i = 45.0
 e_1 = 0.0
-y_1 = 0.0
+y_1 = 45.0
 
 print("Running Python SIL Validation (PID -> ANN -> PID)...")
 from tqdm import tqdm
@@ -919,6 +908,15 @@ df_export = pd.DataFrame({"tempo_ms": (tvec_val * 1000).astype(int), "angulo_deg
 csv_filename = os.path.join(exp_dir, "simulacao_python.csv")
 df_export.to_csv(csv_filename, index=False)
 print(f"\nSimulation data exported to {csv_filename}!")
+
+controle_dir = os.path.join(root_dir, "data", "controle")
+os.makedirs(controle_dir, exist_ok=True)
+sim_filename = os.path.join(controle_dir, "simulacao_mpc.csv")
+df_export.to_csv(sim_filename, index=False)
+ref_filename = os.path.join(controle_dir, "referencia_mpc.csv")
+df_ref = pd.DataFrame({'tempo_s': df_export['tempo_ms'] / 1000.0, 'referencia_deg': x2ref_val})
+df_ref.to_csv(ref_filename, index=False)
+print(f"Auto Sim-to-Real files exported to {controle_dir}")
 
 df_mpc_train = pd.DataFrame({"tempo_ms": (tvec_train[:sim_steps_train] * 1000).astype(int), "angulo_deg": ysim_train, "u_pct": usim_train, "referencia": x2ref_train[:sim_steps_train]})
 csv_mpc_train = os.path.join(exp_dir, "simulacao_mpc_treino.csv")
