@@ -840,16 +840,14 @@ x2ref_full_val = np.concatenate([x2ref_val, np.full(N, 45.0)])
 # %%
 # 11. Simulation Loop (Python SIL generation)
 xs = np.zeros((nx, 1))
-xs[:ny_model, 0] = 45.0
-xs[ny_model:, 0] = 45.0
-y_atual = 45.0
+y_atual = 0.0
 y_sim = []
 u_sim = []
 
 Kp, Ki, Kd = 0.5793, 0.6647, 0.2
-u_i = 45.0
+u_i = 0.0
 e_1 = 0.0
-y_1 = 45.0
+y_1 = 0.0
 
 print("Running Python SIL Validation (PID -> ANN -> PID)...")
 from tqdm import tqdm
