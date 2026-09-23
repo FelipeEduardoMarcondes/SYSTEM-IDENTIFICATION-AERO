@@ -341,6 +341,9 @@ plt.legend(); plt.grid(True); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if 
 # %%
 # 8. Simulation Loop (Rich Signal Dataset Collection)
 xsim_train = np.zeros((nx, 1))
+# Initialize at equilibrium (45 deg, ~45% PWM) to avoid NARX instability from zero
+xsim_train[:ny_model, 0] = 45.0
+xsim_train[ny_model:, 0] = 45.0
 ysim_train = []
 usim_train = []
 w0_val = np.zeros(w.shape[0])
@@ -436,7 +439,7 @@ model = MPCApproximator(input_dim=nx + N, output_dim=1)
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)  # NEW: reduced for training stability
 
-epochs = 300  # NEW: increased epochs to allow model to converge fully
+epochs = 150  # NEW: increased epochs to allow model to converge fully
 train_loss_history = []
 val_loss_history = []
 
