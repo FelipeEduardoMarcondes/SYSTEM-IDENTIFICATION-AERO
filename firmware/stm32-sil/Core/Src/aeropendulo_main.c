@@ -820,12 +820,30 @@ static void ciclo_controle(void)
             
             // Preenche o horizonte futuro preditivo de 50 passos
             for(int i=0; i<50; i++) {
-                uint32_t t_futuro = t_exp + (i * 10);
                 float r_futuro = r;
-                int temp_idx = idx_degrau;
-                while (temp_idx + 1 < n_degraus && t_futuro >= degraus[temp_idx + 1].t_ms) {
-                    temp_idx++;
-                    r_futuro = degraus[temp_idx].ref;
+                uint32_t t_futuro = t_exp + (i * 10);
+                
+                if (wave_ativo) {
+                    int f_idx = wave_idx - 1 + i;
+                    if (f_idx >= 0 && f_idx < wave_len) {
+                        r_futuro = wave_buf[f_idx];
+                    } else if (wave_len > 0) {
+                        r_futuro = wave_buf[wave_len - 1]; // Mantém o último valor
+                    }
+                } else if (chirp_ativo) {
+                    float t_sec = (float)t_futuro / 1000.0f;
+                    if (t_sec >= chirp_pad_s) {
+                        float t_loc = t_sec - chirp_pad_s;
+                        r_futuro = chirp_amp * sinf((chirp_a * t_loc + chirp_b) * t_loc) + chirp_dc;
+                    } else {
+                        r_futuro = chirp_dc;
+                    }
+                } else {
+                    int temp_idx = idx_degrau;
+                    while (temp_idx + 1 < n_degraus && t_futuro >= degraus[temp_idx + 1].t_ms) {
+                        temp_idx++;
+                        r_futuro = degraus[temp_idx].ref;
+                    }
                 }
                 nn_in[NY_MODEL + NU_MODEL + i] = r_futuro;
             }

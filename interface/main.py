@@ -294,6 +294,63 @@ def rodar_malha_aberta(porta: str) -> str | None:
     str_pwm = f"{int(u_pct)}" if u_pct.is_integer() else f"{u_pct:.1f}".replace('.', '_')
     return salvar_csv(linhas, prefixo=f"malha_aberta_{str_pwm}")
 
+def rodar_sim_to_real(porta: str) -> str | None:
+    from config import CONTROLE_DIR
+    import time
+    
+    ref_csv = os.path.join(CONTROLE_DIR, "referencia_mpc.csv")
+    sim_csv = os.path.join(CONTROLE_DIR, "simulacao_mpc.csv")
+    
+    if not os.path.exists(ref_csv):
+        print(f"  [ERRO] Arquivo {ref_csv} não encontrado. Rode a simulação primeiro.")
+        return None
+    if not os.path.exists(sim_csv):
+        print(f"  [ERRO] Arquivo {sim_csv} não encontrado. Rode a simulação primeiro.")
+        return None
+        
+    print("\n  [AUTO SIM-TO-REAL] Lendo referencia da simulacao...")
+    t, u = carregar_sinal_csv(ref_csv)
+    info(t, u, f"sinal (CSV: {ref_csv})")
+    duracao_total = float(t[-1])
+    prefixo = "stm_validacao_mpc"
+    
+    mgr = _conectar_e_aguardar(porta)
+    if not mgr: return None
+    
+    _pedir_recal(mgr)
+
+    print(f"\n  Pré-carregando {len(u)} amostras no STM32...")
+    if not mgr.enviar_wave(u):
+        print("  [ERRO] Falha ao enviar WAVE. Abortando.")
+        mgr.fechar()
+        return None
+
+    live = LivePlot(nome="AUTO SIM-TO-REAL", janela_s=min(30.0, duracao_total / 2))
+    
+    print("  Aguardando 2 segundos antes de começar (teste ESC)...")
+    time.sleep(2.0)
+
+    if not mgr.iniciar_experimento():
+        live.fechar()
+        mgr.fechar()
+        return None
+
+    aq = Aquisicao(mgr, live)
+    linhas = aq.rodar(duracao_s=duracao_total + 2.0, modo="wave")
+    live.fechar()
+    mgr.fechar()
+
+    if len(linhas) < 2:
+        return None
+        
+    caminho_stm = salvar_csv(linhas, prefixo=prefixo)
+    
+    print("\n  [AUTO SIM-TO-REAL] Abrindo comparacao automatica...")
+    import comparar_csvs
+    comparar_csvs.comparar_arquivos([sim_csv, caminho_stm])
+    
+    return None
+
 def recalibrar(porta: str):
     mgr = _conectar_e_aguardar(porta)
     if not mgr: return
@@ -311,13 +368,14 @@ def _menu() -> str:
         print("  [5] Plotar CSV existente")
         print("  [6] Coleta de malha aberta (PWM fixo)")
         print("  [7] Comparar multiplos CSVs")
+        print("  [8] Validar Simulação (Sim-to-Real automático)")
     else:
         print("  [5] Plotar CSV existente")
         print("  [7] Comparar multiplos CSVs")
         print("\n  OBS: pyserial nao instalado.")
     print("  [0] Sair")
 
-    validas = {"0", "5", "7"} | ({"1", "2", "3", "4", "6"} if SERIAL_OK else set())
+    validas = {"0", "5", "7"} | ({"1", "2", "3", "4", "6", "8"} if SERIAL_OK else set())
     while True:
         op = input("\n  Opcao: ").strip()
         if op in validas: return op
@@ -335,7 +393,7 @@ if __name__ == "__main__":
     op = _menu()
 
     if op == "0": sys.exit(0)
-    elif op in ("1", "2", "3", "4", "6"):
+    elif op in ("1", "2", "3", "4", "6", "8"):
         porta = selecionar_porta()
         if not porta: sys.exit(1)
 
@@ -350,6 +408,8 @@ if __name__ == "__main__":
             caminho = None
         elif op == "6":
             caminho = rodar_malha_aberta(porta)
+        elif op == "8":
+            caminho = rodar_sim_to_real(porta)
 
         if caminho:
             print(f"\n  Plotando resultado: {caminho}")

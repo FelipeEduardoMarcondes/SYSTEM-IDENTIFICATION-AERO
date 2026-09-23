@@ -1,5 +1,5 @@
-../Core/Src/aeropendulo_main.c:697:13:ciclo_controle	59
-../Core/Src/aeropendulo_main.c:900:6:HAL_UART_RxCpltCallback	6
-../Core/Src/aeropendulo_main.c:924:6:HAL_TIM_PeriodElapsedCallback	2
-../Core/Src/aeropendulo_main.c:935:6:aeropendulo_init	9
-../Core/Src/aeropendulo_main.c:995:6:aeropendulo_loop	93
+../Core/Src/aeropendulo_main.c:697:13:ciclo_controle	72
+../Core/Src/aeropendulo_main.c:918:6:HAL_UART_RxCpltCallback	6
+../Core/Src/aeropendulo_main.c:942:6:HAL_TIM_PeriodElapsedCallback	2
+../Core/Src/aeropendulo_main.c:953:6:aeropendulo_init	9
+../Core/Src/aeropendulo_main.c:1013:6:aeropendulo_loop	93

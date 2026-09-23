@@ -676,10 +676,16 @@ print(f'\nSimulation data exported to {csv_filename}!')
 import os
 gui_dir = os.path.join(root_dir, 'python', 'controle')
 os.makedirs(gui_dir, exist_ok=True)
+
+# Salva tambem a simulação lá para o Auto Sim-to-Real
+sim_filename = os.path.join(gui_dir, 'simulacao_mpc.csv')
+df_export.to_csv(sim_filename, index=False)
+
 ref_filename = os.path.join(gui_dir, 'referencia_mpc.csv')
 df_ref = pd.DataFrame({'tempo_s': df_export['tempo_ms'] / 1000.0, 'referencia_deg': x2ref_val})
 df_ref.to_csv(ref_filename, index=False)
 print(f"Reference waveform exported to {ref_filename} for GUI!")
+print(f"Simulation data exported to {sim_filename} for GUI!")
 
 # (Optional) We can also export ANN weights as before
 def export_ann_to_c(model, scaler, filename="ann_weights.h", narx_terms=None, narx_theta=None, ny=15, nu=15):
