@@ -883,7 +883,16 @@ for k in tqdm(range(steps_val), desc="Python SIL Simulation"):
         u_i = u_opt - (Kp * erro) - (-(Kd / Ts) * (y_atual - y_1))
 
     res = F(x0=xs[:, -1], p=u_opt)
-    xs = np.c_[xs, res["xf"].full().flatten()]
+    xf_new = res["xf"].full().flatten()
+    
+    if np.any(np.isnan(xf_new)) or np.any(np.isinf(xf_new)) or np.max(np.abs(xf_new)) > 1e6:
+        print(f"\nWarning: Simulation diverged at step {k} (t={t:.2f}s). Filling remaining steps with NaN.")
+        remaining = steps_val - k
+        y_sim.extend([np.nan] * remaining)
+        u_sim.extend([np.nan] * remaining)
+        break
+
+    xs = np.c_[xs, xf_new]
     y_atual = float(res["yk"])
     y_sim.append(y_atual)
     u_sim.append(u_opt)
