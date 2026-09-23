@@ -101,16 +101,18 @@ def carregar_sequencia_csv(caminho: str) -> tuple:
 
 def selecionar_csv() -> str | None:
     """Menu interativo para escolher um CSV existente."""
-    arquivos = sorted(glob.glob(f"{EXP_DIR}/*.csv") + glob.glob("*.csv"))
+    arquivos = sorted(glob.glob(f"{EXP_DIR}/**/*.csv", recursive=True) + glob.glob("*.csv"))
     if not arquivos:
         return None
     if len(arquivos) == 1:
         print(f"  Usando: {arquivos[0]}")
         return arquivos[0]
     print("\n  Arquivos CSV disponíveis:")
+    data_dir = os.path.dirname(EXP_DIR)
     for i, f in enumerate(arquivos):
         size_kb = os.path.getsize(f) // 1024
-        print(f"  [{i + 1:2d}] {f}  ({size_kb} KB)")
+        rel_f = os.path.relpath(f, data_dir)
+        print(f"  [{i + 1:2d}] {rel_f}  ({size_kb} KB)")
     while True:
         try:
             idx = int(input(f"\n  Escolha [1-{len(arquivos)}]: ").strip()) - 1

@@ -60,8 +60,8 @@ all: main-build
 main-build: stm-sil.elf secondary-outputs
 
 # Tool invocations
-stm-sil.elf stm-sil.map: $(OBJS) $(USER_OBJS) C:\Users\vicio\Documents\AEROPENDULO\stm-sil\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "stm-sil.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\vicio\Documents\AEROPENDULO\stm-sil\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="stm-sil.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+stm-sil.elf stm-sil.map: $(OBJS) $(USER_OBJS) C:\Users\vicio\Documents\AEROPENDULO\firmware\stm32-sil\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "stm-sil.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\vicio\Documents\AEROPENDULO\firmware\stm32-sil\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="stm-sil.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

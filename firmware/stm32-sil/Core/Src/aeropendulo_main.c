@@ -120,7 +120,7 @@ static float gyro_bias       = 0.0f;
 static float e_1 = 0.0f;
 static float u_i = 0.0f;
 static float y_1 = 0.0f;
-static float r   = 40.0f;   /* referencia corrente (graus) */
+static float r   = 45.0f;   /* referencia corrente (graus) */
 
 /* --- SEQ ----------------------------------------------------------------- */
 static Degrau_t degraus[MAX_STEPS];
@@ -817,7 +817,18 @@ static void ciclo_controle(void)
             float nn_in[NY_MODEL + NU_MODEL + 50];
             for(int i=0; i<NY_MODEL; i++) nn_in[i] = sil_y_hist[i];
             for(int i=0; i<NU_MODEL; i++) nn_in[NY_MODEL+i] = sil_u_hist[i];
-            for(int i=0; i<50; i++) nn_in[NY_MODEL+NU_MODEL+i] = r; 
+            
+            // Preenche o horizonte futuro preditivo de 50 passos
+            for(int i=0; i<50; i++) {
+                uint32_t t_futuro = t_exp + (i * 10);
+                float r_futuro = r;
+                int temp_idx = idx_degrau;
+                while (temp_idx + 1 < n_degraus && t_futuro >= degraus[temp_idx + 1].t_ms) {
+                    temp_idx++;
+                    r_futuro = degraus[temp_idx].ref;
+                }
+                nn_in[NY_MODEL + NU_MODEL + i] = r_futuro;
+            }
 
             uint32_t c_ann1 = DWT->CYCCNT;
             u = ann_predict(nn_in);

@@ -30,12 +30,16 @@ from sklearn.metrics import r2_score
 import os, sys
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
 root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
+PLOTS_DIR = os.path.join(root_dir, "data", "experimentos", "sil", "graficos")
+os.makedirs(PLOTS_DIR, exist_ok=True)
+current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
+root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
 if root_dir not in sys.path:
     sys.path.append(root_dir)
 
 from aerodata import readData
 
-Ts = 0.05  # Sampling time in seconds (DECIMATION=5 -> 5 * 10ms = 50ms)
+Ts = 0.01  # Sampling time in seconds (DECIMATION=5 -> 5 * 10ms = 50ms)
 
 import json
 try:
@@ -82,7 +86,7 @@ F = Function('F', [x, u_sym], [x_next, y_k], ['x0', 'p'], ['xf', 'yk'])
 # %%
 # 2b. Open-loop validation: free-run the CasADi state-space over the measured
 #     multisine data (same selection used for identification) and compare.
-TRIM_START_SEC, TRIM_END_SEC, DECIMATION = 10.0, 13.0, 5
+TRIM_START_SEC, TRIM_END_SEC, DECIMATION = 10.0, 13.0, 1
 
 def load_processed(name, trim_start=TRIM_START_SEC, trim_end=TRIM_END_SEC, decimation=DECIMATION):
     """Load a dataset from aerodata, trim by fixed time margins, and decimate. Returns u, y, t, ref."""
@@ -95,7 +99,7 @@ def load_processed(name, trim_start=TRIM_START_SEC, trim_end=TRIM_END_SEC, decim
     sl = slice(idx_start, idx_end, decimation)
     return u[sl], y[sl], t[sl], ref[sl] if len(ref) > 0 else np.full_like(t[sl], np.nan)
 
-u_ms, y_ms, t_ms, ref_ms = load_processed('data/experimentos/RODADA-7/multi-seno-60-030Hz_0904_20-32.csv')
+u_ms, y_ms, t_ms, ref_ms = load_processed('data/experimentos/RODADA-7/multi-seno-45-040Hz_0904_20-26.csv')
 ml = max(ny_model, nu_model)
 
 # initial state from measured history: [y(k-1..k-ny), u(k-1..k-nu)] at k=ml
@@ -112,7 +116,7 @@ plt.plot(t_ms, y_ms, 'k', label='Measured y(k)')
 plt.plot(t_ms, y_casadi, '--', color='crimson', label='CasADi NARX free-run')
 plt.xlabel('Time (s)'); plt.ylabel('Angle (deg)')
 plt.title(f'CasADi NARX model vs measured multisine  (free-run RMSE = {rmse:.3f})')
-plt.legend(); plt.grid(True); plt.tight_layout(); plt.show()
+plt.legend(); plt.grid(True); plt.tight_layout(); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 # %%
 # 3. MPC Setup
@@ -252,7 +256,7 @@ plt.xlabel('Time (s)')
 plt.title('NARX MPC Control - Drone Angle Tracking')
 plt.grid(True)
 plt.legend()
-plt.show()
+plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 plt.figure(figsize=(12, 4))
 plt.step(tvec_sim, usim, where='post', color='r', label='Control Input (u_pct)')
@@ -260,7 +264,7 @@ plt.ylabel('Input (u_pct)')
 plt.xlabel('Time (s)')
 plt.grid(True)
 plt.legend()
-plt.show()
+plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 plt.figure(figsize=(12, 3))
 plt.plot(tvec_sim, dtvec)
@@ -268,7 +272,7 @@ plt.grid(True)
 plt.xlabel('Time (s)')
 plt.ylabel('Solve Time (s)')
 plt.title('MPC Computational Time')
-plt.show()
+plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 # %%
 # 7. Training Reference Signal Generation (multisine + random steps)
@@ -277,7 +281,7 @@ np.random.seed(42)
 HOLD_TIME = 5.0       # holds at start and between segments [s]
 
 # --- 1. Multisine segment (DC = 45, fmax = 0.50 Hz) ---
-ms_duration_45 = 60.0
+ms_duration_45 = 30.0
 f_max = 0.50
 n_ms_45 = int(round(ms_duration_45 / Ts))
 t_ms_45 = np.arange(n_ms_45) * Ts
@@ -288,7 +292,7 @@ ms_45 = np.sum([np.sin(2*np.pi*f*t_ms_45 + ph) for f, ph in zip(freqs, phases_45
 ms_45 = ms_45 / np.max(np.abs(ms_45)) * 35.0 + 45.0  # Range: ~10 to 80 deg
 
 # --- 2. Random-steps segment (DC = 45) ---
-n_steps_45 = 25
+n_steps_45 = 15
 step_pieces_45 = []
 for _ in range(n_steps_45):
     S = np.random.uniform(10.0, 80.0)
@@ -297,7 +301,7 @@ for _ in range(n_steps_45):
 steps_45 = np.concatenate(step_pieces_45)
 
 # --- 3. Multisine segment (DC = 60, fmax = 0.50 Hz) ---
-ms_duration_60 = 60.0
+ms_duration_60 = 30.0
 n_ms_60 = int(round(ms_duration_60 / Ts))
 t_ms_60 = np.arange(n_ms_60) * Ts
 phases_60 = np.random.uniform(0, 2 * np.pi, len(freqs))
@@ -305,7 +309,7 @@ ms_60 = np.sum([np.sin(2*np.pi*f*t_ms_60 + ph) for f, ph in zip(freqs, phases_60
 ms_60 = ms_60 / np.max(np.abs(ms_60)) * 50.0 + 60.0  # Range: ~10 to 110 deg
 
 # --- 4. Random-steps segment (DC = 60, Max Amp = 120) ---
-n_steps_60 = 25
+n_steps_60 = 15
 step_pieces_60 = []
 for _ in range(n_steps_60):
     S = np.random.uniform(20.0, 120.0)  # Amplitude maxima 120
@@ -331,8 +335,8 @@ plt.plot(tvec_train, x2ref_train, label='Training Reference')
 plt.axhline(45.0, color='gray', ls=':', lw=1)
 plt.axhline(60.0, color='gray', ls=':', lw=1)
 plt.xlabel('Time [s]'); plt.ylabel('Reference Angle [deg]')
-plt.title(f'Training Reference — multisine (fmax={f_max} Hz) + random steps  (total {steps_train*Ts:.0f} s)')
-plt.legend(); plt.grid(True); plt.show()
+plt.title(f'Training Reference â multisine (fmax={f_max} Hz) + random steps  (total {steps_train*Ts:.0f} s)')
+plt.legend(); plt.grid(True); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 # %%
 # 8. Simulation Loop (Rich Signal Dataset Collection)
@@ -382,7 +386,7 @@ plt.xlabel('Time (s)')
 plt.title('NARX MPC Control - Training Reference Tracking')
 plt.grid(True)
 plt.legend()
-plt.show()
+plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 # 2. Control Input (u)
 plt.figure(figsize=(12, 4))
 plt.step(tvec_sim_train, usim_train, where='post', color='r', label='Control Input (u_pct)')
@@ -390,7 +394,7 @@ plt.ylabel('Input (u_pct)')
 plt.xlabel('Time (s)')
 plt.grid(True)
 plt.legend()
-plt.show()
+plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 # %%
 # 9. ANN Creation and Training
@@ -432,7 +436,7 @@ model = MPCApproximator(input_dim=nx + N, output_dim=1)
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)  # NEW: reduced for training stability
 
-epochs = 150  # NEW: increased epochs to allow model to converge fully
+epochs = 300  # NEW: increased epochs to allow model to converge fully
 train_loss_history = []
 val_loss_history = []
 
@@ -467,7 +471,7 @@ plt.xlabel("Epoch")
 plt.ylabel("MSE (Raw Control Input)")
 plt.legend()
 plt.grid()
-plt.show()
+plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 # Plot y vs yhat on training, val, and test (side by side)
 model.eval()
@@ -481,7 +485,7 @@ fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 # Training plot
 axes[0].scatter(y_train, y_train_pred, alpha=0.3, color='blue')
 axes[0].plot([y_train.min(), y_train.max()], [y_train.min(), y_train.max()], 'r--', lw=2)
-axes[0].set_title(f"Training Set\nR²: {r2_score(y_train, y_train_pred):.4f}")
+axes[0].set_title(f"Training Set\nRÂ²: {r2_score(y_train, y_train_pred):.4f}")
 axes[0].set_xlabel("True u (Control)")
 axes[0].set_ylabel("Predicted u (Control)")
 axes[0].grid(True)
@@ -489,7 +493,7 @@ axes[0].grid(True)
 # Validation plot
 axes[1].scatter(y_val, y_val_pred, alpha=0.3, color='green')
 axes[1].plot([y_val.min(), y_val.max()], [y_val.min(), y_val.max()], 'r--', lw=2)
-axes[1].set_title(f"Validation Set\nR²: {r2_score(y_val, y_val_pred):.4f}")
+axes[1].set_title(f"Validation Set\nRÂ²: {r2_score(y_val, y_val_pred):.4f}")
 axes[1].set_xlabel("True u (Control)")
 axes[1].set_ylabel("Predicted u (Control)")
 axes[1].grid(True)
@@ -497,13 +501,13 @@ axes[1].grid(True)
 # Test plot
 axes[2].scatter(y_test, y_test_pred, alpha=0.3, color='orange')
 axes[2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
-axes[2].set_title(f"Test Set\nR²: {r2_score(y_test, y_test_pred):.4f}")
+axes[2].set_title(f"Test Set RA²: {r2_score(y_test, y_test_pred):.4f}")
 axes[2].set_xlabel("True u (Control)")
 axes[2].set_ylabel("Predicted u (Control)")
 axes[2].grid(True)
 
 plt.tight_layout()
-plt.show()
+plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 # %%
 # 10. Validation Test Signal Generation (Custom: PID -> ANN -> PID)
@@ -574,7 +578,7 @@ plt.axvline(T_PID_START+T_MULTISINE+T_CHIRP, color='gray', ls=':')
 plt.axvline(T_PID_START+T_MULTISINE+T_CHIRP+T_STEPS, color='gray', ls=':')
 plt.xlabel('Time [s]'); plt.ylabel('Angle [deg]')
 plt.title('Custom Validation Reference: PID -> Multisine -> Chirp -> Steps -> PID')
-plt.grid(True); plt.legend(); plt.show()
+plt.grid(True); plt.legend(); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 # %%
 # 11. Simulation Loop (Python SIL generation)
@@ -583,10 +587,14 @@ plt.grid(True); plt.legend(); plt.show()
 Kp, Ki, Kd = 0.5793, 0.6647, 0.2
 
 xs = np.zeros((nx, 1)) # State vector for the NARX
+# Initialize at equilibrium (45 deg, ~45% PWM) to avoid NARX instability from zero
+xs[:ny_model, 0] = 45.0
+xs[ny_model:, 0] = 45.0
+
 y_sim = []
 u_sim = []
 
-e_1 = 0.0; u_i = 0.0; y_1 = 0.0; y_atual = 0.0
+e_1 = 0.0; u_i = 45.0; y_1 = 45.0; y_atual = 45.0
 
 model.eval()
 
@@ -640,14 +648,14 @@ plt.axvspan(0, T_PID_START, color='gray', alpha=0.15, label='PID Control')
 plt.axvspan(t_total_val - T_PID_END, t_total_val, color='gray', alpha=0.15)
 plt.xlabel('Time [s]'); plt.ylabel('Angle [deg]')
 plt.title('Python SIL Validation (PID -> ANN -> PID)')
-plt.legend(); plt.grid(True); plt.tight_layout(); plt.show()
+plt.legend(); plt.grid(True); plt.tight_layout(); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 plt.figure(figsize=(14, 4))
 plt.plot(tvec_val, u_sim, 'r-', label='u (Control)')
 plt.axvspan(0, T_PID_START, color='gray', alpha=0.15)
 plt.axvspan(t_total_val - T_PID_END, t_total_val, color='gray', alpha=0.15)
 plt.xlabel('Time [s]'); plt.ylabel('Control Input [%]')
-plt.legend(); plt.grid(True); plt.tight_layout(); plt.show()
+plt.legend(); plt.grid(True); plt.tight_layout(); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 # %%
 # 12. Export to CSV for STM comparison
@@ -773,3 +781,151 @@ def export_ann_to_c(model, scaler, filename="ann_weights.h", narx_terms=None, na
 ann_filename = os.path.join(current_dir, 'ann_weights.h')
 export_ann_to_c(model, scaler, filename=ann_filename, narx_terms=NARX_TERMS, narx_theta=NARX_THETA, ny=ny_model, nu=nu_model)
 print(f"Arquivo {ann_filename} gerado com sucesso!")
+
+# %%
+# 10. Validation Test Signal Generation (Custom: PID -> ANN -> PID)
+np.random.seed(99)
+T_PID_START = 5.0
+T_MULTISINE = 30.0
+T_CHIRP = 15.0
+T_STEPS = 20.0
+T_PID_END = 5.0
+t_total_val = T_PID_START + T_MULTISINE + T_CHIRP + T_STEPS + T_PID_END
+steps_val = int(t_total_val / Ts)
+tvec_val = np.arange(steps_val) * Ts
+
+x2ref_val = np.zeros(steps_val)
+idx = 0
+# PID START
+n_pid_start = int(T_PID_START/Ts)
+x2ref_val[idx : idx + n_pid_start] = 45.0
+idx += n_pid_start
+
+# MULTISINE
+n_ms = int(T_MULTISINE/Ts)
+f_max_val = 0.4
+df = 1.0/T_MULTISINE
+freqs = np.arange(df, f_max_val+1e-9, df)
+phases = np.random.uniform(0, 2*np.pi, len(freqs))
+t_ms = np.arange(n_ms)*Ts
+ms = np.sum([np.sin(2*np.pi*f*t_ms + ph) for f,ph in zip(freqs, phases)], axis=0)
+ms = ms / np.max(np.abs(ms)) * 25.0 + 45.0
+x2ref_val[idx : idx + n_ms] = ms
+idx += n_ms
+
+# CHIRP
+n_ch = int(T_CHIRP/Ts)
+t_ch = np.arange(n_ch)*Ts
+f0, f1 = 0.05, 0.6
+ch = np.sin(2*np.pi * (f0*t_ch + (f1-f0)/(2*T_CHIRP)*t_ch**2))
+ch = ch * 20.0 + 45.0
+x2ref_val[idx : idx + n_ch] = ch
+idx += n_ch
+
+# STEPS
+n_st = int(T_STEPS/Ts)
+n_pieces = 5
+piece_len = n_st // n_pieces
+st = np.zeros(n_st)
+for i in range(n_pieces):
+    S = np.random.uniform(20.0, 70.0)
+    st[i*piece_len : (i+1)*piece_len] = S
+if n_st > piece_len*n_pieces:
+    st[piece_len*n_pieces:] = S
+x2ref_val[idx : idx + n_st] = st
+idx += n_st
+
+# PID END
+n_pid_end = steps_val - idx
+x2ref_val[idx : steps_val] = 45.0
+
+x2ref_full_val = np.concatenate([x2ref_val, np.full(N, 45.0)])
+
+# %%
+# 11. Simulation Loop (Python SIL generation)
+xs = np.zeros((nx, 1))
+y_atual = 0.0
+y_sim = []
+u_sim = []
+
+Kp, Ki, Kd = 0.5793, 0.6647, 0.2
+u_i = 0.0
+e_1 = 0.0
+y_1 = 0.0
+
+print("Running Python SIL Validation (PID -> ANN -> PID)...")
+from tqdm import tqdm
+import torch
+import pandas as pd
+
+for k in tqdm(range(steps_val), desc="Python SIL Simulation"):
+    t = k * Ts
+    r_curr = x2ref_val[k]
+    
+    if t < T_PID_START or t >= t_total_val - T_PID_END:
+        # --- PID Control ---
+        erro = r_curr - y_atual
+        u_p = Kp * erro
+        u_i = u_i + Ki * (Ts / 2.0) * (erro + e_1)
+        u_d = -(Kd / Ts) * (y_atual - y_1)
+        u_calc = u_p + u_i + u_d
+        u_opt = float(np.clip(u_calc, -10.0, 80.0))
+        if u_calc != u_opt:
+            u_i -= (u_calc - u_opt)
+        e_1 = erro; y_1 = y_atual
+    else:
+        # --- ANN Control ---
+        ref_window = x2ref_full_val[k : k + N]
+        pval = np.concatenate([xs[:, -1], ref_window])
+        pval_scaled = scaler.transform(pval.reshape(1, -1))
+        with torch.no_grad():
+            u_opt = float(np.clip(model(torch.tensor(pval_scaled, dtype=torch.float32)).item(), data["u_min"][0], data["u_max"][0]))
+        erro = r_curr - y_atual
+        e_1 = erro; y_1 = y_atual
+        u_i = u_opt - (Kp * erro) - (-(Kd / Ts) * (y_atual - y_1))
+
+    res = F(x0=xs[:, -1], p=u_opt)
+    xs = np.c_[xs, res["xf"].full().flatten()]
+    y_atual = float(res["yk"])
+    y_sim.append(y_atual)
+    u_sim.append(u_opt)
+
+# Plot Results
+plt.figure(figsize=(14, 5))
+plt.plot(tvec_val, x2ref_val, "k--", label="Reference")
+plt.plot(tvec_val, y_sim, "b-", label="y (Angle)")
+plt.axvspan(0, T_PID_START, color="gray", alpha=0.15, label="PID Control")
+plt.axvspan(t_total_val - T_PID_END, t_total_val, color="gray", alpha=0.15)
+plt.xlabel("Time [s]"); plt.ylabel("Angle [deg]")
+plt.title("Python SIL Validation (PID -> ANN -> PID)")
+plt.legend(); plt.grid(True); plt.tight_layout()
+plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
+
+# %%
+# 12. Export to CSV for STM comparison
+exp_dir = os.path.join(root_dir, "data", "experimentos", "sil")
+os.makedirs(exp_dir, exist_ok=True)
+
+df_export = pd.DataFrame({"tempo_ms": (tvec_val * 1000).astype(int), "angulo_deg": y_sim, "u_pct": u_sim, "referencia": x2ref_val})
+csv_filename = os.path.join(exp_dir, "simulacao_python.csv")
+df_export.to_csv(csv_filename, index=False)
+print(f"\nSimulation data exported to {csv_filename}!")
+
+df_mpc_train = pd.DataFrame({"tempo_ms": (tvec_train[:sim_steps_train] * 1000).astype(int), "angulo_deg": ysim_train, "u_pct": usim_train, "referencia": x2ref_train[:sim_steps_train]})
+csv_mpc_train = os.path.join(exp_dir, "simulacao_mpc_treino.csv")
+df_mpc_train.to_csv(csv_mpc_train, index=False)
+
+df_mpc_sim = pd.DataFrame({"tempo_ms": (np.array(tvec_sim) * 1000).astype(int), "angulo_deg": ysim, "u_pct": usim, "referencia": x2ref[:len(tvec_sim)]})
+csv_mpc_sim = os.path.join(exp_dir, "simulacao_mpc_simples.csv")
+df_mpc_sim.to_csv(csv_mpc_sim, index=False)
+
+# Export wave for GUI (Sinal Arbitrario)
+controle_dir = os.path.join(root_dir, "data", "controle")
+os.makedirs(controle_dir, exist_ok=True)
+df_wave = pd.DataFrame({"tempo_s": tvec_train[:sim_steps_train], "referencia_deg": x2ref_train[:sim_steps_train]})
+csv_wave = os.path.join(controle_dir, "wave_mpc_treino.csv")
+df_wave.to_csv(csv_wave, index=False)
+print(f"Wave para GUI (Sinal Arbitrario) exportada para {csv_wave}!")
+
+print("Exportacoes de CSV concluidas!")
+plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show()

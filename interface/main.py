@@ -95,7 +95,7 @@ def _definir_sequencia_degraus() -> tuple:
             return 10.0, [(0.0, 45.0)]
         print("\n  CSVs disponíveis:")
         for i, f in enumerate(csvs):
-            print(f"  [{i + 1}] {f}")
+            print(f"  [{i + 1}] {os.path.basename(f)}")
         idx_csv = -1
         while not (0 <= idx_csv < len(csvs)):
             try:
@@ -131,7 +131,7 @@ def _configurar_sinal_arbitrario() -> tuple | None:
 
     print("\n  Conjunto de Controle disponíveis:")
     for i, f in enumerate(csvs):
-        print(f"  [{i + 1}] {f}")
+        print(f"  [{i + 1}] {os.path.basename(f)}")
     
     idx_csv = -1
     while not (0 <= idx_csv < len(csvs)):
@@ -310,12 +310,14 @@ def _menu() -> str:
         print("  [4] Recalibrar giroscopio")
         print("  [5] Plotar CSV existente")
         print("  [6] Coleta de malha aberta (PWM fixo)")
+        print("  [7] Comparar multiplos CSVs")
     else:
         print("  [5] Plotar CSV existente")
+        print("  [7] Comparar multiplos CSVs")
         print("\n  OBS: pyserial nao instalado.")
     print("  [0] Sair")
 
-    validas = {"0", "5"} | ({"1", "2", "3", "4", "6"} if SERIAL_OK else set())
+    validas = {"0", "5", "7"} | ({"1", "2", "3", "4", "6"} if SERIAL_OK else set())
     while True:
         op = input("\n  Opcao: ").strip()
         if op in validas: return op
@@ -357,3 +359,8 @@ if __name__ == "__main__":
         caminho = selecionar_csv()
         if caminho: plotar(caminho)
         else: print("  Nenhum CSV encontrado.")
+        
+    elif op == "7":
+        import comparar_csvs
+        arquivos = comparar_csvs.selecionar_multiplos()
+        comparar_csvs.comparar_arquivos(arquivos)

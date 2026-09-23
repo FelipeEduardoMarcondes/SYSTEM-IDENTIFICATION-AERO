@@ -3,6 +3,9 @@ config.py — Constantes globais do projeto aeropêndulo.
 
 Edite aqui antes de rodar qualquer módulo.
 """
+import os
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ── Serial ────────────────────────────────────────────────────────────────────
 BAUD           = 500_000
@@ -18,8 +21,8 @@ LIVE_JANELA_S  = 30.0         # s — janela de visualização
 LIVE_UPDATE    = 0.25         # s — intervalo mínimo entre redesenhos
 
 # ── Caminhos ──────────────────────────────────────────────────────────────────
-EXP_DIR        = "../data/experimentos"
-CONTROLE_DIR   = "../data/controle"
+EXP_DIR        = os.path.join(BASE_DIR, "data", "experimentos")
+CONTROLE_DIR   = os.path.join(BASE_DIR, "data", "controle")
 
 # ── Limites físicos ───────────────────────────────────────────────────────────
 REF_MIN        = 0.0          # graus
