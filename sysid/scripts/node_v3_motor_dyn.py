@@ -1,13 +1,12 @@
 # %% [markdown]
-# # Identificação do Aeropêndulo com Neural ODEs - Multi-Experimentos (v3.0 - Comparativo Avançado)
+# # Identificação do Aeropêndulo com Neural ODEs - Multi-Experimentos (v4.0 - Dinâmica de 3ª Ordem)
 #
-# Ajustes desta versão em relação à v2.0:
-# - **Motor Bidirecional**: Comando `u` normalizado entre [-1, 1] e torque proporcional a `u * abs(u)`.
-# - **Novos Modelos de Atrito/Dinâmica**: 
-#     1. Baseline (Atrito Linear simples)
-#     2. Assimétrico (Atrito e Ganho de motor diferentes para subida/descida)
-#     3. Híbrido/UDE (Física básica + Rede Neural modelando arrasto induzido/atrito complexo)
-# - **Herança Orientada a Objetos**: Classes herdam de `BaseODE` para facilitar manutenção.
+# Ajustes desta versão em relação à v3.0:
+# - **Motor de 3ª Ordem (Caminho B)**: O estado passa a ter 3 dimensões: `[theta, theta_dot, a]`.
+# - A variável `a` é a ativação do motor, que segue uma dinâmica de primeira ordem com constante de tempo `tau`:
+#   `da/dt = (u - a) / tau`
+# - O torque gerado passa a ser proporcional a `a * abs(a)` ao invés de responder instantaneamente a `u`.
+# - Isso ajuda a modelar a inércia da hélice e o atraso na resposta do sistema.
 
 # %%
 import numpy as np
@@ -19,10 +18,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torchdiffeq import odeint
-from scipy.signal import savgol_filter, decimate
+from scipy.signal import savgol_filter
 from sklearn.metrics import mean_squared_error
 import copy
-
+import sys
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
@@ -39,8 +38,6 @@ TREINAR_ASSIMETRICO_AERO_COULOMB = True
 TREINAR_HIBRIDO = False
 
 # %%
-import sys
-import os
 # Adiciona o diretório raiz ao path para conseguir importar aerodata
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from aerodata import readData
@@ -48,19 +45,22 @@ from aerodata import readData
 def carregar_experimento(dataset_name, decimacao=1):
     # Usa a função oficial readData do aerodata
     y_raw, u_raw, t_raw = readData(dataset_name, decimar=decimacao)
-    
     return t_raw, u_raw, y_raw
 
 def processar_dataset(t_raw, u_raw, y_raw):
     t_raw = t_raw - t_raw[0]
     y_rad = y_raw * (np.pi / 180.0)
 
-    # CORREÇÃO v3: u pode ser negativo, então clipamos em [-1.0, 1.0]
+    # Clip em [-1.0, 1.0] para o comando
     u_norm = np.clip(u_raw / 100.0, -1.0, 1.0)
 
     dt_mean = np.mean(np.diff(t_raw))
     v_rad_s = savgol_filter(y_rad, 11, 3, deriv=1, delta=dt_mean)
-    x_matrix = np.vstack((y_rad, v_rad_s)).T
+    
+    # NOVO v4: O estado agora tem dimensão 3 [posição, velocidade, ativação_motor].
+    # Para o instante inicial de cada batch, assumimos que o motor já estava em regime (a = u).
+    # O treinamento não calculará loss para o 3º estado, pois não temos a medição dele.
+    x_matrix = np.vstack((y_rad, v_rad_s, u_norm)).T
 
     return (torch.tensor(t_raw, dtype=torch.float32),
             torch.tensor(u_norm, dtype=torch.float32).unsqueeze(1),
@@ -68,9 +68,9 @@ def processar_dataset(t_raw, u_raw, y_raw):
             y_rad, v_rad_s, u_norm)
 
 # %%
-# 1. MODELOS ODE (NODE)
+# 1. MODELOS ODE (NODE) - AGORA COM DINÂMICA DE 3ª ORDEM
 class BaseODE(nn.Module):
-    def __init__(self, J0=1.0, b0=np.exp(-1.0), Gu0=1.0):
+    def __init__(self, J0=1.0, b0=np.exp(-1.0), Gu0=1.0, tau0=0.1):
         super().__init__()
         self.m1, self.L1 = 0.122, 0.39
         self.m2, self.L2 = 0.055, 0.347
@@ -78,12 +78,13 @@ class BaseODE(nn.Module):
         self.log_J = nn.Parameter(torch.log(torch.tensor(float(J0))))
         self.log_b = nn.Parameter(torch.log(torch.tensor(float(b0))))
         self.log_Gu = nn.Parameter(torch.log(torch.tensor(float(Gu0))))
+        self.log_tau = nn.Parameter(torch.log(torch.tensor(float(tau0)))) # NOVO: Constante de tempo do motor
         self.u_series = None
         self.t_series = None
         self.batch_start_times = None
 
     def get_params(self):
-        return torch.exp(self.log_J), torch.exp(self.log_b), torch.exp(self.log_Gu)
+        return torch.exp(self.log_J), torch.exp(self.log_b), torch.exp(self.log_Gu), torch.exp(self.log_tau)
 
     def _get_u_t(self, t, x):
         if self.batch_start_times is not None:
@@ -101,20 +102,26 @@ class BaseODE(nn.Module):
 
 class PhysicsODE_Baseline(BaseODE):
     def forward(self, t, x):
-        J, b, Gu = self.get_params()
+        J, b, Gu, tau = self.get_params()
         u_t = self._get_u_t(t, x)
-        theta, theta_dot = x[:, 0:1], x[:, 1:2]
+        
+        # Estado 3D
+        theta, theta_dot, a = x[:, 0:1], x[:, 1:2], x[:, 2:3]
 
-        motor_torque = Gu * u_t * torch.abs(u_t)
+        # Dinâmica do Motor (1ª Ordem no sinal de controle)
+        a_dot = (u_t - a) / tau
+
+        motor_torque = Gu * a * torch.abs(a)
         gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
         friction_torque = b * theta_dot
 
         theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
-        return torch.cat([theta_dot, theta_ddot], dim=1)
+        
+        return torch.cat([theta_dot, theta_ddot, a_dot], dim=1)
 
 class PhysicsODE_Asymmetric(BaseODE):
-    def __init__(self, J0=1.0, b_pos0=np.exp(-1.0), b_neg0=np.exp(-1.0), Gu_pos0=1.0, Gu_neg0=1.0):
-        super().__init__(J0, b_pos0, Gu_pos0)
+    def __init__(self, J0=1.0, b_pos0=np.exp(-1.0), b_neg0=np.exp(-1.0), Gu_pos0=1.0, Gu_neg0=1.0, tau0=0.1):
+        super().__init__(J0, b_pos0, Gu_pos0, tau0)
         self.log_b_neg = nn.Parameter(torch.log(torch.tensor(float(b_neg0))))
         self.log_Gu_neg = nn.Parameter(torch.log(torch.tensor(float(Gu_neg0))))
 
@@ -124,28 +131,27 @@ class PhysicsODE_Asymmetric(BaseODE):
         b_neg = torch.exp(self.log_b_neg)
         Gu_pos = torch.exp(self.log_Gu)
         Gu_neg = torch.exp(self.log_Gu_neg)
+        tau = torch.exp(self.log_tau)
 
         u_t = self._get_u_t(t, x)
-        theta, theta_dot = x[:, 0:1], x[:, 1:2]
+        theta, theta_dot, a = x[:, 0:1], x[:, 1:2], x[:, 2:3]
+
+        a_dot = (u_t - a) / tau
 
         b = torch.where(theta_dot > 0, b_pos, b_neg)
-        Gu = torch.where(u_t > 0, Gu_pos, Gu_neg)
+        Gu = torch.where(a > 0, Gu_pos, Gu_neg)
 
-        motor_torque = Gu * u_t * torch.abs(u_t)
+        motor_torque = Gu * a * torch.abs(a)
         gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
         friction_torque = b * theta_dot
 
         theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
-        return torch.cat([theta_dot, theta_ddot], dim=1)
+        return torch.cat([theta_dot, theta_ddot, a_dot], dim=1)
 
 class PhysicsODE_AsymmetricAero(BaseODE):
-    """Assimétrico + Arrasto aerodinâmico quadrático. 7 params.
-    tau_atrito = b*theta_dot + c*theta_dot*|theta_dot|
-    onde b e c são assimétricos (positivo/negativo).
-    """
     def __init__(self, J0=1.0, b_pos0=np.exp(-1.0), b_neg0=np.exp(-1.0),
-                 Gu_pos0=1.0, Gu_neg0=1.0, c_pos0=0.01, c_neg0=0.01):
-        super().__init__(J0, b_pos0, Gu_pos0)
+                 Gu_pos0=1.0, Gu_neg0=1.0, c_pos0=0.01, c_neg0=0.01, tau0=0.1):
+        super().__init__(J0, b_pos0, Gu_pos0, tau0)
         self.log_b_neg = nn.Parameter(torch.log(torch.tensor(float(b_neg0))))
         self.log_Gu_neg = nn.Parameter(torch.log(torch.tensor(float(Gu_neg0))))
         self.log_c_pos = nn.Parameter(torch.log(torch.tensor(float(c_pos0))))
@@ -159,30 +165,29 @@ class PhysicsODE_AsymmetricAero(BaseODE):
         Gu_neg = torch.exp(self.log_Gu_neg)
         c_pos = torch.exp(self.log_c_pos)
         c_neg = torch.exp(self.log_c_neg)
+        tau = torch.exp(self.log_tau)
 
         u_t = self._get_u_t(t, x)
-        theta, theta_dot = x[:, 0:1], x[:, 1:2]
+        theta, theta_dot, a = x[:, 0:1], x[:, 1:2], x[:, 2:3]
+
+        a_dot = (u_t - a) / tau
 
         b = torch.where(theta_dot > 0, b_pos, b_neg)
-        Gu = torch.where(u_t > 0, Gu_pos, Gu_neg)
+        Gu = torch.where(a > 0, Gu_pos, Gu_neg)
         c = torch.where(theta_dot > 0, c_pos, c_neg)
 
-        motor_torque = Gu * u_t * torch.abs(u_t)
+        motor_torque = Gu * a * torch.abs(a)
         gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
         friction_torque = b * theta_dot + c * theta_dot * torch.abs(theta_dot)
 
         theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
-        return torch.cat([theta_dot, theta_ddot], dim=1)
+        return torch.cat([theta_dot, theta_ddot, a_dot], dim=1)
 
 class PhysicsODE_AsymmetricAeroCoulomb(BaseODE):
-    """Assimétrico + Arrasto + Coulomb. 9 params.
-    tau_atrito = b*theta_dot + c*theta_dot*|theta_dot| + Tc*tanh(100*theta_dot)
-    onde b, c e Tc são assimétricos.
-    """
     def __init__(self, J0=1.0, b_pos0=np.exp(-1.0), b_neg0=np.exp(-1.0),
                  Gu_pos0=1.0, Gu_neg0=1.0, c_pos0=0.01, c_neg0=0.01,
-                 Tc_pos0=0.01, Tc_neg0=0.01):
-        super().__init__(J0, b_pos0, Gu_pos0)
+                 Tc_pos0=0.01, Tc_neg0=0.01, tau0=0.1):
+        super().__init__(J0, b_pos0, Gu_pos0, tau0)
         self.log_b_neg = nn.Parameter(torch.log(torch.tensor(float(b_neg0))))
         self.log_Gu_neg = nn.Parameter(torch.log(torch.tensor(float(Gu_neg0))))
         self.log_c_pos = nn.Parameter(torch.log(torch.tensor(float(c_pos0))))
@@ -200,50 +205,28 @@ class PhysicsODE_AsymmetricAeroCoulomb(BaseODE):
         c_neg = torch.exp(self.log_c_neg)
         Tc_pos = torch.exp(self.log_Tc_pos)
         Tc_neg = torch.exp(self.log_Tc_neg)
+        tau = torch.exp(self.log_tau)
 
         u_t = self._get_u_t(t, x)
-        theta, theta_dot = x[:, 0:1], x[:, 1:2]
+        theta, theta_dot, a = x[:, 0:1], x[:, 1:2], x[:, 2:3]
+
+        a_dot = (u_t - a) / tau
 
         b = torch.where(theta_dot > 0, b_pos, b_neg)
-        Gu = torch.where(u_t > 0, Gu_pos, Gu_neg)
+        Gu = torch.where(a > 0, Gu_pos, Gu_neg)
         c = torch.where(theta_dot > 0, c_pos, c_neg)
         Tc = torch.where(theta_dot > 0, Tc_pos, Tc_neg)
 
-        motor_torque = Gu * u_t * torch.abs(u_t)
+        motor_torque = Gu * a * torch.abs(a)
         gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
-        # Atrito: viscoso + arrasto quadrático + Coulomb (atrito seco)
         friction_torque = b * theta_dot + c * theta_dot * torch.abs(theta_dot) + Tc * torch.tanh(100.0 * theta_dot)
 
         theta_ddot = (motor_torque - gravity_torque - friction_torque) / J
-        return torch.cat([theta_dot, theta_ddot], dim=1)
-
-class PhysicsODE_Hybrid(BaseODE):
-    def __init__(self, J0=1.0, b0=np.exp(-1.0), Gu0=1.0, hidden_dim=16):
-        super().__init__(J0, b0, Gu0)
-        self.mlp = nn.Sequential(
-            nn.Linear(3, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, 1)
-        )
-
-    def forward(self, t, x):
-        J, b, Gu = self.get_params()
-        u_t = self._get_u_t(t, x)
-        theta, theta_dot = x[:, 0:1], x[:, 1:2]
-
-        motor_torque = Gu * u_t * torch.abs(u_t)
-        gravity_torque = (self.m1 * self.L1 - self.m2 * self.L2) * self.g * torch.sin(theta)
-        friction_torque = b * theta_dot
-
-        nn_input = torch.cat([theta, theta_dot, u_t], dim=1)
-        residual_torque = self.mlp(nn_input)
-
-        theta_ddot = (motor_torque - gravity_torque - friction_torque + residual_torque) / J
-        return torch.cat([theta_dot, theta_ddot], dim=1)
+        return torch.cat([theta_dot, theta_ddot, a_dot], dim=1)
 
 
 # %%
-# 2. FUNÇÃO DE TREINAMENTO (MULTI-DATASET, COM CURRICULUM + LOSS NORMALIZADA + LR SCHEDULE)
+# 2. FUNÇÃO DE TREINAMENTO
 def train_model_multi(model, name, datasets, epochs=1500, lr=0.015,
                        k_min=20, k_max=300, curriculum_stage_epochs=300,
                        state_std=None, base_batch_size=1024, integrator='rk4'):
@@ -253,7 +236,7 @@ def train_model_multi(model, name, datasets, epochs=1500, lr=0.015,
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     if state_std is None:
-        state_std = torch.ones(2, device=device)
+        state_std = torch.ones(2, device=device) # Normaliza apenas os 2 primeiros estados
 
     dt = (datasets[0]['t'][1] - datasets[0]['t'][0]).item()
     loss_history = []
@@ -276,6 +259,8 @@ def train_model_multi(model, name, datasets, epochs=1500, lr=0.015,
         model.u_series = u_ds
 
         start_idx = np.random.randint(0, len(t_ds) - k_steps, size=batch_size)
+        
+        # x_ds tem dimensão 3 (posição, velocidade, ativação_inicial)
         x0 = x_ds[start_idx]
         model.batch_start_times = t_ds[start_idx].reshape(-1, 1)
 
@@ -283,13 +268,16 @@ def train_model_multi(model, name, datasets, epochs=1500, lr=0.015,
         batch_targets = [x_ds[i:i + k_steps] for i in start_idx]
         y_target = torch.stack(batch_targets, dim=1)
 
-        loss = torch.mean(((pred_state - y_target) / state_std) ** 2)
+        # Calculamos o erro APENAS nas variáveis observadas (theta e theta_dot)
+        pred_obs = pred_state[:, :, :2]
+        target_obs = y_target[:, :, :2]
+
+        loss = torch.mean(((pred_obs - target_obs) / state_std) ** 2)
         loss.backward()
         optimizer.step()
         scheduler.step()
         loss_history.append(loss.item())
 
-        # Salva o melhor modelo apenas na fase final do curriculum (horizonte máximo)
         if k_steps == k_max and loss.item() < best_loss:
             best_loss = loss.item()
             best_model_state = copy.deepcopy(model.state_dict())
@@ -297,7 +285,7 @@ def train_model_multi(model, name, datasets, epochs=1500, lr=0.015,
         if epoch % 300 == 0 or epoch == epochs:
             lr_now = scheduler.get_last_lr()[0]
             print(f"Epoch {epoch:4d} | k_steps={k_steps:3d} | batch={batch_size:4d} "
-                  f"| LR={lr_now:.5f} | Loss: {loss.item():.6f}")
+                  f"| LR={lr_now:.5f} | Loss: {loss.item():.6f} | Tau estimado: {torch.exp(model.log_tau).item():.4f}s")
 
     if best_model_state is not None:
         print(f"Restaurando melhor modelo com Loss: {best_loss:.6f}")
@@ -349,7 +337,7 @@ if __name__ == '__main__':
     modelos = {}
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = f"resultados_v3_{timestamp}"
+    out_dir = f"resultados_motor3a_ordem_{timestamp}"
     os.makedirs(out_dir, exist_ok=True)
     print(f"Resultados em: {out_dir}/\n")
 
@@ -393,16 +381,6 @@ if __name__ == '__main__':
         torch.save(aero_coulomb_model.state_dict(), f'{out_dir}/model_asymm_aero_coulomb.pth')
         modelos["AsymmAeroCoulomb"] = aero_coulomb_model
 
-    if TREINAR_HIBRIDO:
-        hybrid_model = PhysicsODE_Hybrid(hidden_dim=16)
-        hybrid_model, hist = train_model_multi(
-            hybrid_model, "Híbrido", train_datasets,
-            epochs=4000, lr=0.015, k_min=20, k_max=400, curriculum_stage_epochs=400,
-            state_std=state_std, base_batch_size=4096
-        )
-        torch.save(hybrid_model.state_dict(), f'{out_dir}/model_hybrid.pth')
-        modelos["Hybrid"] = hybrid_model
-
     print("\n--- Simulação Free-Run (Testes) ---")
     resultados_metricas = {nome: {} for nome in modelos.keys()}
     
@@ -430,7 +408,6 @@ if __name__ == '__main__':
                 # Métricas
                 rmse = np.sqrt(mean_squared_error(y_real_deg, pred_deg))
                 
-                # FIT (%) = 100 * (1 - norm(y_real - y_pred) / norm(y_real - mean(y_real)))
                 numerador = np.linalg.norm(y_real_deg - pred_deg)
                 denominador = np.linalg.norm(y_real_deg - np.mean(y_real_deg))
                 fit_pct = 100.0 * (1.0 - numerador / denominador) if denominador != 0 else 0.0
@@ -438,7 +415,7 @@ if __name__ == '__main__':
                 resultados_metricas[nome][ds['name']] = {'rmse': float(rmse), 'fit': float(fit_pct)}
                 msg += f" | {nome}: {fit_pct:5.1f}% (RMSE {rmse:5.2f}°)"
                 
-                # Plotting
+                # Plotting (Apenas Posição para ficar igual ao anterior)
                 plt.figure(figsize=(10, 4))
                 plt.plot(t_t.cpu().numpy(), y_real_deg, 'k-', lw=1.2, label='Real')
                 plt.plot(t_t.cpu().numpy(), pred_deg, 'r--', lw=1.2, label=f'Pred ({nome})')

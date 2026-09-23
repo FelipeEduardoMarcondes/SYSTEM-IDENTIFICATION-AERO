@@ -15,9 +15,11 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from node_v9 import (
-    carregar_lista, avalia_chunks, plot_chunk_fit, device,
-    PhysicsODE_AeroBaseline, PhysicsODE_AeroCoulomb,
-    PhysicsODE_AeroTustin, PhysicsODE_AeroHibrido,
+    carregar_lista, avalia_chunks, plot_chunk_fit, device
+)
+from node_v3 import (
+    PhysicsODE_Baseline, PhysicsODE_Asymmetric,
+    PhysicsODE_AsymmetricAero, PhysicsODE_AsymmetricAeroCoulomb
 )
 from torchdiffeq import odeint
 
@@ -25,10 +27,10 @@ from torchdiffeq import odeint
 # Mapeamento: substring no nome do .pth → classe do modelo
 # ──────────────────────────────────────────────────────────────────────
 MODEL_REGISTRY = [
-    ("AeroBaseline",  PhysicsODE_AeroBaseline),
-    ("AeroCoulomb",   PhysicsODE_AeroCoulomb),
-    ("AeroTustin",    PhysicsODE_AeroTustin),
-    ("AeroHibrido",   PhysicsODE_AeroHibrido),
+    ("asymm_aero_coulomb", PhysicsODE_AsymmetricAeroCoulomb),
+    ("asymm_aero", PhysicsODE_AsymmetricAero),
+    ("asymmetric", PhysicsODE_Asymmetric),
+    ("baseline", PhysicsODE_Baseline),
 ]
 
 
@@ -42,7 +44,7 @@ def infer_model_class(pth_name):
 # ──────────────────────────────────────────────────────────────────────
 # Free-Run SEGURO — integra em segmentos e aborta se divergir
 # ──────────────────────────────────────────────────────────────────────
-ANGLE_LIMIT_RAD = 10.0  # ~573° — se ultrapassar, modelo divergiu
+ANGLE_LIMIT_RAD = 15.0  # ~573° — se ultrapassar, modelo divergiu
 
 def avalia_free_run_safe(model, datasets, integrator='rk4', segment_steps=500):
     """Free-run com proteção: integra em segmentos e aborta se divergir.
@@ -158,7 +160,7 @@ def plot_free_run_safe(resultado, titulo, out_path=None):
                 ax.text(t_valid[-1], ax.get_ylim()[1] * 0.95, ' DIVERGIU',
                         color='red', fontsize=7, fontweight='bold', va='top')
 
-        div_tag = " ⚠DIVERGIU" if r['divergiu'] else ""
+        div_tag = " !DIVERGIU" if r['divergiu'] else ""
         ax.set_title(
             f"{r['name']}{div_tag}\n"
             f"RMSE={r['rmse']:.2f}° R²={r['r2']:.3f} FIT={r['fit']:.1f}% "
@@ -212,7 +214,7 @@ EXTENDED_TESTS = {
 # ──────────────────────────────────────────────────────────────────────
 # Configuração
 # ──────────────────────────────────────────────────────────────────────
-RESULT_DIR = "resultados_v9_20260916_215831"
+RESULT_DIR = "sysid/resultados/resultados_v3_20260922_114509"
 OUT_DIR = f"{RESULT_DIR}_extended_test"
 K_STEPS = 400
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -248,7 +250,7 @@ for pth_path in pth_files:
 
     ModelClass = infer_model_class(pth_name)
     if ModelClass is None:
-        print(f"\n⚠ Classe não identificada: {pth_name}")
+        print(f"\n! Classe não identificada: {pth_name}")
         continue
 
     print(f"\n{'='*60}")
@@ -317,7 +319,7 @@ print(f"\n{'='*70}")
 print(f"  RESUMO COMPARATIVO")
 print(f"{'='*70}")
 print(f"\n  {'Modelo':<30}  {'Free-Run RMSE':>13}  {'Chunk RMSE':>10}  {'Chunk FIT':>10}")
-print(f"  {'─'*70}")
+print(f"  {'-'*70}")
 for tag in resumo_freerun:
     fr = resumo_freerun[tag]
     ch = resumo_chunk.get(tag, {'rmse': 0, 'fit': 0})

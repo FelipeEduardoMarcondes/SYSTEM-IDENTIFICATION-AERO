@@ -28,29 +28,34 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False, start_idx=0,
     y, u, t, ref (se return_ref=True)
     """
     
+    import os
+    
     # URL base para os raw files do repositorio
     base_url = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/"
     
     urls = {
-        "multiseno": base_url + "data/experimentos/sysid_multiseno_validation_ref_0909_14-42.csv",
-        "degraus": base_url + "data/experimentos/degraus_0908_23-01.csv",
-        "chirp": base_url + "data/experimentos/chirp-60-amp50_0908_23-09.csv",
-        "mpc_100hz": base_url + "data/experimentos/referencia_mpc_0920_19-19.csv",
-        "multiseno_2": base_url + "data/experimentos/multi-seno-60-030Hz_0908_23-13.csv"
+        "multiseno": "data/experimentos/sysid_multiseno_validation_ref_0909_14-42.csv",
+        "degraus": "data/experimentos/degraus_0908_23-01.csv",
+        "chirp": "data/experimentos/chirp-60-amp50_0908_23-09.csv",
+        "mpc_100hz": "data/experimentos/referencia_mpc_0920_19-19.csv",
+        "multiseno_2": "data/experimentos/multi-seno-60-030Hz_0908_23-13.csv"
     }
     
+    # Determina o caminho relativo esperado do arquivo
+    rel_path = ""
+    url = ""
     if dataset_name in urls:
-        url = urls[dataset_name]
+        rel_path = urls[dataset_name]
+        url = base_url + rel_path
     elif dataset_name.startswith("http"):
         url = dataset_name
     elif dataset_name.endswith(".csv"):
-        # Trata caminhos com subpastas (ex: "RODADA-1/ensaio.csv" ou "data/controle/ref.csv")
-        # Se o usuario ja especificou "data/", vai direto da raiz do repo
         if dataset_name.startswith("data/"):
-            url = base_url + dataset_name
+            rel_path = dataset_name
+            url = base_url + rel_path
         else:
-            # Senao, assume que esta dentro de data/experimentos/ por padrao
-            url = base_url + "data/experimentos/" + dataset_name
+            rel_path = "data/experimentos/" + dataset_name
+            url = base_url + rel_path
     else:
         raise ValueError(f"Dataset nao encontrado. Escolha um destes: {list(urls.keys())}\n"
                          "Ou passe o nome do arquivo exato (ex: 'ensaio.csv') ou a URL.")
@@ -59,7 +64,7 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False, start_idx=0,
         print(f"Baixando dataset '{dataset_name}' do GitHub...")
         df = pd.read_csv(url, on_bad_lines='skip')
     except Exception as e:
-        raise RuntimeError(f"Erro ao baixar {url}: {e}")
+        raise RuntimeError(f"Erro ao carregar '{dataset_name}': {e}")
         
     # Tempo em segundos
     if 'tempo_ms' in df.columns:
