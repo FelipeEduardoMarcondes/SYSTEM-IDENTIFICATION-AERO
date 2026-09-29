@@ -32,10 +32,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-#define SIL_MODE 1 // <-- Habilitado para o STM simular a bancada (NARX) e fazer o controle preditivo
-#ifdef SIL_MODE
-#include "ann_weights.h"
-#endif
+//#define SIL_MODE 1 // <-- Comentado para rodar na bancada real com IMU
+#include "ann_weights.h" // Incluido incondicionalmente para ter acesso ao MPC na bancada real
 
 /* ── Handles HAL (declarados em main.c pelo CubeMX) ─────────────────────── */
 extern I2C_HandleTypeDef  hi2c1;
@@ -762,6 +760,11 @@ static void ciclo_controle(void)
     float y_med = angulo_filtrado + 90.0f;
     float e     = r - y_med;
     float u;
+    float t_ann_ms = 0.0f;
+
+    /* --- Atualiza historico (y) com leitura real --- */
+    for (int i = NY_MODEL - 1; i > 0; i--) sil_y_hist[i] = sil_y_hist[i-1];
+    sil_y_hist[0] = y_med;
 
     if (openloop_ativo) {
         if (t_exp < 5000) {
@@ -770,18 +773,73 @@ static void ciclo_controle(void)
             u = openloop_u;
         }
     } else {
-        float u_p = KP * e;
-        u_i       = u_i + KI * (TS / 2.0f) * (e + e_1);          /* Tustin      */
-        float u_d = -(KD / TS) * (y_med - y_1);                   /* backward    */
-        u   = u_p + u_i + u_d;
+        // Logica de chaveamento PID -> ANN -> PID na bancada real
+        if (t_exp < 5000 || t_exp >= 65000) {
+            // PID
+            float u_p = KP * e;
+            u_i       = u_i + KI * (TS / 2.0f) * (e + e_1);          /* Tustin      */
+            float u_d = -(KD / TS) * (y_med - y_1);                   /* backward    */
+            float u_calc = u_p + u_i + u_d;
 
-        /* Anti-windup por back-calculation */
-        float u_sat = u;
-        if (u_sat >  U_MAX) u_sat =  U_MAX;
-        if (u_sat < -U_MAX) u_sat = -U_MAX;
-        if (u != u_sat) u_i -= (u - u_sat);
-        u = u_sat;
+            u = u_calc;
+            /* Anti-windup por back-calculation */
+            if (u > 80.0f) u = 80.0f;
+            if (u < -10.0f) u = -10.0f;
+            if (u_calc != u) u_i -= (u_calc - u);
+        } else {
+            // ANN (MPC)
+            float nn_in[NY_MODEL + NU_MODEL + 50];
+            for(int i=0; i<NY_MODEL; i++) nn_in[i] = sil_y_hist[i];
+            for(int i=0; i<NU_MODEL; i++) nn_in[NY_MODEL+i] = sil_u_hist[i];
+            
+            // Preenche o horizonte futuro preditivo de 50 passos
+            for(int i=0; i<50; i++) {
+                float r_futuro = r;
+                uint32_t t_futuro = t_exp + (i * 10);
+                
+                if (wave_ativo) {
+                    int f_idx = wave_idx - 1 + i;
+                    if (f_idx >= 0 && f_idx < wave_len) {
+                        r_futuro = wave_buf[f_idx];
+                    } else if (wave_len > 0) {
+                        r_futuro = wave_buf[wave_len - 1]; // Mantém o último valor
+                    }
+                } else if (chirp_ativo) {
+                    float t_sec = (float)t_futuro / 1000.0f;
+                    if (t_sec >= chirp_pad_s) {
+                        float t_loc = t_sec - chirp_pad_s;
+                        r_futuro = chirp_amp * sinf((chirp_a * t_loc + chirp_b) * t_loc) + chirp_dc;
+                    } else {
+                        r_futuro = chirp_dc;
+                    }
+                } else {
+                    int temp_idx = idx_degrau;
+                    while (temp_idx + 1 < n_degraus && t_futuro >= degraus[temp_idx + 1].t_ms) {
+                        temp_idx++;
+                        r_futuro = degraus[temp_idx].ref;
+                    }
+                }
+                nn_in[NY_MODEL + NU_MODEL + i] = r_futuro;
+            }
+
+            uint32_t c_ann1 = DWT->CYCCNT;
+            float delta_u = ann_predict(nn_in);
+            uint32_t c_ann2 = DWT->CYCCNT;
+            t_ann_ms  = (float)(c_ann2  - c_ann1)  / (float)(hclk_mhz * 1000.0f);
+
+            // Integrador do MPC (u_prev + delta_u)
+            u = sil_u_hist[0] + delta_u;
+            if (u > 80.0f) u = 80.0f;
+            if (u < -10.0f) u = -10.0f;
+
+            // Mantem variaveis do PID para transicao
+            u_i = u - (KP * e) - (-(KD / TS) * (y_med - y_1));
+        }
     }
+
+    /* --- Atualiza historico (u) com controle aplicado --- */
+    for (int i = NU_MODEL - 1; i > 0; i--) sil_u_hist[i] = sil_u_hist[i-1];
+    sil_u_hist[0] = u;
 
     esc_set_us(pct_para_us(u));
 #else
