@@ -6,7 +6,7 @@ with open(r'mpc_v2.py', 'r', encoding='utf-8') as f:
 import_block = """import os, sys
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
 root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
-PLOTS_DIR = os.path.join(root_dir, "data", "experimentos", "sil", "graficos")
+PLOTS_DIR = os.path.join(root_dir, "data", "experimentos", "testes_rede", "simulacao_python")
 os.makedirs(PLOTS_DIR, exist_ok=True)
 """
 content = content.replace("import os, sys\ncurrent_dir", import_block + "current_dir")

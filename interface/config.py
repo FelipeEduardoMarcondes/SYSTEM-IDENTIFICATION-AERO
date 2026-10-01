@@ -20,9 +20,35 @@ TS             = 1.0 / FS    # s
 LIVE_JANELA_S  = 30.0         # s — janela de visualização
 LIVE_UPDATE    = 0.25         # s — intervalo mínimo entre redesenhos
 
-# ── Caminhos ──────────────────────────────────────────────────────────────────
-EXP_DIR        = os.path.join(BASE_DIR, "data", "experimentos")
-CONTROLE_DIR   = os.path.join(BASE_DIR, "data", "controle")
+# ── Caminhos (nova estrutura) ────────────────────────────────────────────────
+COLETAS_DIR       = os.path.join(BASE_DIR, "data", "coletas")
+EXPERIMENTOS_DIR  = os.path.join(BASE_DIR, "data", "experimentos_novos")
+SINAIS_REF_DIR    = os.path.join(BASE_DIR, "data", "sinais_referencia")
+
+# Legado — manter até migração completa, não usar em código novo
+EXP_DIR           = os.path.join(BASE_DIR, "data", "experimentos")   # DEPRECATED
+CONTROLE_DIR      = os.path.join(BASE_DIR, "data", "controle")       # DEPRECATED
+
+# ── Experimento ativo ────────────────────────────────────────────────────────
+# Quando definido, salvar_csv() direciona os dados para dentro do EXP.
+# Usar set_experimento_ativo("EXP001_...") antes de rodar a interface.
+_experimento_ativo = None
+
+def set_experimento_ativo(exp_id: str | None):
+    """Define o experimento ativo. Salvamentos vão para EXP###/4_aeropendulo/."""
+    global _experimento_ativo
+    _experimento_ativo = exp_id
+    if exp_id:
+        exp_path = os.path.join(EXPERIMENTOS_DIR, exp_id)
+        if not os.path.exists(exp_path):
+            print(f"  [AVISO] Pasta {exp_path} não existe. Crie com novo_experimento.py")
+        else:
+            print(f"  [OK] Experimento ativo: {exp_id}")
+
+def get_experimento_ativo() -> str | None:
+    """Retorna o ID do experimento ativo, ou None."""
+    return _experimento_ativo
+
 
 # ── Limites físicos ───────────────────────────────────────────────────────────
 REF_MIN        = 0.0          # graus

@@ -1,0 +1,23 @@
+{
+  "experimento_id": "EXP###",
+  "data_criacao": "YYYY-MM-DD",
+  "modelo": {
+    "tipo": "ex: PhysicsODE_Asymmetric",
+    "script": "ex: sysid/scripts/node_v9.py",
+    "versao": "ex: v9",
+    "n_parametros": 0
+  },
+  "treinamento": {
+    "epocas": 2000,
+    "lr_inicial": 0.015,
+    "scheduler": "CosineAnnealing",
+    "seed": 0,
+    "batch_size": 1024
+  },
+  "dados": {
+    "treino": [],
+    "validacao": [],
+    "teste": []
+  },
+  "coletas_usadas": []
+}

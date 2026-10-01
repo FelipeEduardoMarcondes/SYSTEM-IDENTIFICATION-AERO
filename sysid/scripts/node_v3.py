@@ -349,7 +349,7 @@ if __name__ == '__main__':
     modelos = {}
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = f"resultados_v3_{timestamp}"
+    out_dir = os.path.join("sysid", "resultados", f"resultados_v3_{timestamp}")
     os.makedirs(out_dir, exist_ok=True)
     print(f"Resultados em: {out_dir}/\n")
 

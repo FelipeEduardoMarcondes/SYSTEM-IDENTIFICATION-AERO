@@ -30,12 +30,21 @@ from sklearn.metrics import r2_score
 import os, sys
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
 root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
-PLOTS_DIR = os.path.join(root_dir, "data", "experimentos", "sil", "graficos")
-os.makedirs(PLOTS_DIR, exist_ok=True)
-current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
-root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
 if root_dir not in sys.path:
     sys.path.append(root_dir)
+
+# ── Experimento ativo — EDITAR AQUI para cada novo experimento ──────
+EXP_ID = os.environ.get("EXP_ID", "EXP000_legado_narx-mpc")
+EXP_OUTPUT_DIR = os.path.join(root_dir, "data", "experimentos_novos", EXP_ID)
+IDENT_DIR   = os.path.join(EXP_OUTPUT_DIR, "1_identificacao")
+MPC_DIR     = os.path.join(EXP_OUTPUT_DIR, "2_mpc_python")
+SIL_DIR     = os.path.join(EXP_OUTPUT_DIR, "3_sil_stm32")
+REAL_DIR    = os.path.join(EXP_OUTPUT_DIR, "4_aeropendulo")
+PLOTS_DIR   = MPC_DIR
+COLETAS_DIR = os.path.join(root_dir, "data", "coletas")
+SINAIS_REF_DIR = os.path.join(root_dir, "data", "sinais_referencia")
+for _d in [IDENT_DIR, MPC_DIR, SIL_DIR, REAL_DIR]:
+    os.makedirs(_d, exist_ok=True)
 
 from aerodata import readData
 
@@ -99,7 +108,7 @@ def load_processed(name, trim_start=TRIM_START_SEC, trim_end=TRIM_END_SEC, decim
     sl = slice(idx_start, idx_end, decimation)
     return u[sl], y[sl], t[sl], ref[sl] if len(ref) > 0 else np.full_like(t[sl], np.nan)
 
-u_ms, y_ms, t_ms, ref_ms = load_processed('data/experimentos/RODADA-7/multi-seno-45-040Hz_0904_20-26.csv')
+u_ms, y_ms, t_ms, ref_ms = load_processed('data/coletas/RODADA-7_20260904/multi-seno-45-040Hz_0904_20-26.csv')
 ml = max(ny_model, nu_model)
 
 # initial state from measured history: [y(k-1..k-ny), u(k-1..k-nu)] at k=ml
@@ -768,7 +777,7 @@ def export_ann_to_c(model, scaler, filename="ann_weights.h", narx_terms=None, na
 
         f.write("\n#endif\n")
 
-ann_filename = os.path.join(current_dir, 'ann_weights.h')
+ann_filename = os.path.join(SIL_DIR, 'ann_weights.h')
 export_ann_to_c(model, scaler, filename=ann_filename, narx_terms=NARX_TERMS, narx_theta=NARX_THETA, ny=ny_model, nu=nu_model)
 print(f"Arquivo {ann_filename} gerado com sucesso!")
 
@@ -908,36 +917,32 @@ plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in 
 
 # %%
 # 12. Export to CSV for STM comparison
-exp_dir = os.path.join(root_dir, "data", "experimentos", "sil")
-os.makedirs(exp_dir, exist_ok=True)
-
+# Salvando na nova estrutura de experimentos
 df_export = pd.DataFrame({"tempo_ms": (tvec_val * 1000).astype(int), "angulo_deg": y_sim, "u_pct": u_sim, "referencia": x2ref_val})
-csv_filename = os.path.join(exp_dir, "simulacao_python.csv")
+csv_filename = os.path.join(MPC_DIR, "simulacao_python.csv")
 df_export.to_csv(csv_filename, index=False)
 print(f"\nSimulation data exported to {csv_filename}!")
 
-controle_dir = os.path.join(root_dir, "data", "controle")
-os.makedirs(controle_dir, exist_ok=True)
-sim_filename = os.path.join(controle_dir, "simulacao_mpc.csv")
+# Exportar para sinais_referencia (usado pela interface sim-to-real)
+os.makedirs(SINAIS_REF_DIR, exist_ok=True)
+sim_filename = os.path.join(SINAIS_REF_DIR, "simulacao_mpc.csv")
 df_export.to_csv(sim_filename, index=False)
-ref_filename = os.path.join(controle_dir, "referencia_mpc.csv")
+ref_filename = os.path.join(SINAIS_REF_DIR, "referencia_mpc.csv")
 df_ref = pd.DataFrame({'tempo_s': df_export['tempo_ms'] / 1000.0, 'referencia_deg': x2ref_val})
 df_ref.to_csv(ref_filename, index=False)
-print(f"Auto Sim-to-Real files exported to {controle_dir}")
+print(f"Auto Sim-to-Real files exported to {SINAIS_REF_DIR}")
 
 df_mpc_train = pd.DataFrame({"tempo_ms": (tvec_train[:sim_steps_train] * 1000).astype(int), "angulo_deg": ysim_train, "u_pct": usim_train, "referencia": x2ref_train[:sim_steps_train]})
-csv_mpc_train = os.path.join(exp_dir, "simulacao_mpc_treino.csv")
+csv_mpc_train = os.path.join(MPC_DIR, "simulacao_mpc_treino.csv")
 df_mpc_train.to_csv(csv_mpc_train, index=False)
 
 df_mpc_sim = pd.DataFrame({"tempo_ms": (np.array(tvec_sim) * 1000).astype(int), "angulo_deg": ysim, "u_pct": usim, "referencia": x2ref[:len(tvec_sim)]})
-csv_mpc_sim = os.path.join(exp_dir, "simulacao_mpc_simples.csv")
+csv_mpc_sim = os.path.join(MPC_DIR, "simulacao_mpc_simples.csv")
 df_mpc_sim.to_csv(csv_mpc_sim, index=False)
 
-# Export wave for GUI (Sinal Arbitrario)
-controle_dir = os.path.join(root_dir, "data", "controle")
-os.makedirs(controle_dir, exist_ok=True)
+# Export wave for GUI (Sinal Arbitrario) → sinais_referencia
 df_wave = pd.DataFrame({"tempo_s": tvec_train[:sim_steps_train], "referencia_deg": x2ref_train[:sim_steps_train]})
-csv_wave = os.path.join(controle_dir, "wave_mpc_treino.csv")
+csv_wave = os.path.join(SINAIS_REF_DIR, "wave_mpc_treino.csv")
 df_wave.to_csv(csv_wave, index=False)
 print(f"Wave para GUI (Sinal Arbitrario) exportada para {csv_wave}!")
 

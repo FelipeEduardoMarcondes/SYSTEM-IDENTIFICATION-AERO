@@ -20,7 +20,8 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.ticker as ticker
 
-from config import EXP_DIR, CORES, MPL_RC
+from config import (EXP_DIR, COLETAS_DIR, EXPERIMENTOS_DIR, SINAIS_REF_DIR,
+                    CORES, MPL_RC, get_experimento_ativo)
 
 plt.rcParams.update(MPL_RC)
 
@@ -31,11 +32,31 @@ def salvar_csv(linhas_dados: list, prefixo: str = "ensaio") -> str:
     """
     Salva linhas CSV brutas (vindas do STM32) em arquivo com cabeçalho.
 
+    Se há um experimento ativo (definido via set_experimento_ativo),
+    salva dentro de EXP###/4_aeropendulo/. Caso contrário, salva em
+    data/coletas/RODADA_YYYYMMDD/.
+
     Retorna o caminho do arquivo criado.
     """
-    os.makedirs(EXP_DIR, exist_ok=True)
-    ts      = datetime.datetime.now().strftime("%m%d_%H-%M")
-    caminho = os.path.join(EXP_DIR, f"{prefixo}_{ts}.csv")
+    agora = datetime.datetime.now()
+    hoje = agora.strftime("%Y%m%d")
+    ts = agora.strftime("%H%M%S")
+    
+    exp_ativo = get_experimento_ativo()
+    
+    if exp_ativo:
+        # Salva dentro do experimento ativo
+        pasta_rodada = os.path.join(EXPERIMENTOS_DIR, exp_ativo, "4_aeropendulo")
+    else:
+        # Sem experimento ativo → salva em coletas do dia
+        pasta_rodada = os.path.join(COLETAS_DIR, f"RODADA_{hoje}")
+        
+    os.makedirs(pasta_rodada, exist_ok=True)
+    
+    # Nome do arquivo estruturado (ex: 20261001_143000_ensaio.csv)
+    nome_arquivo = f"{hoje}_{ts}_{prefixo}.csv"
+    caminho = os.path.join(pasta_rodada, nome_arquivo)
+    
     with open(caminho, "w") as f:
         f.write("tempo_ms,angulo_deg,u_pct,referencia\n")
         for linha in linhas_dados:
@@ -101,14 +122,22 @@ def carregar_sequencia_csv(caminho: str) -> tuple:
 
 def selecionar_csv() -> str | None:
     """Menu interativo para escolher um CSV existente."""
-    arquivos = sorted(glob.glob(f"{EXP_DIR}/**/*.csv", recursive=True) + glob.glob("*.csv"))
+    # Buscar em todos os diretórios de dados (novo + legado)
+    dirs_busca = [COLETAS_DIR, EXPERIMENTOS_DIR, EXP_DIR]
+    arquivos = []
+    for d in dirs_busca:
+        if os.path.exists(d):
+            arquivos.extend(glob.glob(os.path.join(d, "**", "*.csv"), recursive=True))
+    arquivos.extend(glob.glob("*.csv"))
+    arquivos = sorted(set(arquivos))
+
     if not arquivos:
         return None
     if len(arquivos) == 1:
         print(f"  Usando: {arquivos[0]}")
         return arquivos[0]
     print("\n  Arquivos CSV disponíveis:")
-    data_dir = os.path.dirname(EXP_DIR)
+    data_dir = os.path.dirname(COLETAS_DIR)  # = data/
     for i, f in enumerate(arquivos):
         size_kb = os.path.getsize(f) // 1024
         rel_f = os.path.relpath(f, data_dir)

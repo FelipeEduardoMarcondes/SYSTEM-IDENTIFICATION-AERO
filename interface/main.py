@@ -8,7 +8,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from config import BAUD, FS, CONTROLE_DIR
+from config import BAUD, FS, CONTROLE_DIR, SINAIS_REF_DIR
 
 try:
     from serial_comm import SerialManager, selecionar_porta, SERIAL_OK
@@ -295,17 +295,22 @@ def rodar_malha_aberta(porta: str) -> str | None:
     return salvar_csv(linhas, prefixo=f"malha_aberta_{str_pwm}")
 
 def rodar_sim_to_real(porta: str) -> str | None:
-    from config import CONTROLE_DIR
+    from config import CONTROLE_DIR, SINAIS_REF_DIR
     import time
     
-    ref_csv = os.path.join(CONTROLE_DIR, "referencia_mpc.csv")
-    sim_csv = os.path.join(CONTROLE_DIR, "simulacao_mpc.csv")
+    # Buscar referência no novo local, com fallback para o antigo
+    ref_csv = os.path.join(SINAIS_REF_DIR, "referencia_mpc.csv")
+    sim_csv = os.path.join(SINAIS_REF_DIR, "simulacao_mpc.csv")
+    if not os.path.exists(ref_csv):
+        ref_csv = os.path.join(CONTROLE_DIR, "referencia_mpc.csv")
+    if not os.path.exists(sim_csv):
+        sim_csv = os.path.join(CONTROLE_DIR, "simulacao_mpc.csv")
     
     if not os.path.exists(ref_csv):
-        print(f"  [ERRO] Arquivo {ref_csv} não encontrado. Rode a simulação primeiro.")
+        print(f"  [ERRO] Arquivo referencia_mpc.csv não encontrado em sinais_referencia/ nem controle/.")
         return None
     if not os.path.exists(sim_csv):
-        print(f"  [ERRO] Arquivo {sim_csv} não encontrado. Rode a simulação primeiro.")
+        print(f"  [ERRO] Arquivo simulacao_mpc.csv não encontrado em sinais_referencia/ nem controle/.")
         return None
         
     print("\n  [AUTO SIM-TO-REAL] Lendo referencia da simulacao...")

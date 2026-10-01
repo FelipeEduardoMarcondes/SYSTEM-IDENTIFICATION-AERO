@@ -30,12 +30,21 @@ from sklearn.metrics import r2_score
 import os, sys
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
 root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
-PLOTS_DIR = os.path.join(root_dir, "data", "experimentos", "sil", "graficos")
-os.makedirs(PLOTS_DIR, exist_ok=True)
-current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
-root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
 if root_dir not in sys.path:
     sys.path.append(root_dir)
+
+# ── Experimento ativo — EDITAR AQUI para cada novo experimento ──────
+EXP_ID = os.environ.get("EXP_ID", "EXP000_legado_narx-mpc")
+EXP_OUTPUT_DIR = os.path.join(root_dir, "data", "experimentos_novos", EXP_ID)
+IDENT_DIR   = os.path.join(EXP_OUTPUT_DIR, "1_identificacao")
+MPC_DIR     = os.path.join(EXP_OUTPUT_DIR, "2_mpc_python")
+SIL_DIR     = os.path.join(EXP_OUTPUT_DIR, "3_sil_stm32")
+REAL_DIR    = os.path.join(EXP_OUTPUT_DIR, "4_aeropendulo")
+PLOTS_DIR   = MPC_DIR
+COLETAS_DIR = os.path.join(root_dir, "data", "coletas")
+SINAIS_REF_DIR = os.path.join(root_dir, "data", "sinais_referencia")
+for _d in [IDENT_DIR, MPC_DIR, SIL_DIR, REAL_DIR]:
+    os.makedirs(_d, exist_ok=True)
 
 from aerodata import readData
 
@@ -99,7 +108,7 @@ def load_processed(name, trim_start=TRIM_START_SEC, trim_end=TRIM_END_SEC, decim
     sl = slice(idx_start, idx_end, decimation)
     return u[sl], y[sl], t[sl], ref[sl] if len(ref) > 0 else np.full_like(t[sl], np.nan)
 
-u_ms, y_ms, t_ms, ref_ms = load_processed('data/experimentos/RODADA-7/multi-seno-45-040Hz_0904_20-26.csv')
+u_ms, y_ms, t_ms, ref_ms = load_processed('data/coletas/RODADA-7_20260904/multi-seno-45-040Hz_0904_20-26.csv')
 ml = max(ny_model, nu_model)
 
 # initial state from measured history: [y(k-1..k-ny), u(k-1..k-nu)] at k=ml
@@ -168,7 +177,7 @@ for k in range(N):
         du = uk - u_prev
     u_prev = uk
 
-    J = J + 1e3 * (yk - Pref[k])**2 + 0.1 * uk**2 + 50.0 * du**2
+    J = J + 1e3 * (yk - Pref[k])**2 + 0.1 * uk**2 + 1000.0 * du**2
 
     xk = MX.sym(f'x_{k+1}', nx)
     w.append(xk)
@@ -179,6 +188,11 @@ for k in range(N):
     g.append(xk - xnext)
     lbg.append(np.zeros(nx))
     ubg.append(np.zeros(nx))
+
+    # Constraint rígida no CasADi: proíbe que o controle ótimo dê saltos abruptos
+    g.append(du)
+    lbg.append(np.array([-1.5]))
+    ubg.append(np.array([1.5]))
 
 w = vertcat(*w)
 lbw = vcat(lbw)
@@ -356,9 +370,9 @@ for k in tqdm(range(sim_steps_train), desc="MPC Dataset Collection"):
     w_opt = sol['x'].full().flatten()
     u_opt = w_opt[nx]
 
-    # Add exploratory noise to the applied control input (NEW)
-    u_applied = np.random.normal(u_opt, 3.0)  # NEW: standard deviation of 3.0% control noise
-    u_applied = np.clip(u_applied, data['u_min'][0], data['u_max'][0])  # NEW: respect bounds
+    # No noise injected, use optimal control directly for clean dataset
+    u_applied = u_opt
+    u_applied = np.clip(u_applied, data['u_min'][0], data['u_max'][0])
 
     sim_step = F(x0=xsim_train[:, -1], p=u_applied)  # NEW: apply noisy control to model
     xk1 = sim_step['xf'].full().flatten()
@@ -370,16 +384,9 @@ for k in tqdm(range(sim_steps_train), desc="MPC Dataset Collection"):
     w0_val = w_opt
 
 # Collect Dataset for ANN
-# Collect Dataset for ANN (Incremental / Velocity Form)
+# Collect Dataset for ANN (Absolute U form)
 P_data = np.array([np.concatenate([xsim_train[:, k], x2ref_train[k : k + N]]) for k in range(sim_steps_train)])
-
-# Calcula o Delta U (u_atual - u_anterior) para treinar a rede a ser incremental
-du_train = np.zeros_like(usim_train)
-du_train[0] = 0.0 # No primeiro passo assume delta=0
-for i in range(1, len(usim_train)):
-    du_train[i] = usim_train[i] - usim_train[i-1]
-
-U_data = np.array(du_train).reshape(-1, 1)
+U_data = np.array(usim_train).reshape(-1, 1)
 
 
 # --- Plotting MPC Results ---
@@ -599,6 +606,7 @@ y_sim = []
 u_sim = []
 
 e_1 = 0.0; u_i = 0.0; y_1 = 0.0; y_atual = 0.0
+u_i_ann = 0.0
 
 model.eval()
 
@@ -627,9 +635,22 @@ for k in tqdm(range(steps_val), desc="Python SIL Simulation"):
         pval = np.concatenate([xs[:, -1], ref_window])
         pval_scaled = scaler.transform(pval.reshape(1, -1))
         with torch.no_grad():
-            delta_u = float(model(torch.tensor(pval_scaled, dtype=torch.float32)).item())
-            # Integrador do MPC Incremental
+            u_nn = float(model(torch.tensor(pval_scaled, dtype=torch.float32)).item())
+            
+            # --- Anti-Offset Integrator (Parallel) com Anti-Windup ---
+            erro_atual = r_curr - y_atual
             u_prev = u_sim[-1] if len(u_sim) > 0 else 0.0
+            
+            # Anti-windup condicional: só integra se o sinal não estiver saturando no rate limiter
+            if abs(u_nn + u_i_ann - u_prev) <= 1.5:
+                u_i_ann += 0.5 * erro_atual * Ts  # Ki_ann = 0.5
+                u_i_ann = np.clip(u_i_ann, -20.0, 20.0) # Anti-windup absoluto
+                
+            u_nn_corrigido = u_nn + u_i_ann
+            
+            # Limitador de Taxa (Slew Rate Limiter) - max variação de 1.5 por ciclo
+            delta_u = np.clip(u_nn_corrigido - u_prev, -1.5, 1.5)
+            
             u_opt = float(np.clip(u_prev + delta_u, data['u_min'][0], data['u_max'][0]))
         # Keep tracking PID variables so bumpless transfer could be smoother if implemented,
         # but here we just reset or keep them. We'll track y_1 for derivative.
@@ -640,8 +661,9 @@ for k in tqdm(range(steps_val), desc="Python SIL Simulation"):
 
     # Plant simulation (NARX)
     res = F(x0=xs[:, -1], p=u_opt)
-    xs = np.c_[xs, res['xf'].full().flatten()]
-    y_atual = float(res['yk'])
+    next_state = np.clip(res['xf'].full().flatten(), -50.0, 150.0)
+    xs = np.c_[xs, next_state]
+    y_atual = float(np.clip(res['yk'].full().item(), -50.0, 150.0))
     
     y_sim.append(y_atual)
     u_sim.append(u_opt)
@@ -770,14 +792,33 @@ def export_ann_to_c(model, scaler, filename="ann_weights.h", narx_terms=None, na
             f.write("    for (int i = 0; i < 128; i++) {\n")
             f.write("        out += W2[i] * h2[i];\n")
             f.write("    }\n\n")
-            f.write("    // Incremental MPC: The output is Delta U, do NOT clip here.\n")
-            f.write("    // The main loop will integrate this value: u = u_prev + out, and then clip.\n")
+            f.write("    // Hibrid MPC: Absolute U with Slew Rate Limiter\n")
+            f.write("    // Anti-Offset Integrator com Anti-Windup\n")
+            f.write("    static float u_i_ann = 0.0f;\n")
+            f.write("    static float u_prev_c = 0.0f;\n")
+            f.write(f"    float erro_atual = input[{ny_model + nu_model}] - input[0];\n")
+            f.write("    \n")
+            f.write("    float test_delta = (out + u_i_ann) - u_prev_c;\n")
+            f.write("    if (test_delta > -1.5f && test_delta < 1.5f) {\n")
+            f.write("        u_i_ann += 0.5f * erro_atual * 0.05f; // Ki_ann = 0.5, Ts = 0.05\n")
+            f.write("        if (u_i_ann > 20.0f) u_i_ann = 20.0f;\n")
+            f.write("        if (u_i_ann < -20.0f) u_i_ann = -20.0f;\n")
+            f.write("    }\n")
+            f.write("    out += u_i_ann;\n\n")
+
+            f.write("    float delta_u = out - u_prev_c;\n")
+            f.write("    if (delta_u > 1.5f) delta_u = 1.5f;\n")
+            f.write("    if (delta_u < -1.5f) delta_u = -1.5f;\n")
+            f.write("    out = u_prev_c + delta_u;\n")
+            f.write("    if (out > 80.0f) out = 80.0f;\n")
+            f.write("    if (out < -10.0f) out = -10.0f;\n")
+            f.write("    u_prev_c = out;\n")
             f.write("    return out;\n")
             f.write("}\n")
 
         f.write("\n#endif\n")
 
-ann_filename = os.path.join(current_dir, 'ann_weights.h')
+ann_filename = os.path.join(SIL_DIR, 'ann_weights.h')
 export_ann_to_c(model, scaler, filename=ann_filename, narx_terms=NARX_TERMS, narx_theta=NARX_THETA, ny=ny_model, nu=nu_model)
 print(f"Arquivo {ann_filename} gerado com sucesso!")
 
@@ -917,36 +958,32 @@ plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in 
 
 # %%
 # 12. Export to CSV for STM comparison
-exp_dir = os.path.join(root_dir, "data", "experimentos", "sil")
-os.makedirs(exp_dir, exist_ok=True)
-
+# Salvando na nova estrutura de experimentos
 df_export = pd.DataFrame({"tempo_ms": (tvec_val * 1000).astype(int), "angulo_deg": y_sim, "u_pct": u_sim, "referencia": x2ref_val})
-csv_filename = os.path.join(exp_dir, "simulacao_python.csv")
+csv_filename = os.path.join(MPC_DIR, "simulacao_python.csv")
 df_export.to_csv(csv_filename, index=False)
 print(f"\nSimulation data exported to {csv_filename}!")
 
-controle_dir = os.path.join(root_dir, "data", "controle")
-os.makedirs(controle_dir, exist_ok=True)
-sim_filename = os.path.join(controle_dir, "simulacao_mpc.csv")
+# Exportar para sinais_referencia (usado pela interface sim-to-real)
+os.makedirs(SINAIS_REF_DIR, exist_ok=True)
+sim_filename = os.path.join(SINAIS_REF_DIR, "simulacao_mpc.csv")
 df_export.to_csv(sim_filename, index=False)
-ref_filename = os.path.join(controle_dir, "referencia_mpc.csv")
+ref_filename = os.path.join(SINAIS_REF_DIR, "referencia_mpc.csv")
 df_ref = pd.DataFrame({'tempo_s': df_export['tempo_ms'] / 1000.0, 'referencia_deg': x2ref_val})
 df_ref.to_csv(ref_filename, index=False)
-print(f"Auto Sim-to-Real files exported to {controle_dir}")
+print(f"Auto Sim-to-Real files exported to {SINAIS_REF_DIR}")
 
 df_mpc_train = pd.DataFrame({"tempo_ms": (tvec_train[:sim_steps_train] * 1000).astype(int), "angulo_deg": ysim_train, "u_pct": usim_train, "referencia": x2ref_train[:sim_steps_train]})
-csv_mpc_train = os.path.join(exp_dir, "simulacao_mpc_treino.csv")
+csv_mpc_train = os.path.join(MPC_DIR, "simulacao_mpc_treino.csv")
 df_mpc_train.to_csv(csv_mpc_train, index=False)
 
 df_mpc_sim = pd.DataFrame({"tempo_ms": (np.array(tvec_sim) * 1000).astype(int), "angulo_deg": ysim, "u_pct": usim, "referencia": x2ref[:len(tvec_sim)]})
-csv_mpc_sim = os.path.join(exp_dir, "simulacao_mpc_simples.csv")
+csv_mpc_sim = os.path.join(MPC_DIR, "simulacao_mpc_simples.csv")
 df_mpc_sim.to_csv(csv_mpc_sim, index=False)
 
-# Export wave for GUI (Sinal Arbitrario)
-controle_dir = os.path.join(root_dir, "data", "controle")
-os.makedirs(controle_dir, exist_ok=True)
+# Export wave for GUI (Sinal Arbitrario) → sinais_referencia
 df_wave = pd.DataFrame({"tempo_s": tvec_train[:sim_steps_train], "referencia_deg": x2ref_train[:sim_steps_train]})
-csv_wave = os.path.join(controle_dir, "wave_mpc_treino.csv")
+csv_wave = os.path.join(SINAIS_REF_DIR, "wave_mpc_treino.csv")
 df_wave.to_csv(csv_wave, index=False)
 print(f"Wave para GUI (Sinal Arbitrario) exportada para {csv_wave}!")
 
