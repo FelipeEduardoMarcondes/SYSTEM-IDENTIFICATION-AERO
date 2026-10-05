@@ -29,9 +29,19 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False, start_idx=0,
     """
     
     import os
+    import subprocess
     
-    # URL base para os raw files do repositorio
-    base_url = "https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/main/"
+    # URL base para os raw files do repositorio (dinâmico baseado na branch atual)
+    branch = "main"
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        branch = subprocess.check_output(['git', 'branch', '--show-current'], cwd=current_dir, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        if not branch:
+            branch = "main"
+    except Exception:
+        pass
+    
+    base_url = f"https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/{branch}/"
     
     urls = {
         "multiseno": "data/experimentos/sysid_multiseno_validation_ref_0909_14-42.csv",
@@ -61,8 +71,13 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False, start_idx=0,
                          "Ou passe o nome do arquivo exato (ex: 'ensaio.csv') ou a URL.")
     
     try:
-        print(f"Baixando dataset '{dataset_name}' do GitHub...")
-        df = pd.read_csv(url, on_bad_lines='skip')
+        local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), rel_path) if rel_path else ""
+        if local_path and os.path.exists(local_path):
+            print(f"Carregando dataset '{dataset_name}' localmente...")
+            df = pd.read_csv(local_path, on_bad_lines='skip')
+        else:
+            print(f"Baixando dataset '{dataset_name}' do GitHub...")
+            df = pd.read_csv(url, on_bad_lines='skip')
     except Exception as e:
         raise RuntimeError(f"Erro ao carregar '{dataset_name}': {e}")
         
