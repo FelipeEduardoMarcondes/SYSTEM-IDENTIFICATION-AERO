@@ -89,7 +89,7 @@ def _definir_sequencia_degraus() -> tuple:
             print("  Formato: <tempo_s> <angulo_deg>  ex: 0 40")
     else:
         from config import CONTROLE_DIR
-        csvs = sorted(glob.glob("*.csv") + glob.glob(f"{CONTROLE_DIR}/*.csv"))
+        csvs = sorted(glob.glob("*.csv") + glob.glob(f"{CONTROLE_DIR}/*.csv") + glob.glob(f"{SINAIS_REF_DIR}/*.csv"))
         if not csvs:
             print("  Nenhum CSV encontrado. Usando padrão.")
             return 10.0, [(0.0, 45.0)]
@@ -124,7 +124,7 @@ def _configurar_sinal_arbitrario() -> tuple | None:
     import glob
     print("\n  Configuracao do SINAL ARBITRARIO (Carregar CSV)")
 
-    csvs = sorted(glob.glob("*.csv") + glob.glob(f"{CONTROLE_DIR}/*.csv"))
+    csvs = sorted(glob.glob("*.csv") + glob.glob(f"{CONTROLE_DIR}/*.csv") + glob.glob(f"{SINAIS_REF_DIR}/*.csv"))
     if not csvs:
         print(f"  Nenhum CSV encontrado na pasta '{CONTROLE_DIR}'.")
         return None
@@ -390,6 +390,42 @@ if __name__ == "__main__":
     print("=" * 60)
     print("  Aeropendulo  |  Aquisicao de Dados  |  v2")
     print("=" * 60)
+
+    from config import set_experimento_ativo, EXPERIMENTOS_DIR
+    print("\n  [Configuracao de Experimento]")
+    
+    exp_folders = []
+    if os.path.exists(EXPERIMENTOS_DIR):
+        exp_folders = [d for d in os.listdir(EXPERIMENTOS_DIR) if os.path.isdir(os.path.join(EXPERIMENTOS_DIR, d))]
+    exp_folders.sort()
+    
+    exp_input = ""
+    if exp_folders:
+        print("  Experimentos disponiveis:")
+        for i, folder in enumerate(exp_folders, 1):
+            print(f"  [{i}] {folder}")
+        print("  [0] Coleta Livre (nenhum experimento)")
+        
+        escolha = input(f"\n  Escolha [0-{len(exp_folders)}]: ").strip()
+        try:
+            escolha_int = int(escolha)
+            if 1 <= escolha_int <= len(exp_folders):
+                exp_input = exp_folders[escolha_int - 1]
+        except ValueError:
+            pass
+    else:
+        exp_input = input("  Nenhum experimento encontrado. Digite o nome de um novo (ou Enter para Coleta Livre): ").strip()
+
+    if exp_input:
+        print(f"\n  Experimento selecionado: {exp_input}")
+        print("  Modo de execucao:")
+        print("  [1] Bancada Fisica (salvar em 4_aeropendulo)")
+        print("  [2] Simulacao SIL (salvar em 3_sil_stm32)")
+        modo_op = input("  Escolha [1-2]: ").strip()
+        modo_str = "3_sil_stm32" if modo_op == "2" else "4_aeropendulo"
+        set_experimento_ativo(exp_input, modo_str)
+    else:
+        print("  Modo Coleta Livre selecionado (sem experimento ativo).")
 
     if len(sys.argv) > 1:
         plotar(sys.argv[1])

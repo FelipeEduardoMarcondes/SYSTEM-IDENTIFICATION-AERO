@@ -470,9 +470,10 @@ static uint16_t __attribute__((unused)) pct_para_us(float pct)
 
 static void resetar_controlador(void)
 {
-    e_1 = 0.0f;
+    float y_atual = angulo_filtrado + 90.0f;
+    e_1 = r - y_atual;
     u_i = 0.0f;
-    y_1 = 0.0f;
+    y_1 = y_atual;
 }
 
 /* ======================================================================== */
@@ -788,12 +789,12 @@ static void ciclo_controle(void)
             if (u_calc != u) u_i -= (u_calc - u);
         } else {
             // ANN (MPC)
-            float nn_in[NY_MODEL + NU_MODEL + 50];
+            float nn_in[NY_MODEL + NU_MODEL + 100];
             for(int i=0; i<NY_MODEL; i++) nn_in[i] = sil_y_hist[i];
             for(int i=0; i<NU_MODEL; i++) nn_in[NY_MODEL+i] = sil_u_hist[i];
             
-            // Preenche o horizonte futuro preditivo de 50 passos
-            for(int i=0; i<50; i++) {
+            // Preenche o horizonte futuro preditivo de 100 passos
+            for(int i=0; i<100; i++) {
                 float r_futuro = r;
                 uint32_t t_futuro = t_exp + (i * 10);
                 
@@ -823,12 +824,10 @@ static void ciclo_controle(void)
             }
 
             uint32_t c_ann1 = DWT->CYCCNT;
-            float delta_u = ann_predict(nn_in);
+            u = ann_predict(nn_in);
             uint32_t c_ann2 = DWT->CYCCNT;
             t_ann_ms  = (float)(c_ann2  - c_ann1)  / (float)(hclk_mhz * 1000.0f);
 
-            // Integrador do MPC (u_prev + delta_u)
-            u = sil_u_hist[0] + delta_u;
             if (u > 80.0f) u = 80.0f;
             if (u < -10.0f) u = -10.0f;
 
@@ -872,12 +871,12 @@ static void ciclo_controle(void)
             y_1 = y_med;
         } else {
             // ANN
-            float nn_in[NY_MODEL + NU_MODEL + 50];
+            float nn_in[NY_MODEL + NU_MODEL + 100];
             for(int i=0; i<NY_MODEL; i++) nn_in[i] = sil_y_hist[i];
             for(int i=0; i<NU_MODEL; i++) nn_in[NY_MODEL+i] = sil_u_hist[i];
             
-            // Preenche o horizonte futuro preditivo de 50 passos
-            for(int i=0; i<50; i++) {
+            // Preenche o horizonte futuro preditivo de 100 passos
+            for(int i=0; i<100; i++) {
                 float r_futuro = r;
                 uint32_t t_futuro = t_exp + (i * 10);
                 

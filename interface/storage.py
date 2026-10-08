@@ -33,7 +33,7 @@ def salvar_csv(linhas_dados: list, prefixo: str = "ensaio") -> str:
     Salva linhas CSV brutas (vindas do STM32) em arquivo com cabeçalho.
 
     Se há um experimento ativo (definido via set_experimento_ativo),
-    salva dentro de EXP###/4_aeropendulo/. Caso contrário, salva em
+    salva dentro da subpasta escolhida. Caso contrário, salva em
     data/coletas/RODADA_YYYYMMDD/.
 
     Retorna o caminho do arquivo criado.
@@ -45,8 +45,10 @@ def salvar_csv(linhas_dados: list, prefixo: str = "ensaio") -> str:
     exp_ativo = get_experimento_ativo()
     
     if exp_ativo:
-        # Salva dentro do experimento ativo
-        pasta_rodada = os.path.join(EXPERIMENTOS_DIR, exp_ativo, "4_aeropendulo")
+        from config import get_modo_execucao
+        modo = get_modo_execucao()
+        # Salva dentro do experimento ativo na subpasta selecionada
+        pasta_rodada = os.path.join(EXPERIMENTOS_DIR, exp_ativo, modo)
     else:
         # Sem experimento ativo → salva em coletas do dia
         pasta_rodada = os.path.join(COLETAS_DIR, f"RODADA_{hoje}")

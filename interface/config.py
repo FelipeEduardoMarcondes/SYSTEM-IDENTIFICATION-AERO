@@ -33,21 +33,26 @@ CONTROLE_DIR      = os.path.join(BASE_DIR, "data", "controle")       # DEPRECATE
 # Quando definido, salvar_csv() direciona os dados para dentro do EXP.
 # Usar set_experimento_ativo("EXP001_...") antes de rodar a interface.
 _experimento_ativo = None
+_modo_execucao = "4_aeropendulo"
 
-def set_experimento_ativo(exp_id: str | None):
-    """Define o experimento ativo. Salvamentos vão para EXP###/4_aeropendulo/."""
-    global _experimento_ativo
+def set_experimento_ativo(exp_id: str | None, modo: str = "4_aeropendulo"):
+    """Define o experimento ativo. Salvamentos vão para a pasta escolhida."""
+    global _experimento_ativo, _modo_execucao
     _experimento_ativo = exp_id
+    _modo_execucao = modo
     if exp_id:
         exp_path = os.path.join(EXPERIMENTOS_DIR, exp_id)
         if not os.path.exists(exp_path):
             print(f"  [AVISO] Pasta {exp_path} não existe. Crie com novo_experimento.py")
         else:
-            print(f"  [OK] Experimento ativo: {exp_id}")
+            print(f"  [OK] Experimento ativo: {exp_id} (Salvando em: {modo})")
 
 def get_experimento_ativo() -> str | None:
     """Retorna o ID do experimento ativo, ou None."""
     return _experimento_ativo
+
+def get_modo_execucao() -> str:
+    return _modo_execucao
 
 
 # ── Limites físicos ───────────────────────────────────────────────────────────

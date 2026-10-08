@@ -34,7 +34,7 @@ if root_dir not in sys.path:
     sys.path.append(root_dir)
 
 # ── Experimento ativo — EDITAR AQUI para cada novo experimento ──────
-EXP_ID = os.environ.get("EXP_ID", "EXP000_legado_narx-mpc")
+EXP_ID = os.environ.get("EXP_ID", "EXP001_legado_narx-mpc")
 EXP_OUTPUT_DIR = os.path.join(root_dir, "data", "experimentos_novos", EXP_ID)
 IDENT_DIR   = os.path.join(EXP_OUTPUT_DIR, "1_identificacao")
 MPC_DIR     = os.path.join(EXP_OUTPUT_DIR, "2_mpc_python")
@@ -129,7 +129,7 @@ plt.legend(); plt.grid(True); plt.tight_layout(); plt.savefig(os.path.join(PLOTS
 
 # %%
 # 3. MPC Setup
-N = 200
+N = 100
 data = {
     'Ts': Ts,
     'x0': np.zeros(nx),
@@ -177,7 +177,7 @@ for k in range(N):
         du = uk - u_prev
     u_prev = uk
 
-    J = J + 1e3 * (yk - Pref[k])**2 + 0.1 * uk**2 + 5000.0 * du**2
+    J = J + 1e3 * (yk - Pref[k])**2 + 0.1 * uk**2 + 10000.0 * du**2
 
     xk = MX.sym(f'x_{k+1}', nx)
     w.append(xk)
@@ -344,7 +344,7 @@ plt.plot(tvec_train, x2ref_train, label='Training Reference')
 plt.axhline(45.0, color='gray', ls=':', lw=1)
 plt.axhline(60.0, color='gray', ls=':', lw=1)
 plt.xlabel('Time [s]'); plt.ylabel('Reference Angle [deg]')
-plt.title(f'Training Reference â multisine (fmax={f_max} Hz) + random steps  (total {steps_train*Ts:.0f} s)')
+plt.title(f'Training Reference multisine (fmax={f_max} Hz) + random steps  (total {steps_train*Ts:.0f} s)')
 plt.legend(); plt.grid(True); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 # %%
@@ -494,7 +494,7 @@ fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 # Training plot
 axes[0].scatter(y_train, y_train_pred, alpha=0.3, color='blue')
 axes[0].plot([y_train.min(), y_train.max()], [y_train.min(), y_train.max()], 'r--', lw=2)
-axes[0].set_title(f"Training Set\nRÂ²: {r2_score(y_train, y_train_pred):.4f}")
+axes[0].set_title(f"Training Set\nR2: {r2_score(y_train, y_train_pred):.4f}")
 axes[0].set_xlabel("True u (Control)")
 axes[0].set_ylabel("Predicted u (Control)")
 axes[0].grid(True)
@@ -502,7 +502,7 @@ axes[0].grid(True)
 # Validation plot
 axes[1].scatter(y_val, y_val_pred, alpha=0.3, color='green')
 axes[1].plot([y_val.min(), y_val.max()], [y_val.min(), y_val.max()], 'r--', lw=2)
-axes[1].set_title(f"Validation Set\nRÂ²: {r2_score(y_val, y_val_pred):.4f}")
+axes[1].set_title(f"Validation Set\nR2: {r2_score(y_val, y_val_pred):.4f}")
 axes[1].set_xlabel("True u (Control)")
 axes[1].set_ylabel("Predicted u (Control)")
 axes[1].grid(True)
@@ -510,7 +510,7 @@ axes[1].grid(True)
 # Test plot
 axes[2].scatter(y_test, y_test_pred, alpha=0.3, color='orange')
 axes[2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
-axes[2].set_title(f"Test Set RA²: {r2_score(y_test, y_test_pred):.4f}")
+axes[2].set_title(f"Test Set R2: {r2_score(y_test, y_test_pred):.4f}")
 axes[2].set_xlabel("True u (Control)")
 axes[2].set_ylabel("Predicted u (Control)")
 axes[2].grid(True)
@@ -947,4 +947,111 @@ df_wave.to_csv(csv_wave, index=False)
 print(f"Wave para GUI (Sinal Arbitrario) exportada para {csv_wave}!")
 
 print("Exportacoes de CSV concluidas!")
-plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show()
+
+# =====================================================================
+# 13. Testes Extras de Validação (Degraus e Senoidal Suave)
+# =====================================================================
+def run_sil_validation(x2ref_custom, name, filename_prefix):
+    xs_val = np.zeros((nx, 1))
+    y_atual_val = 0.0
+    y_sim_val = []
+    u_sim_val = []
+    u_i_val = 0.0
+    e_1_val = 0.0
+    y_1_val = 0.0
+
+    steps_custom = len(x2ref_custom)
+    tvec_custom = np.arange(steps_custom) * Ts
+    x2ref_full_custom = np.concatenate([x2ref_custom, np.full(N, 45.0)])
+
+    print(f"\nRunning Python SIL Validation ({name})...")
+    for k in tqdm(range(steps_custom), desc=f"SIL {name}"):
+        t = k * Ts
+        r_curr = x2ref_custom[k]
+        
+        if t < T_PID_START or t >= (steps_custom * Ts) - T_PID_END:
+            # PID
+            erro = r_curr - y_atual_val
+            u_p = Kp * erro
+            u_i_val = u_i_val + Ki * (Ts / 2.0) * (erro + e_1_val)
+            u_d = -(Kd / Ts) * (y_atual_val - y_1_val)
+            u_calc = u_p + u_i_val + u_d
+            u_opt = float(np.clip(u_calc, -10.0, 80.0))
+            if u_calc != u_opt:
+                u_i_val -= (u_calc - u_opt)
+            e_1_val = erro; y_1_val = y_atual_val
+        else:
+            # ANN
+            ref_window = x2ref_full_custom[k : k + N]
+            pval = np.concatenate([xs_val[:, -1], ref_window])
+            pval_scaled = scaler.transform(pval.reshape(1, -1))
+            with torch.no_grad():
+                u_opt = float(np.clip(model(torch.tensor(pval_scaled, dtype=torch.float32)).item(), data["u_min"][0], data["u_max"][0]))
+            erro = r_curr - y_atual_val
+            e_1_val = erro; y_1_val = y_atual_val
+            u_i_val = u_opt - (Kp * erro) - (-(Kd / Ts) * (y_atual_val - y_1_val))
+            
+        res = F(x0=xs_val[:, -1], p=u_opt)
+        xf_new = res["xf"].full().flatten()
+        
+        if np.any(np.isnan(xf_new)) or np.any(np.isinf(xf_new)) or np.max(np.abs(xf_new)) > 1e6:
+            print(f"Warning: Diverged at step {k}")
+            break
+            
+        xs_val = np.c_[xs_val, xf_new]
+        y_atual_val = float(res["yk"])
+        y_sim_val.append(y_atual_val)
+        u_sim_val.append(u_opt)
+        
+    plt.figure(figsize=(14, 5))
+    plt.plot(tvec_custom[:len(y_sim_val)], x2ref_custom[:len(y_sim_val)], "k--", label="Reference")
+    plt.plot(tvec_custom[:len(y_sim_val)], y_sim_val, "b-", label="y (Angle)")
+    plt.axvspan(0, T_PID_START, color="gray", alpha=0.15, label="PID Control")
+    plt.axvspan(steps_custom*Ts - T_PID_END, steps_custom*Ts, color="gray", alpha=0.15)
+    plt.xlabel("Time [s]"); plt.ylabel("Angle [deg]")
+    plt.title(f"Python SIL Validation - {name}")
+    plt.legend(); plt.grid(True); plt.tight_layout()
+    plt.savefig(os.path.join(PLOTS_DIR, f"{filename_prefix}_plot.png")); plt.show(block=False); plt.pause(0.1)
+
+    df_export = pd.DataFrame({"tempo_ms": (tvec_custom[:len(y_sim_val)] * 1000).astype(int), 
+                              "angulo_deg": y_sim_val, "u_pct": u_sim_val, 
+                              "referencia": x2ref_custom[:len(y_sim_val)]})
+    df_export.to_csv(os.path.join(MPC_DIR, f"simulacao_python_{filename_prefix}.csv"), index=False)
+    
+    df_ref = pd.DataFrame({'tempo_s': df_export['tempo_ms'] / 1000.0, 'referencia_deg': x2ref_custom[:len(y_sim_val)]})
+    df_ref.to_csv(os.path.join(SINAIS_REF_DIR, f"referencia_{filename_prefix}.csv"), index=False)
+    print(f"Exported {filename_prefix} data.")
+
+# --- VAL 2: Degraus ---
+np.random.seed(101)
+x2ref_val2 = np.zeros(steps_val)
+idx = 0
+x2ref_val2[idx : idx + n_pid_start] = 45.0
+idx += n_pid_start
+while idx < steps_val - n_pid_end:
+    dur = int(round(np.random.uniform(5.0, 15.0) / Ts))
+    if idx + dur > steps_val - n_pid_end:
+        dur = (steps_val - n_pid_end) - idx
+    x2ref_val2[idx : idx + dur] = np.random.uniform(20.0, 110.0)
+    idx += dur
+x2ref_val2[steps_val - n_pid_end : steps_val] = 45.0
+
+run_sil_validation(x2ref_val2, "Degraus Aleatorios", "val2_degraus")
+
+# --- VAL 3: Senoidal Suave ---
+x2ref_val3 = np.zeros(steps_val)
+x2ref_val3[0 : n_pid_start] = 45.0
+n_mid = steps_val - n_pid_start - n_pid_end
+t_mid = np.arange(n_mid) * Ts
+f_max = 0.1
+df_val = 1.0 / (n_mid * Ts)
+freqs = np.arange(df_val, f_max + 1e-9, df_val)
+phases = np.random.uniform(0, 2 * np.pi, len(freqs))
+ms = np.sum([np.sin(2*np.pi*f*t_mid + ph) for f, ph in zip(freqs, phases)], axis=0)
+ms = ms / np.max(np.abs(ms)) * 40.0 + 65.0
+x2ref_val3[n_pid_start : steps_val - n_pid_end] = ms
+x2ref_val3[steps_val - n_pid_end : steps_val] = 45.0
+
+run_sil_validation(x2ref_val3, "Senoidal Suave", "val3_senoidal")
+
+plt.show()
