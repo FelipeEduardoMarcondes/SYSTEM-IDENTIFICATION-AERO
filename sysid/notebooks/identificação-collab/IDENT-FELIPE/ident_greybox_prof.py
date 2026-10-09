@@ -235,7 +235,7 @@ def run_dynamic_optimization(k_static):
     
     # Configura o IPOPT
     p_opts = {"expand": True}
-    s_opts = {"max_iter": 500, "print_level": 5, "tol": 1e-4, "hessian_approximation": "limited-memory"}
+    s_opts = {"max_iter": 2000, "print_level": 5, "tol": 1e-3, "hessian_approximation": "limited-memory"}    
     opti.solver("ipopt", p_opts, s_opts)
     
     print("Iniciando otimização do IPOPT...")
