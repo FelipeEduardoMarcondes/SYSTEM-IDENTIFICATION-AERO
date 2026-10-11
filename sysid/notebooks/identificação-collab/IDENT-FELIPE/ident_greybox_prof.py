@@ -186,26 +186,36 @@ def run_dynamic_optimization(k_static):
     X = opti.variable(2, N)
     
     # --- Parâmetros a Descobrir (forma em aceleração, rad/s^2) ---
-    c1 = opti.variable() # c1 = -Cg/J   (gravidade)
-    c2 = opti.variable() # c2 = -b/J    (atrito viscoso linear)
-    Fc = opti.variable() # Coulomb em rad/s^2
-    Fs = opti.variable() # Pico Stribeck em rad/s^2
-    vs = opti.variable() # Velocidade crítica do Stribeck
+    # Variáveis de otimização normalizadas (~1) para o IPOPT; valores físicos = escala * variável
+    s_c1, s_c2, s_f = 8.0, 0.4, 0.15
+    p1 = opti.variable() # c1 = -s_c1*p1   (c1 = -Cg/J, gravidade)
+    p2 = opti.variable() # c2 = -s_c2*p2   (c2 = -b/J, atrito viscoso linear)
+    p3 = opti.variable() # Fc = s_f*p3     (Coulomb em rad/s^2)
+    p4 = opti.variable() # Fs = s_f*p4     (pico Stribeck em rad/s^2)
+    vs = opti.variable() # Velocidade crítica do Stribeck [rad/s]
+    c1 = -s_c1 * p1
+    c2 = -s_c2 * p2
+    Fc = s_f * p3
+    Fs = s_f * p4
     c3 = -k_static * c1  # c3 = Ktau/J, preso à curva semiestática (c3/|c1| = k)
     
-    # Limites
-    opti.subject_to(opti.bounded(-40.0, c1, -0.5))
-    opti.subject_to(opti.bounded(-20.0, c2, 0.0))
-    opti.subject_to(opti.bounded(0.0, Fc, 5.0))
-    opti.subject_to(opti.bounded(0.0, Fs, 5.0))
-    opti.subject_to(opti.bounded(0.01, vs, 5.0))
+    # Limites (c1 em [-28,-1.4] equivale a J em [0.01, 0.2] kg.m^2 com Cg físico)
+    opti.subject_to(opti.bounded(0.175, p1, 3.5))
+    opti.subject_to(opti.bounded(0.0, p2, 12.0))
+    opti.subject_to(opti.bounded(0.0, p3, 6.0))
+    opti.subject_to(opti.bounded(0.0, p4, 6.0))
+    opti.subject_to(opti.bounded(0.1, vs, 5.0))
     
     # Chutes Iniciais (J~0.035: c1=-Cg/J, c2=-b/J, Fc/J...)
-    opti.set_initial(c1, -C_g / 0.035)
-    opti.set_initial(c2, -0.016 / 0.035)
-    opti.set_initial(Fc, 0.005 / 0.035)
-    opti.set_initial(Fs, 0.005 / 0.035)
+    opti.set_initial(p1, (C_g / 0.035) / s_c1)
+    opti.set_initial(p2, (0.016 / 0.035) / s_c2)
+    opti.set_initial(p3, (0.005 / 0.035) / s_f)
+    opti.set_initial(p4, (0.005 / 0.035) / s_f)
     opti.set_initial(vs, 0.5)
+    
+    # Warm start dos estados (multiple shooting): ângulo medido e velocidade por diferenças finitas
+    opti.set_initial(X[0, :], y_meas)
+    opti.set_initial(X[1, :], np.gradient(y_meas, dt))
     
     # Condição inicial
     opti.subject_to(X[0, 0] == y_meas[0])
@@ -235,7 +245,7 @@ def run_dynamic_optimization(k_static):
     
     # Configura o IPOPT
     p_opts = {"expand": True}
-    s_opts = {"max_iter": 500, "print_level": 5, "tol": 1e-4, "hessian_approximation": "limited-memory"}
+    s_opts = {"max_iter": 500, "max_cpu_time": 300.0, "print_level": 5, "tol": 1e-4, "hessian_approximation": "limited-memory"}
     opti.solver("ipopt", p_opts, s_opts)
     
     print("Iniciando otimização do IPOPT...")
