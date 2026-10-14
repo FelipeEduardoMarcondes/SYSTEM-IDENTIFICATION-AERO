@@ -92,9 +92,12 @@ class AeropenduloSimulator:
 
     def deriv(self, th, w, a, u):
         fric = -(self.Fc + self.Fs * np.exp(-(w / self.vs)**2)) * np.tanh(50.0 * w)
-        # Empuxo: quadrático com zona morta u0 se disponível, ou a*|a|
+        # Empuxo: quadrático com zona morta u0 se disponível (suporta bidirecional com np.sign), ou a*|a|
         if self.u0 > 1e-4:
-            thrust = np.maximum(a - self.u0, 0.0)**2 if self.tau_m > 1e-4 else np.maximum(u - self.u0, 0.0)**2
+            if self.tau_m > 1e-4:
+                thrust = np.sign(a) * np.maximum(np.abs(a) - self.u0, 0.0)**2
+            else:
+                thrust = np.sign(u) * np.maximum(np.abs(u) - self.u0, 0.0)**2
         else:
             thrust = a * np.abs(a) if self.tau_m > 1e-4 else u * np.abs(u)
 
@@ -308,11 +311,19 @@ if __name__ == '__main__':
     # 2. Localiza os ensaios da RODADA-7
     r7_dir = os.path.join(root_dir, "data", "experimentos", "coleta_dados", "RODADA-7")
     if args.file:
-        cands = [args.file] if os.path.isabs(args.file) else [os.path.join(r7_dir, args.file), os.path.join(current_dir, args.file)]
+        cands = [args.file] if os.path.isabs(args.file) else [
+            os.path.join(root_dir, args.file),
+            os.path.join(r7_dir, args.file),
+            os.path.join(current_dir, args.file),
+            args.file
+        ]
         target_files = [f for f in cands if os.path.exists(f)]
         if not target_files:
-            # Tenta busca parcial por nome
-            target_files = glob.glob(os.path.join(r7_dir, f"*{args.file}*.csv"))
+            # Tenta busca parcial recursiva apenas em pastas de coletas/experimentos
+            raw_cands = glob.glob(os.path.join(root_dir, "data", "**", f"*{args.file}*.csv"), recursive=True)
+            target_files = [f for f in raw_cands if "coleta" in f.lower() or "experimento" in f.lower()]
+            if not target_files:
+                target_files = raw_cands
         if not target_files:
             print(f"Erro: arquivo '{args.file}' não encontrado.")
             sys.exit(1)
@@ -347,7 +358,10 @@ if __name__ == '__main__':
     os.makedirs(out_dir, exist_ok=True)
 
     for fpath in target_files:
-        res = simular_ensaio(fpath, plant, pid)
+        try:
+            res = simular_ensaio(fpath, plant, pid)
+        except Exception as e:
+            continue
         results.append(res)
         print(f"{res['name'][:32]:32s} | {res['fit_y']:11.1f}% | {res['rmse_y']:10.2f}° | {res['fit_u']:11.1f}% | {res['rmse_u']:10.2f}%")
 
