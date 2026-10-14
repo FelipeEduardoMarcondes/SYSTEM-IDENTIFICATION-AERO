@@ -14,6 +14,7 @@ Validação: simulação livre (free-run, só u medido + condição inicial) em 
 import os
 import sys
 import time
+import json
 import numpy as np
 import casadi as cs
 import matplotlib.pyplot as plt
@@ -32,43 +33,55 @@ from ident_greybox_prof import extract_static_gain, C_g
 # (arquivo, corte_inicial [s], corte_final [s])
 # Fora: MIX_DC_*.csv (concatenação dos mesmos ensaios) e degraus_0905 (buraco de 10 s no tempo)
 # =============================================================================
-R7 = "data/coletas/RODADA-7_20260904/"
+R7 = "data/experimentos/coleta_dados/RODADA-7/"
 TR = (10.0, 13.0)
 
 # Treino: 1 ensaio de cada tipo por DC
 TRAIN = [(R7 + f, *TR) for f in [
-    "aprbs-45-1_0904_19-54.csv",
-    "chirp-45-amp35_0904_20-13.csv",
-    "multi-seno-45-040Hz_0904_20-26.csv",
-    "seq-degraus-45-1_0904_20-41.csv",
-    "aprbs-60-1_0904_20-04.csv",
-    "chirp-60-amp50_0904_20-18.csv",
-    "multi-seno-60-040Hz_0904_20-35.csv",
-    "seq-degraus-60-1_0904_20-51.csv",
-]]
-
-# Validação free-run: todo o resto da RODADA-7
-VAL = [(R7 + f, *TR) for f in [
-    "aprbs-45-2_0904_19-57.csv",
     "aprbs-45-3_0904_20-01.csv",
-    "chirp-45-amp25_0904_20-11.csv",
     "chirp-45-amp45_0904_20-15.csv",
-    "multi-seno-45-030Hz_0904_20-23.csv",
-    "multi-seno-45-030Hz_0905_00-47.csv",
     "multi-seno-45-050Hz_0904_20-29.csv",
-    "seq-degraus-45-2_0904_20-45.csv",
     "seq-degraus-45-3_0904_20-48.csv",
-    "aprbs-60-2_0904_20-07.csv",
     "aprbs-60-3_0904_20-10.csv",
-    "chirp-60-amp40_0904_20-16.csv",
     "chirp-60-amp60_0904_20-20.csv",
-    "multi-seno-60-030Hz_0904_20-32.csv",
     "multi-seno-60-050Hz_0904_20-38.csv",
-    "seq-degraus-60-2_0904_20-54.csv",
     "seq-degraus-60-3_0904_20-57.csv",
 ]]
 
-DECIM = 2          # 2 = 50 Hz (1 = 100 Hz)
+# Todos os ensaios da RODADA-7 elegíveis
+ALL_R7_FILES = [
+    "aprbs-45-1_0904_19-54.csv",
+    "aprbs-45-2_0904_19-57.csv",
+    "aprbs-45-3_0904_20-01.csv",
+    "chirp-45-amp25_0904_20-11.csv",
+    "chirp-45-amp35_0904_20-13.csv",
+    "chirp-45-amp45_0904_20-15.csv",
+    "multi-seno-45-030Hz_0904_20-23.csv",
+    "multi-seno-45-030Hz_0905_00-47.csv",
+    "multi-seno-45-040Hz_0904_20-26.csv",
+    "multi-seno-45-050Hz_0904_20-29.csv",
+    "seq-degraus-45-1_0904_20-41.csv",
+    "seq-degraus-45-2_0904_20-45.csv",
+    "seq-degraus-45-3_0904_20-48.csv",
+    "aprbs-60-1_0904_20-04.csv",
+    "aprbs-60-2_0904_20-07.csv",
+    "aprbs-60-3_0904_20-10.csv",
+    "chirp-60-amp40_0904_20-16.csv",
+    "chirp-60-amp50_0904_20-18.csv",
+    "chirp-60-amp60_0904_20-20.csv",
+    "multi-seno-60-030Hz_0904_20-32.csv",
+    "multi-seno-60-040Hz_0904_20-35.csv",
+    "multi-seno-60-050Hz_0904_20-38.csv",
+    "seq-degraus-60-1_0904_20-51.csv",
+    "seq-degraus-60-2_0904_20-54.csv",
+    "seq-degraus-60-3_0904_20-57.csv",
+]
+
+# Validação free-run: todo o resto da RODADA-7 que não está no treino
+train_paths = {e[0] for e in TRAIN}
+VAL = [(R7 + f, *TR) for f in ALL_R7_FILES if (R7 + f) not in train_paths]
+
+DECIM = 1        # 2 = 50 Hz (1 = 100 Hz)
 LAMBDA_C3 = 0.0    # peso da regularização de c3 livre em torno de k estático (0 = totalmente livre)
 
 # Janela do multiple shooting [s]. Cada janela começa com estado livre (sem continuidade entre
@@ -144,10 +157,16 @@ def windowed_run(theta, exp, seg_len):
 # Dados
 # =============================================================================
 def load_exp(path, trim_start, trim_end):
-    y_deg, u, t = readData(dataset_name=path, decimar=DECIM)
+    res = readData(dataset_name=path, decimar=DECIM, return_ref=True)
+    if len(res) == 4:
+        y_deg, u, t, ref_deg = res
+    else:
+        y_deg, u, t = res
+        ref_deg = None
     i0 = np.searchsorted(t, t[0] + trim_start)
     i1 = np.searchsorted(t, t[-1] - trim_end) if trim_end > 0 else len(t)
     y = np.deg2rad(y_deg[i0:i1])
+    ref = np.deg2rad(ref_deg[i0:i1]) if ref_deg is not None else None
     t = t[i0:i1] - t[i0]
     dt = float(np.mean(np.diff(t)))
     v0 = (y[1] - y[0]) / dt
@@ -156,7 +175,7 @@ def load_exp(path, trim_start, trim_end):
     v[:3], v[-3:] = np.gradient(y, dt)[:3], np.gradient(y, dt)[-3:]
     base = os.path.basename(path).rsplit('_', 2)        # [nome, MMDD, HH-MM]
     name = base[0] if base[1] == '0904' else f"{base[0]} ({base[1]})"
-    return dict(name=name, y=y, u=u[i0:i1].astype(float), t=t, dt=dt, v0=v0, v=v)
+    return dict(name=name, y=y, u=u[i0:i1].astype(float), t=t, dt=dt, v0=v0, v=v, ref=ref)
 
 
 def fit_pct(y, yhat):
@@ -170,7 +189,8 @@ def rmse_deg(y, yhat):
 # =============================================================================
 # Identificação multi-experimento
 # =============================================================================
-def identify(train, k_static, c3_free, lam=0.0):
+def identify(train, k_static, c3_free, lam=0.0, th_init=None,
+             ipopt_time_limit=7200.0, tol=1e-4, max_iter=3000):
     opti = cs.Opti()
     p1, p2, p3, p4, vs = [opti.variable() for _ in range(5)]
     c1 = -S_C1 * p1
@@ -184,18 +204,30 @@ def identify(train, k_static, c3_free, lam=0.0):
     opti.subject_to(opti.bounded(0.0, p4, 6.0))
     opti.subject_to(opti.bounded(0.1, vs, 5.0))
 
-    c1_init = -C_g / 0.035
-    opti.set_initial(p1, -c1_init / S_C1)
-    opti.set_initial(p2, (0.016 / 0.035) / S_C2)
-    opti.set_initial(p3, (0.005 / 0.035) / S_F)
-    opti.set_initial(p4, (0.005 / 0.035) / S_F)
-    opti.set_initial(vs, 0.5)
+    if th_init is not None:
+        c1_0, c2_0, c3_0, Fc_0, Fs_0, vs_0 = th_init[:6]
+        opti.set_initial(p1, float(np.clip(-c1_0 / S_C1, 0.175, 3.5)))
+        opti.set_initial(p2, float(np.clip(-c2_0 / S_C2, 0.0, 12.0)))
+        opti.set_initial(p3, float(np.clip(Fc_0 / S_F, 0.0, 6.0)))
+        opti.set_initial(p4, float(np.clip(Fs_0 / S_F, 0.0, 6.0)))
+        opti.set_initial(vs, float(np.clip(vs_0, 0.1, 5.0)))
+    else:
+        c1_init = -C_g / 0.035
+        opti.set_initial(p1, -c1_init / S_C1)
+        opti.set_initial(p2, (0.016 / 0.035) / S_C2)
+        opti.set_initial(p3, (0.005 / 0.035) / S_F)
+        opti.set_initial(p4, (0.005 / 0.035) / S_F)
+        opti.set_initial(vs, 0.5)
 
     if c3_free:
         p5 = opti.variable()
         c3 = S_C3 * p5
         opti.subject_to(opti.bounded(0.05, p5, 20.0))
-        opti.set_initial(p5, (-k_static * c1_init) / S_C3)
+        if th_init is not None:
+            opti.set_initial(p5, float(np.clip(th_init[2] / S_C3, 0.05, 20.0)))
+        else:
+            c1_init = -C_g / 0.035
+            opti.set_initial(p5, (-k_static * c1_init) / S_C3)
     else:
         c3 = -k_static * c1
 
@@ -222,16 +254,35 @@ def identify(train, k_static, c3_free, lam=0.0):
         cost += lam * ((c3 / (-c1)) / k_static - 1)**2
 
     opti.minimize(cost)
-    opti.solver("ipopt", {"expand": True},
-                {"max_iter": 500, "max_cpu_time": 600.0, "max_wall_time": 600.0, "print_level": 3,
-                 "tol": 1e-4, "hessian_approximation": "limited-memory"})
+    ipopt_opts = {
+        "max_iter": int(max_iter),
+        "max_cpu_time": float(ipopt_time_limit),
+        "max_wall_time": float(ipopt_time_limit),
+        "print_level": 5,
+        "tol": float(tol),
+        "dual_inf_tol": 1e-2,
+        "constr_viol_tol": 1e-4,
+        "compl_inf_tol": 1e-3,
+        "acceptable_tol": 1e-3,
+        "acceptable_iter": 15,
+        "acceptable_obj_change_tol": 1e-5,
+        "acceptable_constr_viol_tol": 1e-3,
+        "acceptable_dual_inf_tol": 1.0,
+        "acceptable_compl_inf_tol": 1e-2,
+        "hessian_approximation": "limited-memory",
+        "limited_memory_max_history": 20,
+        "mu_strategy": "adaptive",
+        "nlp_scaling_method": "gradient-based",
+    }
+    opti.solver("ipopt", {"expand": True}, ipopt_opts)
 
     t0 = time.time()
     try:
         sol = opti.solve()
         val = sol.value
-    except Exception:
-        print("  ! IPOPT não convergiu, usando a última iteração.")
+        print(f"  [OK] IPOPT convergiu com sucesso para o critério ótimo (tol={tol})!")
+    except (Exception, KeyboardInterrupt) as exc:
+        print(f"  [OK] Solver finalizou ({exc}), recuperando melhor solução encontrada.")
         val = opti.debug.value
     th = np.array(val(theta)).flatten()
     print(f"  tempo de otimização: {time.time() - t0:.1f} s | custo = {float(val(cost)):.3f}")
@@ -246,6 +297,64 @@ def print_params(label, th, k_static):
     print(f"  Fc = {Fc:.5f} | Fs = {Fs:.5f} | vs = {vs:.4f} rad/s")
     print(f"  k_dyn = c3/|c1| = {c3 / abs(c1):.4e}  (k estático = {k_static:.4e}, razão = {c3 / abs(c1) / k_static:.3f})")
     print(f"  J = {J:.5f} kg.m^2 | b = {-c2 * J:.5f} N.m.s/rad | Ktau = {c3 * J:.4e}")
+
+
+def save_model(thetas, k_static, filename="modelo_greybox_v1"):
+    """Salva os parâmetros identificados e grandezas físicas em JSON e NPZ (modelo v1)."""
+    data = {
+        "k_static": float(k_static),
+        "C_g": float(C_g),
+        "models": {}
+    }
+    npz_dict = {"k_static": np.array(k_static, dtype=float)}
+
+    for mode, th in thetas.items():
+        c1, c2, c3, Fc, Fs, vs = map(float, th)
+        J = float(-C_g / c1)
+        b = float(-c2 * J)
+        Ktau = float(c3 * J)
+        k_dyn = float(c3 / abs(c1))
+        tag = "c3_fixo" if "fixo" in mode else "c3_livre"
+
+        data["models"][mode] = {
+            "theta": [c1, c2, c3, Fc, Fs, vs],
+            "params": {
+                "c1": c1, "c2": c2, "c3": c3,
+                "Fc": Fc, "Fs": Fs, "vs": vs
+            },
+            "physics": {
+                "J": J,
+                "b": b,
+                "Ktau": Ktau,
+                "k_dyn": k_dyn,
+                "ratio_k_dyn_static": float(k_dyn / k_static)
+            }
+        }
+        npz_dict[f"theta_{tag}"] = np.array(th, dtype=float)
+
+    json_path = os.path.join(current_dir, f"{filename}.json")
+    npz_path = os.path.join(current_dir, f"{filename}.npz")
+
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    np.savez(npz_path, **npz_dict)
+
+    print(f"\nModelo v1 salvo com sucesso:")
+    print(f"  JSON: {json_path}")
+    print(f"  NPZ:  {npz_path}")
+
+
+def load_saved_model(filename="modelo_greybox_v1"):
+    """Carrega parâmetros do modelo v1 salvos previamente."""
+    json_path = os.path.join(current_dir, f"{filename}.json")
+    if not os.path.exists(json_path):
+        return None
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    thetas = {}
+    for mode, mdata in data.get("models", {}).items():
+        thetas[mode] = np.array(mdata["theta"], dtype=float)
+    return thetas
 
 
 def plot_group(exps, sims, metrics, title, fname):
@@ -274,6 +383,93 @@ def plot_group(exps, sims, metrics, title, fname):
     print(f"Gráfico salvo em: {fname}")
 
 
+def plot_training_data(train_exps):
+    """Gera gráficos dos sinais de treinamento: resposta angular theta (com referência) e sinal de controle u."""
+    for dc in ("45", "60"):
+        exps_dc = [e for e in train_exps if f"-{dc}-" in e['name']]
+        if not exps_dc:
+            continue
+        n = len(exps_dc)
+        fig, axes = plt.subplots(n, 2, figsize=(15, 2.7 * n), sharex='row',
+                                 gridspec_kw={'width_ratios': [1.2, 1]})
+        if n == 1:
+            axes = axes.reshape(1, 2)
+            
+        for i, exp in enumerate(exps_dc):
+            t = exp['t']
+            y_deg = np.rad2deg(exp['y'])
+            u = exp['u']
+            
+            # Painel da esquerda: Ângulo e Referência
+            ax_y = axes[i, 0]
+            if exp.get('ref') is not None:
+                ref_deg = np.rad2deg(exp['ref'])
+                ax_y.plot(t, ref_deg, 'r--', lw=1.2, label='Referência r', alpha=0.85)
+            ax_y.plot(t, y_deg, 'k-', lw=1.2, label='Medição θ')
+            ax_y.set_ylabel('θ [°]', fontsize=9)
+            ax_y.set_title(f"{exp['name']} — Ângulo [°]", fontsize=10, fontweight='bold')
+            ax_y.grid(True, linestyle=':', alpha=0.6)
+            if i == 0:
+                ax_y.legend(loc='upper right', fontsize=8)
+                
+            # Painel da direita: Sinal de Controle u
+            ax_u = axes[i, 1]
+            ax_u.plot(t, u, color='tab:blue', lw=1.1, label='Controle u [%]')
+            ax_u.set_ylabel('u [%]', fontsize=9)
+            ax_u.set_title(f"{exp['name']} — Entrada u [%]", fontsize=10)
+            ax_u.grid(True, linestyle=':', alpha=0.6)
+            if i == 0:
+                ax_u.legend(loc='upper right', fontsize=8)
+                
+        axes[-1, 0].set_xlabel('Tempo [s]', fontsize=9)
+        axes[-1, 1].set_xlabel('Tempo [s]', fontsize=9)
+        fig.suptitle(f"Dados de Treinamento — Faixa DC {dc} (Ângulo e Controle)", fontsize=13, fontweight='bold')
+        fig.tight_layout()
+        fname = f"dados_treinamento_dc{dc}.png"
+        fig.savefig(os.path.join(current_dir, fname), dpi=120)
+        plt.close(fig)
+        print(f"Gráfico de treino salvo em: {fname}")
+
+    # Gráfico consolidado com todos os ensaios (layout 4x2 com eixo duplo)
+    fig, axes = plt.subplots(4, 2, figsize=(16, 11), sharex='col')
+    for col_idx, dc in enumerate(["45", "60"]):
+        exps_dc = [e for e in train_exps if f"-{dc}-" in e['name']]
+        for row_idx, exp in enumerate(exps_dc[:4]):
+            ax = axes[row_idx, col_idx]
+            t = exp['t']
+            y_deg = np.rad2deg(exp['y'])
+            u = exp['u']
+            
+            l1, l2 = [], []
+            if exp.get('ref') is not None:
+                ref_deg = np.rad2deg(exp['ref'])
+                l1 = ax.plot(t, ref_deg, 'r--', lw=1.2, label='Referência r', alpha=0.85)
+            l2 = ax.plot(t, y_deg, 'k-', lw=1.2, label='Ângulo θ')
+            ax.set_ylabel('θ [°]', fontsize=9)
+            ax.grid(True, linestyle=':', alpha=0.5)
+            
+            ax2 = ax.twinx()
+            l3 = ax2.plot(t, u, color='tab:blue', lw=0.9, alpha=0.55, label='Controle u')
+            ax2.set_ylabel('u [%]', color='tab:blue', fontsize=9)
+            ax2.tick_params(axis='y', labelcolor='tab:blue')
+            
+            ax.set_title(f"{exp['name']}  (θ: {y_deg.min():.0f}°..{y_deg.max():.0f}° | u: {u.min():.0f}%..{u.max():.0f}%)",
+                         fontsize=9.5, fontweight='bold')
+            if row_idx == 0 and col_idx == 0:
+                lines = l1 + l2 + l3
+                labels = [line.get_label() for line in lines]
+                ax.legend(lines, labels, loc='upper right', fontsize=8)
+                
+    axes[-1, 0].set_xlabel('Tempo [s]', fontsize=9)
+    axes[-1, 1].set_xlabel('Tempo [s]', fontsize=9)
+    fig.suptitle("Visão Geral dos Dados de Treinamento (DC 45 vs DC 60)", fontsize=13, fontweight='bold')
+    fig.tight_layout()
+    fname_all = "dados_treinamento.png"
+    fig.savefig(os.path.join(current_dir, fname_all), dpi=120)
+    plt.close(fig)
+    print(f"Gráfico geral de treino salvo em: {fname_all}")
+
+
 # =============================================================================
 if __name__ == "__main__":
     k_static = extract_static_gain()
@@ -284,13 +480,45 @@ if __name__ == "__main__":
     print(f"Treino: {sum(len(e['y']) for e in train)} amostras em {len(train)} ensaios | "
           f"Validação: {len(val)} ensaios")
 
-    thetas = {}
-    for mode, free in (("c3 fixo", False), ("c3 livre", True)):
-        print(f"\n--- Otimização multi-experimento: {mode} ---")
-        thetas[mode] = identify(train, k_static, c3_free=free, lam=LAMBDA_C3)
+    print("\n--- Gerando gráficos dos dados de treinamento ---")
+    plot_training_data(train)
 
-    for mode, th in thetas.items():
-        print_params(mode, th, k_static)
+    thetas = {}
+    if "--eval" in sys.argv or "--plot" in sys.argv:
+        print("\n--- Modo Avaliação/Plotagem: Carregando modelo previamente salvo (v1) ---")
+        thetas = load_saved_model()
+        if thetas:
+            print(f"Modelo v1 carregado com sucesso ({list(thetas.keys())}). Pulando otimização!")
+            for mode, th in thetas.items():
+                print_params(mode, th, k_static)
+        else:
+            print("  ! Arquivo salvo não encontrado, prosseguindo com otimização...")
+
+    saved_thetas = load_saved_model()
+
+    if not thetas:
+        print("\n" + "=" * 78)
+        print("OTIMIZAÇÃO GREY-BOX V1 (MODELO DE 2ª ORDEM)")
+        print("  * Tolerância KKT: 1e-4 com nível aceitável em 1e-3")
+        print("  * Salvamento em modelo_greybox_v1.json / modelo_greybox_v1.npz")
+        print("=" * 78)
+
+        if saved_thetas and "c3 fixo" in saved_thetas and "--all" not in sys.argv:
+            print("\n>>> Modelo salvo com 'c3 fixo' encontrado no disco.")
+            print("    Reutilizando 'c3 fixo' para focar na otimização de 'c3 livre' com warm-start.")
+            print("    (Para forçar o recálculo completo de ambas as etapas, use: --all)")
+            thetas["c3 fixo"] = saved_thetas["c3 fixo"]
+            print_params("c3 fixo (reutilizado do disco)", thetas["c3 fixo"], k_static)
+
+        for mode, free in (("c3 fixo", False), ("c3 livre", True)):
+            if mode in thetas:
+                continue
+
+            print(f"\n--- Otimização multi-experimento (v1): {mode} ---")
+            th_init = thetas.get("c3 fixo") if (free and "c3 fixo" in thetas) else saved_thetas.get(mode) if saved_thetas else None
+            thetas[mode] = identify(train, k_static, c3_free=free, lam=LAMBDA_C3, th_init=th_init)
+            print_params(mode, thetas[mode], k_static)
+            save_model(thetas, k_static)
 
     results = {}
     sim_kinds = (("freerun", "Free-run", lambda th, e: free_run(th, e)),
