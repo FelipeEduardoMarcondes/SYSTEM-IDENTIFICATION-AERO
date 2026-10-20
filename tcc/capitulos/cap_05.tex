@@ -1,0 +1,287 @@
+\chapter{Dicas Gerais Relacionadas ao LaTeX}
+
+\section{Citações}
+
+Para inserir citações em um documento LaTeX, é necessário primeiro salvar as informações de cada fonte em um arquivo de extensão .bib, conhecido como arquivo BibTeX. Este arquivo contém as referências bibliográficas no formato BibTeX, que é utilizado pelo LaTeX para gerar automaticamente as citações e a lista de referências no documento final. 
+
+Neste modelo, há um arquivo \verb|bibliografia.bib|  que deve ser mantido no mesmo diretório que o arquivo principal do LaTeX (\verb|main.tex|), e cada entrada deve seguir a sintaxe apropriada para garantir a correta formatação das~referências.
+
+Abaixo são mostrados alguns exemplos de referências em formato BibTeX:
+
+\begin{lstlisting}[caption={Exemplos de entradas BibTeX},label={lst:codigo-bibtex},basicstyle=\footnotesize\ttfamily]
+% LIVRO
+@book{gil2008metodos,
+  title={Métodos e Técnicas de Pesquisa Social},
+  author={Gil, Antonio Carlos},
+  year={2008},
+  address={São Paulo},
+  publisher={Atlas}
+}
+
+% ARTIGO
+@article{Gautschi2010espiral,
+    author = {Walter Gautschi},
+    title = {The spiral of Theodorus, numerical analysis, and special functions},
+    journal = {Journal of Computational and Applied Mathematics},
+    volume = {235},
+    number = {4},
+    pages = {1042-1052},
+    year = {2010},
+}
+
+% SITE
+@Misc{wolfram2024espiral,
+    author = {Symon Tyler},
+    title = {The Spiral of Theodorus},
+    year = {2024},
+    url = {https://demonstrations.wolfram.com/TheSpiralOfTheodorus/},
+    urlaccessdate = {03 ago. 2024}
+}
+\end{lstlisting}
+
+A inclusão do link deve ser opcional. Obras disponíveis apenas em nossas bases, sem acesso público, não devem receber link.
+
+Exemplo de citação com página \cite[p. 1]{gil2008metodos} e sem página \cite{gil2008metodos}.
+
+Exemplo exibindo somente o ano: \citeyear{gil2008metodos}.
+
+Exemplo exibindo somente o autor: \citeauthor{gil2008metodos}.
+
+Exemplo de citação integrada ao texto com página: \citeonline[p. x]{gil2008metodos} realizou...
+
+
+\section{Listas}
+
+O LaTeX permite criar listas numeradas utilizando o ambiente \texttt{enumerate}.
+
+\subsection{Exemplo}
+  
+Neste modelo, configuramos o ambiente para exibir \textbf{a), b), c)} e também subalínea usando o ambiente \texttt{itemize}:
+
+\begin{enumerate}
+  \item Primeiro objetivo;
+      \begin{itemize}
+          \item Subalínea A;
+          \item Subalínea B.
+      \end{itemize}
+  \item Segundo objetivo;
+  \item Terceiro objetivo.
+\end{enumerate}
+
+\section{Notas de Rodapé}
+
+Em alguns casos, pode ser necessário adicionar informações complementares sem interromper o fluxo principal do texto. Para isso, o LaTeX oferece o comando \verb|\footnote{}| para notas de rodapé.
+
+\subsection{Exemplo}
+
+Exemplo de nota de rodapé\footnote{Texto da nota de rodapé de exemplo.}. O resultado\footnote{Outra nota de rodapé.} será que, ao final da página, aparecerá o número da nota seguido do texto correspondente.
+
+\subsection{Boas práticas}
+\begin{enumerate}
+  \item Use notas de rodapé apenas para informações secundárias ou referências adicionais que não merecem um parágrafo inteiro;
+  \item Evite excesso de notas de rodapé, pois podem prejudicar a leitura;
+  \item O comando \verb|\footnote{}| pode ser usado em qualquer lugar dentro do corpo do texto, inclusive dentro de ambientes como \verb|itemize| ou \verb|enumerate|.
+\end{enumerate}
+
+
+
+\section{Figuras}
+
+Figuras são elementos visuais importantes em trabalhos acadêmicos, usados para ilustrar conceitos, resultados ou exemplos práticos.  
+No LaTeX, figuras são inseridas dentro do ambiente \verb|figure| (ou, neste template, com o ambiente adaptado \verb|figura|).
+
+\subsection{Exemplo}
+
+O código abaixo insere uma figura com legenda e indicação de fonte, usando o ambiente \verb|figura|:
+
+\begin{verbatim}
+\begin{figura}{0.8\textwidth}
+    \includegraphics[width=\textwidth]{img/exemplo.png}
+    \caption{Exemplo de figura inserida em \LaTeX.}
+    \label{fig:exemplo}
+    \sourceFig{os autores, 2025.}
+\end{figura}
+\end{verbatim}
+
+\noindent Resultado:
+
+\begin{figura}{0.6\textwidth}
+    \caption{Exemplo de figura inserida em LaTeX.}
+    \includegraphics[width=\textwidth]{example-image}
+    \label{fig:exemplo}
+    \sourceFig{os autores, 2025.}
+\end{figura}
+
+\subsection{Boas práticas}
+\begin{enumerate}
+  \item Sempre adicione uma legenda clara e objetiva usando \verb|\caption{}|;
+  \item Inclua a fonte da figura (mesmo quando for de autoria própria) usando o comando \verb|\sourceFig{}|;
+  \item Nomeie a figura com \verb|\label{}| para poder referenciá-la no texto com \verb|\ref{}|;
+  \item Centralize a figura para melhor apresentação, mas ajuste sua largura (ex.: \verb|0.8\textwidth|) para que não ultrapasse as margens do documento.
+\end{enumerate}
+
+\section{Gráficos}
+
+A fim de permitir a inclusão de gráficos, bem como que estes sejam apresentados em uma ``Lista de Gráficos'', o grupo de trabalho AbnTeX2 desenvolveu um ambiente customizado, denominado \verb|grafico|, baseado no ambiente de base LaTeX~\verb|figure|. 
+
+\subsection{Exemplo}
+
+O código abaixo insere um gráfico com legenda e indicação de fonte, usando o ambiente \verb|grafico|:
+
+\begin{verbatim}
+\begin{grafico}{0.8\textwidth}
+    \includegraphics[width=\textwidth]{img/exemplo.png}
+    \caption{Exemplo de figura inserida em \LaTeX.}
+    \label{gra:exemplo}
+    \sourceFig{as autoras, 2025.}
+\end{grafico}
+\end{verbatim}
+
+\noindent Resultado:
+
+\begin{grafico}{0.6\textwidth}
+    \caption{Exemplo de gráfico inserido em LaTeX.}
+    \includegraphics[width=\textwidth]{example-image}
+    \label{gra:exemplo}
+    \sourceFig{as autoras, 2025.}
+\end{grafico}
+
+\section{Tabelas}
+
+As tabelas permitem organizar dados de forma estruturada e comparativa.  
+No LaTeX, tabelas são inseridas dentro do ambiente \verb|table| (ou, neste template, com o ambiente adaptado \verb|tabela|).
+
+\subsection{Exemplo com \texttt{\textbackslash hline}}
+
+O código abaixo insere uma tabela com legenda e indicação de fonte, usando o ambiente \verb|tabela| e linhas horizontais simples:
+
+\begin{verbatim}
+\begin{tabela}{0.45\textwidth}
+    \caption{Exemplo de tabela inserida em LaTeX.}
+    \label{tab:exemplo}
+    \renewcommand{\arraystretch}{1.1} % aumenta a altura das linhas
+    \resizebox{\textwidth}{!}{
+    \begin{tabular}{lcc}
+        \hline
+        Curso        & Alunos & Percentual \\
+        \hline
+        Administração & 24    & 32,0\% \\
+        Engenharia    & 31    & 41,3\% \\
+        Letras        & 10    & 13,3\% \\
+        Pedagogia     & 10    & 13,3\% \\
+        \hline
+    \end{tabular}
+    }
+    \sourceTab{o autor, 2025.}
+\end{tabela}
+\end{verbatim}
+
+\noindent Resultado:
+
+\begin{tabela}{0.45\textwidth}
+  \caption{Exemplo de tabela inserida em LaTeX.}
+  \label{tab:exemplo}
+  \renewcommand{\arraystretch}{1.1} % aumenta a altura das linhas
+  \resizebox{\textwidth}{!}{
+  \begin{tabular}{lcc}
+    \hline
+    Curso        & Alunos & Percentual \\
+    \hline
+    Administração & 24    & 32,0\% \\
+    Engenharia    & 31    & 41,3\% \\
+    Letras        & 10    & 13,3\% \\
+    Pedagogia     & 10    & 13,3\% \\
+    \hline
+  \end{tabular}
+  }
+  \sourceTab{o autor, 2025.}
+\end{tabela}
+
+\subsection{Exemplo com o pacote \texttt{booktabs}}
+
+Também é possível melhorar a estética da tabela utilizando o pacote \verb|booktabs|, que fornece os comandos \verb|\toprule|, \verb|\midrule| e \verb|\bottomrule| para substituir o uso de \verb|\hline|:
+
+\begin{verbatim}
+\begin{tabela}{0.45\textwidth}
+    \centering
+    \caption{Exemplo (2) de tabela inserida em LaTeX.}
+    \label{tab:exemplo-booktabs}
+    \resizebox{\textwidth}{!}{
+    \begin{tabular}{lcc}
+        \toprule
+        Curso         & Alunos & Percentual \\
+        \midrule
+        Administração & 24     & 32,0\% \\
+        Engenharia    & 31     & 41,3\% \\
+        Letras        & 10     & 13,3\% \\
+        Pedagogia     & 10     & 13,3\% \\
+        \bottomrule
+    \end{tabular}
+    }
+    \sourceTab{a autora, 2025.}
+\end{tabela}
+\end{verbatim}
+
+\noindent Resultado:
+
+\begin{tabela}{0.45\textwidth}
+    \centering
+  \caption{Exemplo (2) de tabela inserida em LaTeX.}
+  \label{tab:exemplo-booktabs}
+  \resizebox{\textwidth}{!}{
+  \begin{tabular}{lcc}
+    \toprule
+    Curso         & Alunos & Percentual \\
+    \midrule
+    Administração & 24     & 32,0\% \\
+    Engenharia    & 31     & 41,3\% \\
+    Letras        & 10     & 13,3\% \\
+    Pedagogia     & 10     & 13,3\% \\
+    \bottomrule
+  \end{tabular}
+  }
+  \sourceTab{a autora, 2025.}
+\end{tabela}
+
+\subsection{Boas práticas}
+\label{tab:boas_praticas}
+\begin{enumerate}
+  \item Mantenha as legendas sempre acima das tabelas, de acordo com o padrão acadêmico mais comum;
+  \item Utilize o comando \verb|\sourceTab{}| para indicar a fonte dos dados (mesmo que seja o próprio autor);
+  \item Nomeie as tabelas com \verb|\label{}| para poder referenciá-las no texto com \verb|\ref{}|;
+  \item Evite excesso de linhas horizontais ou verticais; prefira tabelas limpas — o pacote \verb|booktabs| ajuda nisso;
+  \item Limite o número de colunas e ajuste a largura da tabela (ex.: \verb|0.45\textwidth|) para garantir boa legibilidade.
+\end{enumerate}
+
+\section{Quadros}
+
+A fim de permitir a inclusão de quadros, bem como que estes sejam apresentados em uma ``Lista de Quadros'', o grupo de trabalho AbnTeX2 desenvolveu um ambiente customizado, denominado \verb|quadro2|, baseado no ambiente de base LaTeX~\verb|table|. 
+
+Veja um exemplo no Quadro \ref{qua:exemplo-quadro}.
+
+
+\begin{quadro2}{0.8\textwidth}
+    \caption{Exemplo de quadro inserido em LaTeX.}
+    \label{qua:exemplo-quadro}
+    \renewcommand{\arraystretch}{1.2} % aumenta a altura das linhas
+    \resizebox{\textwidth}{!}{
+        \begin{tabular}{|p{6cm}|p{10cm}|}
+            \hline
+            \textbf{Revista/Publicação} & \textbf{Descrição}\\ \hline
+            Revista do Professor de Matemática (RPM) & A RPM é uma publicação voltada para educadores de Matemática, especialmente nas etapas finais do ensino fundamental e no ensino médio. A revista divulga artigos de níveis elementares a avançados, acessíveis tanto para professores de ensino médio quanto para alunos de Licenciatura em Matemática.  \\ \hline
+            %
+            Matemática Universitária & A Matemática Universitária, publicação semestral da Sociedade Brasileira de Matemática, visa divulgar ideias e estimular a curiosidade intelectual no ensino e estudo da Matemática em nível superior. Destina-se a professores, pesquisadores e alunos de graduação e pós-graduação, promovendo o intercâmbio entre os membros da comunidade acadêmica. \\ \hline
+            %
+            Revista Professor de Matemática Online (PMO) & A revista Professor de Matemática Online (PMO) publica e divulga artigos acadêmicos relevantes para a formação inicial e continuada de professores da Educação Básica, abordando temas de Matemática, práticas de ensino, história e aplicações. Aceita também resultados de trabalhos de conclusão de curso, ferramentas virtuais e outros produtos de docentes e discentes dos cursos de formação de professores de Matemática. Os artigos são apresentados em português, com resumos em português e inglês. \\ \hline
+            %
+            Ensino de Matemática em Debate & Discussão sobre metodologias e práticas no ensino de matemática.\\ \hline
+        \end{tabular}
+    }
+    \sourceTab{o autor, 2025.}
+\end{quadro2}
+
+\section{Referências Cruzadas}
+
+Você pode criar referências cruzadas para seções, figuras, gráficos, tabelas, quadros e outros elementos usando os comandos \texttt{\textbackslash label} e \texttt{\textbackslash ref}.
+
+No exemplo de inserção de quadros apresentado anteriormente, foi utilizado o comando \verb|\label{qua:exemplo-quadro}|, em que \verb|qua:exemplo-quadro| funciona como um identificador único do elemento. Para referenciá-lo no texto, basta escrever algo como \verb|Conforme Quadro~\ref{qua:exemplo-quadro}|, que produzirá o resultado desejado: Conforme Quadro~\ref{qua:exemplo-quadro}.

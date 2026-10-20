@@ -34,21 +34,56 @@ if root_dir not in sys.path:
     sys.path.append(root_dir)
 
 # ── Experimento ativo — EDITAR AQUI para cada novo experimento ──────
-EXP_ID = os.environ.get("EXP_ID", "EXP001_legado_narx-mpc")
+EXP_ID = os.environ.get("EXP_ID", "EXP002_legado_narx-mpc")
 EXP_OUTPUT_DIR = os.path.join(root_dir, "data", "experimentos_novos", EXP_ID)
 IDENT_DIR   = os.path.join(EXP_OUTPUT_DIR, "1_identificacao")
 MPC_DIR     = os.path.join(EXP_OUTPUT_DIR, "2_mpc_python")
 SIL_DIR     = os.path.join(EXP_OUTPUT_DIR, "3_sil_stm32")
 REAL_DIR    = os.path.join(EXP_OUTPUT_DIR, "4_aeropendulo")
 PLOTS_DIR   = MPC_DIR
-COLETAS_DIR = os.path.join(root_dir, "data", "coletas")
+COLETAS_DIR = os.path.join(root_dir, "data", "experimentos", "coleta_dados")
 SINAIS_REF_DIR = os.path.join(root_dir, "data", "sinais_referencia")
 for _d in [IDENT_DIR, MPC_DIR, SIL_DIR, REAL_DIR]:
     os.makedirs(_d, exist_ok=True)
 
+# Configuração de estilo acadêmico (IEEE / ABNT / PUCPR)
+def setup_academic_style():
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "legend.fontsize": 8.5,
+        "legend.title_fontsize": 9,
+        "axes.linewidth": 0.8,
+        "lines.linewidth": 1.2,
+        "grid.linewidth": 0.5,
+        "grid.linestyle": "--",
+        "grid.alpha": 0.5,
+        "legend.frameon": True,
+        "legend.framealpha": 0.95,
+        "legend.edgecolor": "0.85",
+        "figure.autolayout": False,
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.05,
+    })
+
+setup_academic_style()
+
 from aerodata import readData
 
 Ts = 0.01  # Sampling time in seconds (DECIMATION=5 -> 5 * 10ms = 50ms)
+
+# =============================================================================
+# CONTROLE DE EXECUÇÃO / CACHE:
+# - Se False: carrega o dataset de 32.547 amostras já calculado (.npz) em < 1s
+# - Se True: reexecuta a otimização CasADi IPOPT por ~23 minutos e regrava o cache
+RECOMPUTE_MPC = False
+# =============================================================================
 
 import json
 try:
@@ -106,30 +141,81 @@ def load_processed(name, trim_start=TRIM_START_SEC, trim_end=TRIM_END_SEC, decim
     idx_end = np.searchsorted(t, t_end_target)
     if idx_start >= idx_end: idx_start, idx_end = 0, len(t)
     sl = slice(idx_start, idx_end, decimation)
-    return u[sl], y[sl], t[sl], ref[sl] if len(ref) > 0 else np.full_like(t[sl], np.nan)
+    t_c = t[sl] - t[sl][0]
+    return u[sl], y[sl], t_c, ref[sl] if len(ref) > 0 else np.full_like(t_c, np.nan)
 
-u_ms, y_ms, t_ms, ref_ms = load_processed('data/coletas/RODADA-7_20260904/multi-seno-45-040Hz_0904_20-26.csv')
+u_ms, y_ms, t_ms, ref_ms = load_processed('RODADA-7/multi-seno-45-030Hz_0904_20-23.csv')
 ml = max(ny_model, nu_model)
 
 # initial state from measured history: [y(k-1..k-ny), u(k-1..k-nu)] at k=ml
 x_state = np.concatenate([y_ms[ml-1::-1][:ny_model], u_ms[ml-1::-1][:nu_model]])
-y_casadi = np.zeros(len(y_ms)); y_casadi[:ml] = y_ms[:ml]
+y_casadi = np.zeros(len(y_ms))
+y_casadi[:ml] = y_ms[:ml]
+
 for k in range(ml, len(y_ms)):
     res = F(x0=x_state, p=u_ms[k])
     x_state = np.array(res['xf']).flatten()
     y_casadi[k] = float(res['yk'])
 
-rmse = np.sqrt(np.mean((y_ms[ml:] - y_casadi[ml:]) ** 2))
-plt.figure(figsize=(12, 5))
-plt.plot(t_ms, y_ms, 'k', label='Measured y(k)')
-plt.plot(t_ms, y_casadi, '--', color='crimson', label='CasADi NARX free-run')
-plt.xlabel('Time (s)'); plt.ylabel('Angle (deg)')
-plt.title(f'CasADi NARX model vs measured multisine  (free-run RMSE = {rmse:.3f})')
-plt.legend(); plt.grid(True); plt.tight_layout(); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
+err = y_ms[ml:] - y_casadi[ml:]
+rmse = np.sqrt(np.mean(err ** 2))
+mae = np.mean(np.abs(err))
+denom = np.linalg.norm(y_ms[ml:] - np.mean(y_ms[ml:]))
+fit = 100.0 * (1.0 - np.linalg.norm(err) / denom) if denom > 1e-6 else 0.0
+
+print(f"\n[CasADi Open-Loop Validation] RMSE: {rmse:.3f}° | MAE: {mae:.3f}° | FIT: {fit:.1f}%")
+
+# Gráfico em padrão acadêmico (Subplots duplos sincronizados: Ângulo e Controle)
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7.2, 4.4), sharex=True,
+                               gridspec_kw={'height_ratios': [2.2, 1.2]})
+
+ax1.plot(t_ms, y_ms, color='#111111', lw=1.1, label=r'Medido $y(k)$')
+ax1.plot(t_ms, y_casadi, color='#d62728', ls='--', lw=1.3, label=r'CasADi NARX Free-Run $\hat{y}(k)$')
+if not np.all(np.isnan(ref_ms)):
+    ax1.plot(t_ms, ref_ms, color='#7f7f7f', ls=':', lw=0.9, alpha=0.7, label=r'Referência $r(k)$')
+
+ax1.set_ylabel(r'Ângulo $\theta$ [$^\circ$]')
+ax1.grid(True, linestyle='--', alpha=0.5)
+ax1.legend(loc='upper right', framealpha=0.95)
+ax1.set_xlim(0, t_ms[-1])
+
+# Caixa com métricas
+metric_text = (f"RMSE = {rmse:.3f}" + r"$^\circ$" + "\n"
+               f"MAE = {mae:.3f}" + r"$^\circ$" + "\n"
+               f"FIT = {fit:.1f}\\%")
+ax1.text(0.02, 0.95, metric_text, transform=ax1.transAxes,
+         verticalalignment='top', fontsize=8.5,
+         bbox=dict(boxstyle='round,pad=0.4', facecolor='white', edgecolor='0.8', alpha=0.92))
+
+ax2.plot(t_ms, u_ms, color='#1f77b4', lw=1.0, label=r'Excitação Multisseno $u(k)$')
+ax2.set_xlabel('Tempo [s]')
+ax2.set_ylabel(r'Controle $u$ [\%]')
+ax2.grid(True, linestyle='--', alpha=0.5)
+ax2.legend(loc='upper right', framealpha=0.95)
+
+plt.tight_layout()
+
+# Salva em alta resolução (PNG 300 DPI e PDF vetorial)
+target_dirs = [
+    PLOTS_DIR,
+    os.path.join(current_dir, 'plots'),
+    os.path.join(root_dir, 'tcc', 'img', 'resultados'),
+    os.path.join(root_dir, 'img', 'resultados')
+]
+
+for d in target_dirs:
+    if d and (os.path.exists(d) or d == PLOTS_DIR):
+        os.makedirs(d, exist_ok=True)
+        fig.savefig(os.path.join(d, "casadi_narx_freerun.png"), dpi=300, bbox_inches='tight')
+        fig.savefig(os.path.join(d, "casadi_narx_freerun.pdf"), format='pdf', bbox_inches='tight')
+
+print(f"  -> Gráfico CasADi salvo: casadi_narx_freerun (.png e .pdf) em {len(target_dirs)} pastas.")
+plt.show(block=False)
+plt.pause(0.1)
 
 # %%
 # 3. MPC Setup
-N = 100
+N = 300
 data = {
     'Ts': Ts,
     'x0': np.zeros(nx),
@@ -284,126 +370,201 @@ plt.title('MPC Computational Time')
 plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
 # %%
-# 7. Training Reference Signal Generation (multisine + random steps)
+# 7. Training Reference Signal Generation (DC 45° & 60°, Faixa 0° a 120°, f_max = 0.50 Hz)
 np.random.seed(42)
 
-HOLD_TIME = 5.0       # holds at start and between segments [s]
+HOLD_TIME = 4.0       # holds iniciais, intermediários e finais [s]
+f_max = 0.50          # Frequência máxima de excitação: 0.50 Hz
 
-# --- 1. Multisine segment (DC = 45, fmax = 0.50 Hz) ---
-ms_duration_45 = 30.0
-f_max = 0.50
+# --- 1. Dinâmica em Nível DC = 45° (Excursão: 0° a 90°, i.e., 45° ± 45°) ---
+# 1.1 Chirp linear de varredura completa (0.05 Hz a 0.50 Hz)
+chirp_dur_45 = 16.0
+n_ch_45 = int(round(chirp_dur_45 / Ts))
+t_ch_45 = np.arange(n_ch_45) * Ts
+f0_ch, f1_ch = 0.05, f_max
+phase_ch_45 = 2.0 * np.pi * (f0_ch * t_ch_45 + ((f1_ch - f0_ch) / (2.0 * chirp_dur_45)) * t_ch_45**2)
+chirp_45 = 45.0 + 45.0 * np.sin(phase_ch_45)  # 0° a 90°
+
+# 1.2 Multisseno com superposição harmônica (todas frequências simultâneas até 0.50 Hz)
+ms_duration_45 = 60.0
 n_ms_45 = int(round(ms_duration_45 / Ts))
 t_ms_45 = np.arange(n_ms_45) * Ts
-df = 1.0 / ms_duration_45
-freqs = np.arange(df, f_max + 1e-9, df)
-phases_45 = np.random.uniform(0, 2 * np.pi, len(freqs))
-ms_45 = np.sum([np.sin(2*np.pi*f*t_ms_45 + ph) for f, ph in zip(freqs, phases_45)], axis=0)
-ms_45 = ms_45 / np.max(np.abs(ms_45)) * 35.0 + 45.0  # Range: ~10 to 80 deg
+df_45 = 1.0 / ms_duration_45
+freqs_45 = np.arange(df_45, f_max + 1e-9, df_45)
+phases_45 = np.random.uniform(0, 2 * np.pi, len(freqs_45))
+ms_45 = np.sum([np.sin(2 * np.pi * f * t_ms_45 + ph) for f, ph in zip(freqs_45, phases_45)], axis=0)
+ms_45 = ms_45 / np.max(np.abs(ms_45)) * 45.0 + 45.0  # 0° a 90°
 
-# --- 2. Random-steps segment (DC = 45) ---
-n_steps_45 = 15
+# 1.3 Degraus aleatórios em torno de 45° (Excursão completa 0° a 90°)
+n_steps_45 = 25
 step_pieces_45 = []
 for _ in range(n_steps_45):
-    S = np.random.uniform(10.0, 80.0)
-    dur = np.random.uniform(2.0, 6.0)
+    S = np.random.uniform(0.0, 90.0)
+    dur = np.random.uniform(2.5, 4.0)
     step_pieces_45.append(np.full(int(round(dur / Ts)), S))
 steps_45 = np.concatenate(step_pieces_45)
 
-# --- 3. Multisine segment (DC = 60, fmax = 0.50 Hz) ---
-ms_duration_60 = 30.0
+# --- 2. Dinâmica em Nível DC = 60° (Excursão: 0° a 120°, i.e., 60° ± 60°) ---
+# 2.1 Chirp linear de varredura completa (0.05 Hz a 0.50 Hz)
+chirp_dur_60 = 16.0
+n_ch_60 = int(round(chirp_dur_60 / Ts))
+t_ch_60 = np.arange(n_ch_60) * Ts
+phase_ch_60 = 2.0 * np.pi * (f0_ch * t_ch_60 + ((f1_ch - f0_ch) / (2.0 * chirp_dur_60)) * t_ch_60**2)
+chirp_60 = 60.0 + 60.0 * np.sin(phase_ch_60)  # 0° a 120°
+
+# 2.2 Multisseno com superposição harmônica (fmax = 0.50 Hz)
+ms_duration_60 = 60.0
 n_ms_60 = int(round(ms_duration_60 / Ts))
 t_ms_60 = np.arange(n_ms_60) * Ts
-phases_60 = np.random.uniform(0, 2 * np.pi, len(freqs))
-ms_60 = np.sum([np.sin(2*np.pi*f*t_ms_60 + ph) for f, ph in zip(freqs, phases_60)], axis=0)
-ms_60 = ms_60 / np.max(np.abs(ms_60)) * 50.0 + 60.0  # Range: ~10 to 110 deg
+df_60 = 1.0 / ms_duration_60
+freqs_60 = np.arange(df_60, f_max + 1e-9, df_60)
+phases_60 = np.random.uniform(0, 2 * np.pi, len(freqs_60))
+ms_60 = np.sum([np.sin(2 * np.pi * f * t_ms_60 + ph) for f, ph in zip(freqs_60, phases_60)], axis=0)
+ms_60 = ms_60 / np.max(np.abs(ms_60)) * 60.0 + 60.0  # 0° a 120°
 
-# --- 4. Random-steps segment (DC = 60, Max Amp = 120) ---
-n_steps_60 = 15
+# 2.3 Degraus aleatórios em torno de 60° (Excursão máxima 0° a 120°)
+n_steps_60 = 25
 step_pieces_60 = []
 for _ in range(n_steps_60):
-    S = np.random.uniform(20.0, 120.0)  # Amplitude maxima 120
-    dur = np.random.uniform(2.0, 6.0)
+    S = np.random.uniform(0.0, 120.0)
+    dur = np.random.uniform(2.5, 4.0)
     step_pieces_60.append(np.full(int(round(dur / Ts)), S))
 steps_60 = np.concatenate(step_pieces_60)
 
-# --- Assemble: [Hold 45] + [DC 45 dynamics] + [Hold 60] + [DC 60 dynamics] + [Hold 45] ---
+# --- Montagem da Sequência Completa de Treinamento ---
+# [Hold 45°] + [Chirp 45°] + [MS 45°] + [Degraus 45°] +
+# [Hold 60°] + [Chirp 60°] + [MS 60°] + [Degraus 60°] +
+# [Hold 45°]
 hold_45 = np.full(int(round(HOLD_TIME / Ts)), 45.0)
 hold_60 = np.full(int(round(HOLD_TIME / Ts)), 60.0)
 
-x2ref_train = np.concatenate([
-    hold_45, ms_45, steps_45, 
-    hold_60, ms_60, steps_60, 
+x2ref_train = np.clip(np.concatenate([
+    hold_45, chirp_45, ms_45, steps_45, 
+    hold_60, chirp_60, ms_60, steps_60, 
     hold_45
-])
+]), 0.0, 120.0)
 
 steps_train = len(x2ref_train)
 tvec_train = np.arange(steps_train) * Ts
 
-plt.figure(figsize=(13, 3))
-plt.plot(tvec_train, x2ref_train, label='Training Reference')
-plt.axhline(45.0, color='gray', ls=':', lw=1)
-plt.axhline(60.0, color='gray', ls=':', lw=1)
-plt.xlabel('Time [s]'); plt.ylabel('Reference Angle [deg]')
-plt.title(f'Training Reference multisine (fmax={f_max} Hz) + random steps  (total {steps_train*Ts:.0f} s)')
-plt.legend(); plt.grid(True); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
+fig_ref, ax_ref = plt.subplots(figsize=(10.0, 3.4))
+ax_ref.plot(tvec_train, x2ref_train, color='#1f77b4', lw=1.2, label=r'Referência de Treino $r(t)$')
+ax_ref.axhline(45.0, color='gray', ls=':', lw=0.9, alpha=0.8, label=r'Nível DC $45^\circ$ ($0^\circ \!-\! 90^\circ$)')
+ax_ref.axhline(60.0, color='black', ls='--', lw=0.9, alpha=0.6, label=r'Nível DC $60^\circ$ ($0^\circ \!-\! 120^\circ$)')
+ax_ref.set_xlabel('Tempo [s]')
+ax_ref.set_ylabel(r'Ângulo $\theta_{\text{ref}}$ [$^\circ$]')
+ax_ref.set_title(f'Trajetória de Treinamento NMPC (DC $45^\\circ$ e $60^\\circ$, Faixa $0^\\circ$ a $120^\\circ$, $f_{{\\max}} = {f_max:.2f}$ Hz, Total: {steps_train*Ts:.0f} s)')
+ax_ref.set_xlim(0, tvec_train[-1])
+ax_ref.set_ylim(-2.0, 125.0)
+ax_ref.grid(True, linestyle='--', alpha=0.5)
+ax_ref.legend(loc='upper right', framealpha=0.95, fontsize=8.5)
+plt.tight_layout()
+
+# Salva a referência de treinamento
+for d in [PLOTS_DIR, os.path.join(current_dir, 'plots'), 
+         os.path.join(root_dir, 'tcc', 'img', 'resultados'), 
+         os.path.join(root_dir, 'img', 'resultados')]:
+    if d and (os.path.exists(d) or d == PLOTS_DIR):
+        os.makedirs(d, exist_ok=True)
+        fig_ref.savefig(os.path.join(d, "mpc_referencia_treino.png"), dpi=300, bbox_inches='tight')
+        fig_ref.savefig(os.path.join(d, "mpc_referencia_treino.pdf"), format='pdf', bbox_inches='tight')
+
+print(f"  -> Gráfico de referência de treino salvo: mpc_referencia_treino (.png e .pdf)")
+plt.show(block=False)
+plt.pause(0.1)
 
 # %%
 # 8. Simulation Loop (Rich Signal Dataset Collection)
-xsim_train = np.zeros((nx, 1))
-ysim_train = []
-usim_train = []
-w0_val = np.zeros(w.shape[0])
+# -----------------------------------------------------------------------------
+# FLAG DE RECOMPUTAÇÃO DO MPC:
+# - Se False: carrega o dataset de 32.547 amostras instantaneamente do cache (.npz)
+# - Se True: executa a otimização CasADi IPOPT por ~23 minutos e regrava o cache
+RECOMPUTE_MPC = globals().get('RECOMPUTE_MPC', False)
+# -----------------------------------------------------------------------------
 
-print("Simulating MPC over Rich Signal for Dataset...")
-sim_steps_train = steps_train - N
-for k in tqdm(range(sim_steps_train), desc="MPC Dataset Collection"):
-    ref_window = x2ref_train[k : k + N]
-    pval = np.concatenate([xsim_train[:, -1], ref_window])
+dataset_cache_file = os.path.join(MPC_DIR, "dataset_mpc_treino.npz")
 
-    sol = solver(x0=w0_val, lbx=lbw, ubx=ubw, lbg=lbg, ubg=ubg, p=pval)
+if os.path.exists(dataset_cache_file) and not RECOMPUTE_MPC:
+    print(f"\n[CACHE] Carregando dataset NMPC do arquivo: {dataset_cache_file} ...")
+    loaded_data = np.load(dataset_cache_file)
+    P_data = loaded_data['P_data']
+    U_data = loaded_data['U_data']
+    ysim_train = list(loaded_data['ysim_train'])
+    usim_train = list(loaded_data['usim_train'])
+    xsim_train = loaded_data['xsim_train']
+    sim_steps_train = len(ysim_train)
+    print(f"[CACHE] Dataset carregado com sucesso! ({len(P_data)} amostras)\n")
+else:
+    xsim_train = np.zeros((nx, 1))
+    ysim_train = []
+    usim_train = []
+    w0_val = np.zeros(w.shape[0])
 
-    w_opt = sol['x'].full().flatten()
-    u_opt = w_opt[nx]
+    print("Simulating MPC over Rich Signal for Dataset...")
+    sim_steps_train = steps_train - N
+    for k in tqdm(range(sim_steps_train), desc="MPC Dataset Collection"):
+        ref_window = x2ref_train[k : k + N]
+        pval = np.concatenate([xsim_train[:, -1], ref_window])
 
-    # Add exploratory noise to the applied control input (NEW)
-    u_applied = np.random.normal(u_opt, 3.0)  # NEW: standard deviation of 3.0% control noise
-    u_applied = np.clip(u_applied, data['u_min'][0], data['u_max'][0])  # NEW: respect bounds
+        sol = solver(x0=w0_val, lbx=lbw, ubx=ubw, lbg=lbg, ubg=ubg, p=pval)
 
-    sim_step = F(x0=xsim_train[:, -1], p=u_applied)  # NEW: apply noisy control to model
-    xk1 = sim_step['xf'].full().flatten()
-    yk = sim_step['yk'].full().item()
+        w_opt = sol['x'].full().flatten()
+        u_opt = w_opt[nx]
 
-    xsim_train = np.c_[xsim_train, xk1]
-    usim_train.append(u_opt)  # Target remains the optimal control (NEW)
-    ysim_train.append(yk)
-    w0_val = w_opt
+        # Add exploratory noise to the applied control input (NEW)
+        u_applied = np.random.normal(u_opt, 3.0)  # NEW: standard deviation of 3.0% control noise
+        u_applied = np.clip(u_applied, data['u_min'][0], data['u_max'][0])  # NEW: respect bounds
 
-# Collect Dataset for ANN
-# P_data = np.array([np.concatenate([xsim_train[:, k], x2ref_train[k : k + N]]) for k in range(sim_steps_train)])
-P_data = np.array([np.concatenate([xsim_train[:, k], x2ref_train[k : k + N]]) for k in range(sim_steps_train)])
-U_data = np.array(usim_train).reshape(-1, 1)
+        sim_step = F(x0=xsim_train[:, -1], p=u_applied)  # NEW: apply noisy control to model
+        xk1 = sim_step['xf'].full().flatten()
+        yk = sim_step['yk'].full().item()
+
+        xsim_train = np.c_[xsim_train, xk1]
+        usim_train.append(u_opt)  # Target remains the optimal control (NEW)
+        ysim_train.append(yk)
+        w0_val = w_opt
+
+    # Collect Dataset for ANN
+    P_data = np.array([np.concatenate([xsim_train[:, k], x2ref_train[k : k + N]]) for k in range(sim_steps_train)])
+    U_data = np.array(usim_train).reshape(-1, 1)
+
+    np.savez_compressed(dataset_cache_file, P_data=P_data, U_data=U_data, xsim_train=xsim_train, ysim_train=np.array(ysim_train), usim_train=np.array(usim_train))
+    print(f"[CACHE] Dataset NMPC salvo em cache: {dataset_cache_file}\n")
 
 
-# --- Plotting MPC Results ---
+# --- Plotting MPC Results (Formato Acadêmico Padronizado: mpc_treino) ---
 tvec_sim_train = tvec_train[:sim_steps_train]
-# 1. Output (y) vs Reference
-plt.figure(figsize=(12, 6))
-plt.plot(tvec_sim_train, ysim_train, 'b-', linewidth=2, label='NARX Output (y)')
-plt.step(tvec_sim_train, x2ref_train[:sim_steps_train], where='post', color='k', linestyle='--', label='Reference')
-plt.ylabel('Angle (deg)')
-plt.xlabel('Time (s)')
-plt.title('NARX MPC Control - Training Reference Tracking')
-plt.grid(True)
-plt.legend()
-plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
-# 2. Control Input (u)
-plt.figure(figsize=(12, 4))
-plt.step(tvec_sim_train, usim_train, where='post', color='r', label='Control Input (u_pct)')
-plt.ylabel('Input (u_pct)')
-plt.xlabel('Time (s)')
-plt.grid(True)
-plt.legend()
-plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
+fig_mpc, (ax_m1, ax_m2) = plt.subplots(2, 1, figsize=(7.2, 4.4), sharex=True,
+                                       gridspec_kw={'height_ratios': [2.2, 1.2]})
+
+ax_m1.step(tvec_sim_train, x2ref_train[:sim_steps_train], where='post', color='#111111', linestyle='--', lw=1.1, label=r'Referência $r(t)$')
+ax_m1.plot(tvec_sim_train, ysim_train, color='#1f77b4', lw=1.2, label=r'Saída MPC Nominal $y(t)$')
+ax_m1.set_ylabel(r'Ângulo $\theta$ [$^\circ$]')
+ax_m1.set_title('Rastreamento Nominal da Referência de Treinamento pelo NMPC', fontsize=9.5, fontweight='bold', pad=4)
+ax_m1.grid(True, linestyle='--', alpha=0.5)
+ax_m1.legend(loc='upper right', framealpha=0.95)
+ax_m1.set_xlim(0, tvec_sim_train[-1])
+
+ax_m2.plot(tvec_sim_train, usim_train, color='#d62728', lw=1.0, label=r'Ação de Controle Ótima $u^*(t)$')
+ax_m2.set_xlabel('Tempo [s]')
+ax_m2.set_ylabel(r'Controle $u$ [\%]')
+ax_m2.grid(True, linestyle='--', alpha=0.5)
+ax_m2.legend(loc='upper right', framealpha=0.95)
+
+plt.tight_layout()
+
+# Salva em todas as pastas do projeto
+for d in [PLOTS_DIR, os.path.join(current_dir, 'plots'), 
+         os.path.join(root_dir, 'tcc', 'img', 'resultados'), 
+         os.path.join(root_dir, 'img', 'resultados')]:
+    if d and (os.path.exists(d) or d == PLOTS_DIR):
+        os.makedirs(d, exist_ok=True)
+        fig_mpc.savefig(os.path.join(d, "mpc_treino.png"), dpi=300, bbox_inches='tight')
+        fig_mpc.savefig(os.path.join(d, "mpc_treino.pdf"), format='pdf', bbox_inches='tight')
+
+print(f"  -> Gráfico de rastreamento do MPC salvo: mpc_treino (.png e .pdf)")
+plt.show(block=False)
+plt.pause(0.1)
 
 # %%
 # 9. ANN Creation and Training
@@ -443,13 +604,17 @@ train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 # model = MPCApproximator(input_dim=nx + N, output_dim=1)
 model = MPCApproximator(input_dim=nx + N, output_dim=1)
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)  # NEW: reduced for training stability
+import copy
+optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, min_lr=1e-5)
 
-epochs = 150  # NEW: increased epochs to allow model to converge fully
+epochs = 160
 train_loss_history = []
 val_loss_history = []
+best_val_loss = float('inf')
+best_weights = copy.deepcopy(model.state_dict())
 
-print("Training ANN...")
+print("Treinando Rede Neural (Aproximador NMPC)...")
 for epoch in range(epochs):
     model.train()
     epoch_loss = 0.0
@@ -460,7 +625,8 @@ for epoch in range(epochs):
         loss.backward()
         optimizer.step()
         epoch_loss += loss.item()
-    train_loss_history.append(epoch_loss / len(train_loader))
+    train_loss = epoch_loss / len(train_loader)
+    train_loss_history.append(train_loss)
 
     # Validation
     model.eval()
@@ -468,214 +634,88 @@ for epoch in range(epochs):
         val_outputs = model(tensor_X_val)
         val_loss = criterion(val_outputs, tensor_y_val).item()
     val_loss_history.append(val_loss)
+    scheduler.step(val_loss)
 
-    if (epoch+1) % 10 == 0:
-        print(f"Epoch {epoch+1}/{epochs} - Train Loss: {train_loss_history[-1]:.4f} - Val Loss: {val_loss_history[-1]:.4f}")
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        best_weights = copy.deepcopy(model.state_dict())
 
-plt.figure(figsize=(8, 4))
-plt.plot(train_loss_history, label='Train Loss')
-plt.plot(val_loss_history, label='Val Loss')
-plt.title("Training and Validation Loss")
-plt.xlabel("Epoch")
-plt.ylabel("MSE (Raw Control Input)")
-plt.legend()
-plt.grid()
-plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
+    if (epoch + 1) % 20 == 0 or (epoch + 1) == epochs:
+        lr_curr = optimizer.param_groups[0]['lr']
+        print(f"  Epoca {epoch+1:03d}/{epochs} | Treino: {train_loss:.5f} | Val: {val_loss:.5f} | lr: {lr_curr:.1e}")
 
-# Plot y vs yhat on training, val, and test (side by side)
+# Restaura os melhores pesos observados na validacao
+model.load_state_dict(best_weights)
+print(f"  -> Treinamento concluido. Melhor Val Loss: {best_val_loss:.5f}")
+
+# Grafico de convergencia das perdas
+fig_loss, ax_loss = plt.subplots(figsize=(6.8, 3.4))
+ax_loss.plot(train_loss_history, label='Perda Treino (MSE)', color='#1f77b4', lw=1.2)
+ax_loss.plot(val_loss_history, label='Perda Validacao (MSE)', color='#ff7f0e', lw=1.2)
+ax_loss.set_title("Evolucao da Perda de Treinamento da Rede Neural", fontsize=9.5, fontweight='bold', pad=4)
+ax_loss.set_xlabel("Epoca")
+ax_loss.set_ylabel(r"MSE de Controle $u^*$ [$\%^2$]")
+ax_loss.set_yscale('log')
+ax_loss.legend(loc='upper right', framealpha=0.95)
+ax_loss.grid(True, linestyle='--', alpha=0.5)
+plt.tight_layout()
+
+for d in [PLOTS_DIR, os.path.join(current_dir, 'plots'), 
+         os.path.join(root_dir, 'tcc', 'img', 'resultados'), 
+         os.path.join(root_dir, 'img', 'resultados')]:
+    if d and (os.path.exists(d) or d == PLOTS_DIR):
+        os.makedirs(d, exist_ok=True)
+        fig_loss.savefig(os.path.join(d, "ann_loss_evolution.png"), dpi=300, bbox_inches='tight')
+        fig_loss.savefig(os.path.join(d, "ann_loss_evolution.pdf"), format='pdf', bbox_inches='tight')
+
+plt.show(block=False)
+plt.pause(0.1)
+
+# Avaliacao em Treino, Validacao e Teste
 model.eval()
 with torch.no_grad():
     y_train_pred = model(tensor_X_train).numpy()
     y_val_pred = model(tensor_X_val).numpy()
     y_test_pred = model(tensor_X_test).numpy()
 
-fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+r2_tr = r2_score(y_train, y_train_pred)
+r2_va = r2_score(y_val, y_val_pred)
+r2_te = r2_score(y_test, y_test_pred)
 
-# Training plot
-axes[0].scatter(y_train, y_train_pred, alpha=0.3, color='blue')
-axes[0].plot([y_train.min(), y_train.max()], [y_train.min(), y_train.max()], 'r--', lw=2)
-axes[0].set_title(f"Training Set\nR2: {r2_score(y_train, y_train_pred):.4f}")
-axes[0].set_xlabel("True u (Control)")
-axes[0].set_ylabel("Predicted u (Control)")
-axes[0].grid(True)
+fig_sc, axes = plt.subplots(1, 3, figsize=(10.0, 3.2), sharey=True)
 
-# Validation plot
-axes[1].scatter(y_val, y_val_pred, alpha=0.3, color='green')
-axes[1].plot([y_val.min(), y_val.max()], [y_val.min(), y_val.max()], 'r--', lw=2)
-axes[1].set_title(f"Validation Set\nR2: {r2_score(y_val, y_val_pred):.4f}")
-axes[1].set_xlabel("True u (Control)")
-axes[1].set_ylabel("Predicted u (Control)")
-axes[1].grid(True)
+axes[0].scatter(y_train, y_train_pred, alpha=0.25, color='#1f77b4', s=10)
+axes[0].plot([y_train.min(), y_train.max()], [y_train.min(), y_train.max()], 'r--', lw=1.2)
+axes[0].set_title(f"Treino ($R^2 = {r2_tr:.4f}$)", fontsize=9.0)
+axes[0].set_xlabel(r"Controle NMPC $u^*$ [\%]")
+axes[0].set_ylabel(r"Predicao RNA $\hat{u}$ [\%]")
+axes[0].grid(True, linestyle='--', alpha=0.5)
 
-# Test plot
-axes[2].scatter(y_test, y_test_pred, alpha=0.3, color='orange')
-axes[2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
-axes[2].set_title(f"Test Set R2: {r2_score(y_test, y_test_pred):.4f}")
-axes[2].set_xlabel("True u (Control)")
-axes[2].set_ylabel("Predicted u (Control)")
-axes[2].grid(True)
+axes[1].scatter(y_val, y_val_pred, alpha=0.35, color='#2ca02c', s=12)
+axes[1].plot([y_val.min(), y_val.max()], [y_val.min(), y_val.max()], 'r--', lw=1.2)
+axes[1].set_title(f"Validacao ($R^2 = {r2_va:.4f}$)", fontsize=9.0)
+axes[1].set_xlabel(r"Controle NMPC $u^*$ [\%]")
+axes[1].grid(True, linestyle='--', alpha=0.5)
+
+axes[2].scatter(y_test, y_test_pred, alpha=0.35, color='#ff7f0e', s=12)
+axes[2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=1.2)
+axes[2].set_title(f"Teste Cego ($R^2 = {r2_te:.4f}$)", fontsize=9.0)
+axes[2].set_xlabel(r"Controle NMPC $u^*$ [\%]")
+axes[2].grid(True, linestyle='--', alpha=0.5)
 
 plt.tight_layout()
-plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
 
-# %%
-# 10. Validation Test Signal Generation (Custom: PID -> ANN -> PID)
-import pandas as pd
+for d in [PLOTS_DIR, os.path.join(current_dir, 'plots'), 
+         os.path.join(root_dir, 'tcc', 'img', 'resultados'), 
+         os.path.join(root_dir, 'img', 'resultados')]:
+    if d and (os.path.exists(d) or d == PLOTS_DIR):
+        os.makedirs(d, exist_ok=True)
+        fig_sc.savefig(os.path.join(d, "ann_regression_fit.png"), dpi=300, bbox_inches='tight')
+        fig_sc.savefig(os.path.join(d, "ann_regression_fit.pdf"), format='pdf', bbox_inches='tight')
 
-# Phases duration
-T_PID_START = 5.0
-T_MULTISINE = 20.0
-T_CHIRP = 20.0
-T_STEPS = 20.0
-T_PID_END = 5.0
-
-t_total_val = T_PID_START + T_MULTISINE + T_CHIRP + T_STEPS + T_PID_END
-steps_val = int(round(t_total_val / Ts))
-tvec_val = np.arange(steps_val) * Ts
-x2ref_val = np.zeros(steps_val)
-
-# Generate Reference Signal
-idx = 0
-# Phase 1: PID (0-5s) -> 45 deg
-n_pid_start = int(round(T_PID_START / Ts))
-x2ref_val[idx:idx+n_pid_start] = 45.0
-idx += n_pid_start
-
-# Phase 2: Multisine (5-25s) -> 45 +/- 15 deg
-n_ms = int(round(T_MULTISINE / Ts))
-f_max_val = 0.25
-df_val = 1.0 / T_MULTISINE
-freqs_val = np.arange(df_val, f_max_val + 1e-9, df_val)
-phases_val = np.random.uniform(0, 2 * np.pi, len(freqs_val))
-t_ms_seg_val = np.arange(n_ms) * Ts
-ms_val = np.sum([np.sin(2*np.pi*f*t_ms_seg_val + ph) for f, ph in zip(freqs_val, phases_val)], axis=0)
-ms_val = ms_val / np.max(np.abs(ms_val)) * 15.0 + 45.0
-x2ref_val[idx:idx+n_ms] = ms_val
-idx += n_ms
-
-# Phase 3: Chirp (25-45s) -> 45 +/- 15 deg, from 0.05 Hz to 0.3 Hz
-n_chirp = int(round(T_CHIRP / Ts))
-t_chirp_seg = np.arange(n_chirp) * Ts
-f0_chirp = 0.05
-f1_chirp = 0.3
-# Instantaneous phase for linear chirp: 2*pi * (f0*t + (f1-f0)/(2*T)*t^2)
-c_phase = 2.0 * np.pi * (f0_chirp * t_chirp_seg + ((f1_chirp - f0_chirp) / (2.0 * T_CHIRP)) * t_chirp_seg**2)
-chirp_val = 15.0 * np.sin(c_phase) + 45.0
-x2ref_val[idx:idx+n_chirp] = chirp_val
-idx += n_chirp
-
-# Phase 4: Steps (45-65s) -> 30, 60, 45, 60 (5s each)
-n_steps_val = int(round(T_STEPS / Ts))
-step_levels_val = [30.0, 60.0, 45.0, 60.0]
-samples_per_step_val = n_steps_val // len(step_levels_val)
-for level in step_levels_val:
-    x2ref_val[idx:idx+samples_per_step_val] = level
-    idx += samples_per_step_val
-
-# Phase 5: PID End (65-70s) -> 45 deg
-n_pid_end = int(round(T_PID_END / Ts))
-x2ref_val[idx:idx+n_pid_end] = 45.0
-
-# Pad the reference for the MPC/ANN horizon at the end
-x2ref_full_val = np.concatenate([x2ref_val, np.full(N, 45.0)])
-
-plt.figure(figsize=(14, 4))
-plt.plot(tvec_val, x2ref_val, label='Validation Reference')
-plt.axvline(T_PID_START, color='gray', ls=':')
-plt.axvline(T_PID_START+T_MULTISINE, color='gray', ls=':')
-plt.axvline(T_PID_START+T_MULTISINE+T_CHIRP, color='gray', ls=':')
-plt.axvline(T_PID_START+T_MULTISINE+T_CHIRP+T_STEPS, color='gray', ls=':')
-plt.xlabel('Time [s]'); plt.ylabel('Angle [deg]')
-plt.title('Custom Validation Reference: PID -> Multisine -> Chirp -> Steps -> PID')
-plt.grid(True); plt.legend(); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
-
-# %%
-# 11. Simulation Loop (Python SIL generation)
-
-# PID Parameters
-Kp, Ki, Kd = 0.5793, 0.6647, 0.2
-
-xs = np.zeros((nx, 1)) # State vector for the NARX
-
-y_sim = []
-u_sim = []
-
-e_1 = 0.0; u_i = 0.0; y_1 = 0.0; y_atual = 0.0
-
-model.eval()
-
-print("Simulating Python SIL for custom reference...")
-for k in tqdm(range(steps_val), desc="Python SIL Simulation"):
-    t_curr = tvec_val[k]
-    r_curr = x2ref_val[k]
-    
-    # Phase logic
-    if t_curr < T_PID_START or t_curr >= (t_total_val - T_PID_END):
-        # --- PID Control ---
-        erro = r_curr - y_atual
-        u_p = Kp * erro
-        u_i = u_i + Ki * (Ts / 2.0) * (erro + e_1) # trapezoidal integral
-        u_d = -(Kd / Ts) * (y_atual - y_1)         # derivative on measurement
-        u_calc = u_p + u_i + u_d
-        
-        u_opt = float(np.clip(u_calc, -10.0, 80.0))
-        if u_calc != u_opt: # anti-windup (back-calculation)
-            u_i -= (u_calc - u_opt)
-        
-        e_1 = erro; y_1 = y_atual
-    else:
-        # --- ANN Control ---
-        ref_window = x2ref_full_val[k : k + N]
-        pval = np.concatenate([xs[:, -1], ref_window])
-        pval_scaled = scaler.transform(pval.reshape(1, -1))
-        with torch.no_grad():
-            u_opt = float(np.clip(model(torch.tensor(pval_scaled, dtype=torch.float32)).item(),
-                                  data['u_min'][0], data['u_max'][0]))
-        # Keep tracking PID variables so bumpless transfer could be smoother if implemented,
-        # but here we just reset or keep them. We'll track y_1 for derivative.
-        erro = r_curr - y_atual
-        e_1 = erro; y_1 = y_atual
-        # Reset integral action to prevent massive windup when switching back
-        u_i = u_opt - (Kp * erro) - (-(Kd / Ts) * (y_atual - y_1))
-
-    # Plant simulation (NARX)
-    res = F(x0=xs[:, -1], p=u_opt)
-    xs = np.c_[xs, res['xf'].full().flatten()]
-    y_atual = float(res['yk'])
-    
-    y_sim.append(y_atual)
-    u_sim.append(u_opt)
-
-# Plot Results
-plt.figure(figsize=(14, 5))
-plt.plot(tvec_val, x2ref_val, 'k--', label='Reference')
-plt.plot(tvec_val, y_sim, 'b-', label='y (Angle)')
-plt.axvspan(0, T_PID_START, color='gray', alpha=0.15, label='PID Control')
-plt.axvspan(t_total_val - T_PID_END, t_total_val, color='gray', alpha=0.15)
-plt.xlabel('Time [s]'); plt.ylabel('Angle [deg]')
-plt.title('Python SIL Validation (PID -> ANN -> PID)')
-plt.legend(); plt.grid(True); plt.tight_layout(); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
-
-plt.figure(figsize=(14, 4))
-plt.plot(tvec_val, u_sim, 'r-', label='u (Control)')
-plt.axvspan(0, T_PID_START, color='gray', alpha=0.15)
-plt.axvspan(t_total_val - T_PID_END, t_total_val, color='gray', alpha=0.15)
-plt.xlabel('Time [s]'); plt.ylabel('Control Input [%]')
-plt.legend(); plt.grid(True); plt.tight_layout(); plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
-
-# %%
-# 12. Export to CSV for STM comparison
-csv_filename = os.path.join(current_dir, 'simulacao_python.csv')
-df_export = pd.DataFrame({
-    'tempo_ms': (tvec_val * 1000).astype(int),
-    'angulo_deg': y_sim,
-    'u_pct': u_sim,
-    'referencia': x2ref_val
-})
-df_export.to_csv(csv_filename, index=False)
-print(f'\nSimulation data exported to {csv_filename}!')
-
-# Os exports para GUI foram movidos para o final do script
+print(f"  -> Graficos de ajuste da RNA salvos: ann_loss_evolution e ann_regression_fit (.png e .pdf)")
+plt.show(block=False)
+plt.pause(0.1)
 
 # (Optional) We can also export ANN weights as before
 def export_ann_to_c(model, scaler, filename="ann_weights.h", narx_terms=None, narx_theta=None, ny=15, nu=15):
@@ -814,6 +854,7 @@ freqs = np.arange(df, f_max_val+1e-9, df)
 phases = np.random.uniform(0, 2*np.pi, len(freqs))
 t_ms = np.arange(n_ms)*Ts
 ms = np.sum([np.sin(2*np.pi*f*t_ms + ph) for f,ph in zip(freqs, phases)], axis=0)
+ms = ms - ms[0]  # Conexão contínua com 45 deg no instante da transição
 ms = ms / np.max(np.abs(ms)) * 25.0 + 45.0
 x2ref_val[idx : idx + n_ms] = ms
 idx += n_ms
@@ -847,18 +888,27 @@ x2ref_val[idx : steps_val] = 45.0
 x2ref_full_val = np.concatenate([x2ref_val, np.full(N, 45.0)])
 
 # %%
-# 11. Simulation Loop (Python SIL generation)
+# 11. Simulation Loop (Python SIL generation com opção de Ação Integral Residual)
 xs = np.zeros((nx, 1))
 y_atual = 0.0
 y_sim = []
 u_sim = []
 
+# Ganhos PID nominal para as fases de decolagem e pouso
 Kp, Ki, Kd = 0.5793, 0.6647, 0.2
-u_i = 0.0
+u_i_pid = 0.0
+u_i_res = 0.0
 e_1 = 0.0
 y_1 = 0.0
+was_ann_mode = False
+u_opt = 0.0
 
-print("Running Python SIL Validation (PID -> ANN -> PID)...")
+# Configuracao do Integrador Residual para a RNA:
+# Quando ativado, trimma offsets estáticos e distúrbios contínuos sem desestabilizar
+ENABLE_RESIDUAL_INTEGRATOR = True
+Ki_res = 0.20
+
+print(f"Executando Python SIL (PID -> RNA [Integrador Residual: {ENABLE_RESIDUAL_INTEGRATOR}, Bumpless Transfer] -> PID)...")
 from tqdm import tqdm
 import torch
 import pandas as pd
@@ -868,26 +918,53 @@ for k in tqdm(range(steps_val), desc="Python SIL Simulation"):
     r_curr = x2ref_val[k]
     
     if t < T_PID_START or t >= t_total_val - T_PID_END:
-        # --- PID Control ---
+        # --- Controle PID Nominal ---
+        if was_ann_mode:
+            # Bumpless transfer: RNA -> PID
+            # Pré-carrega o integrador do PID com o esforço exato do último instante da rede
+            erro_tr = r_curr - y_atual
+            u_p_tr = Kp * erro_tr
+            u_d_tr = -(Kd / Ts) * (y_atual - y_1)
+            u_i_pid = u_opt - u_p_tr - u_d_tr
+            was_ann_mode = False
+
         erro = r_curr - y_atual
         u_p = Kp * erro
-        u_i = u_i + Ki * (Ts / 2.0) * (erro + e_1)
+        u_i_pid = u_i_pid + Ki * (Ts / 2.0) * (erro + e_1)
         u_d = -(Kd / Ts) * (y_atual - y_1)
-        u_calc = u_p + u_i + u_d
+        u_calc = u_p + u_i_pid + u_d
         u_opt = float(np.clip(u_calc, -10.0, 80.0))
         if u_calc != u_opt:
-            u_i -= (u_calc - u_opt)
+            u_i_pid -= (u_calc - u_opt)
         e_1 = erro; y_1 = y_atual
     else:
-        # --- ANN Control ---
+        # --- Controle por Rede Neural (Aproximador NMPC) ---
+        if not was_ann_mode:
+            # Bumpless transfer: PID -> RNA
+            # Reseta o integrador residual; a rede assume com seu valor nominal ótimo sem solavancos
+            u_i_res = 0.0
+            was_ann_mode = True
+
         ref_window = x2ref_full_val[k : k + N]
         pval = np.concatenate([xs[:, -1], ref_window])
         pval_scaled = scaler.transform(pval.reshape(1, -1))
         with torch.no_grad():
-            u_opt = float(np.clip(model(torch.tensor(pval_scaled, dtype=torch.float32)).item(), data["u_min"][0], data["u_max"][0]))
+            u_ann = float(model(torch.tensor(pval_scaled, dtype=torch.float32)).item())
+        
         erro = r_curr - y_atual
+        if ENABLE_RESIDUAL_INTEGRATOR:
+            u_i_res = u_i_res + Ki_res * (Ts / 2.0) * (erro + e_1)
+            u_i_res = float(np.clip(u_i_res, -10.0, 10.0))  # Anti-windup suave
+            u_calc = u_ann + u_i_res
+            u_opt = float(np.clip(u_calc, data["u_min"][0], data["u_max"][0]))
+        else:
+            u_opt = float(np.clip(u_ann, data["u_min"][0], data["u_max"][0]))
+            
+        # Sincronização do integrador PID no fundo para retorno suave
+        u_p_tr = Kp * erro
+        u_d_tr = -(Kd / Ts) * (y_atual - y_1)
+        u_i_pid = u_opt - u_p_tr - u_d_tr
         e_1 = erro; y_1 = y_atual
-        u_i = u_opt - (Kp * erro) - (-(Kd / Ts) * (y_atual - y_1))
 
     res = F(x0=xs[:, -1], p=u_opt)
     xf_new = res["xf"].full().flatten()
@@ -904,16 +981,44 @@ for k in tqdm(range(steps_val), desc="Python SIL Simulation"):
     y_sim.append(y_atual)
     u_sim.append(u_opt)
 
-# Plot Results
-plt.figure(figsize=(14, 5))
-plt.plot(tvec_val, x2ref_val, "k--", label="Reference")
-plt.plot(tvec_val, y_sim, "b-", label="y (Angle)")
-plt.axvspan(0, T_PID_START, color="gray", alpha=0.15, label="PID Control")
-plt.axvspan(t_total_val - T_PID_END, t_total_val, color="gray", alpha=0.15)
-plt.xlabel("Time [s]"); plt.ylabel("Angle [deg]")
-plt.title("Python SIL Validation (PID -> ANN -> PID)")
-plt.legend(); plt.grid(True); plt.tight_layout()
-plt.savefig(os.path.join(PLOTS_DIR, "".join([c if c.isalnum() else "_" for c in (plt.gca().get_title() or str(id(plt.gcf())))]) + ".png")); plt.show(block=False); plt.pause(0.1)
+# --- Plotagem Padronizada Acadêmica (IEEE / ABNT) ---
+fig_sil, (ax_s1, ax_s2) = plt.subplots(2, 1, figsize=(7.2, 4.6), sharex=True,
+                                       gridspec_kw={'height_ratios': [2.2, 1.2]})
+
+# Subplot 1: Rastreamento Angular
+ax_s1.plot(tvec_val, x2ref_val, color='#111111', linestyle='--', lw=1.1, label=r'Referência $r(t)$')
+ax_s1.plot(tvec_val, y_sim, color='#1f77b4', lw=1.2, label=r'Saída SIL $y(t)$')
+ax_s1.axvspan(0, T_PID_START, color='#7f7f7f', alpha=0.15, label='Transição PID')
+ax_s1.axvspan(t_total_val - T_PID_END, t_total_val, color='#7f7f7f', alpha=0.15)
+ax_s1.set_ylabel(r'Ângulo $\theta$ [$^\circ$]')
+title_str = 'Validação SIL Python (PID $\\rightarrow$ RNA MPC' + (' + Int. Residual' if ENABLE_RESIDUAL_INTEGRATOR else '') + ' $\\rightarrow$ PID)'
+ax_s1.set_title(title_str, fontsize=9.5, fontweight='bold', pad=4)
+ax_s1.grid(True, linestyle='--', alpha=0.5)
+ax_s1.legend(loc='upper right', framealpha=0.95)
+ax_s1.set_xlim(0, tvec_val[-1])
+
+# Subplot 2: Esforço de Controle
+ax_s2.plot(tvec_val, u_sim, color='#d62728', lw=1.0, label=r'Ação de Controle $u(t)$')
+ax_s2.axvspan(0, T_PID_START, color='#7f7f7f', alpha=0.15)
+ax_s2.axvspan(t_total_val - T_PID_END, t_total_val, color='#7f7f7f', alpha=0.15)
+ax_s2.set_xlabel('Tempo [s]')
+ax_s2.set_ylabel(r'Controle $u$ [\%]')
+ax_s2.grid(True, linestyle='--', alpha=0.5)
+ax_s2.legend(loc='upper right', framealpha=0.95)
+
+plt.tight_layout()
+
+for d in [PLOTS_DIR, os.path.join(current_dir, 'plots'), 
+         os.path.join(root_dir, 'tcc', 'img', 'resultados'), 
+         os.path.join(root_dir, 'img', 'resultados')]:
+    if d and (os.path.exists(d) or d == PLOTS_DIR):
+        os.makedirs(d, exist_ok=True)
+        fig_sil.savefig(os.path.join(d, "sil_validacao_completa.png"), dpi=300, bbox_inches='tight')
+        fig_sil.savefig(os.path.join(d, "sil_validacao_completa.pdf"), format='pdf', bbox_inches='tight')
+
+print("  -> Gráfico de validação SIL salvo: sil_validacao_completa (.png e .pdf)")
+plt.show(block=False)
+plt.pause(0.1)
 
 # %%
 # 12. Export to CSV for STM comparison
@@ -956,9 +1061,12 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
     y_atual_val = 0.0
     y_sim_val = []
     u_sim_val = []
-    u_i_val = 0.0
+    u_i_pid_val = 0.0
+    u_i_res_val = 0.0
     e_1_val = 0.0
     y_1_val = 0.0
+    was_ann_val = False
+    u_opt = 0.0
 
     steps_custom = len(x2ref_custom)
     tvec_custom = np.arange(steps_custom) * Ts
@@ -970,26 +1078,50 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
         r_curr = x2ref_custom[k]
         
         if t < T_PID_START or t >= (steps_custom * Ts) - T_PID_END:
-            # PID
+            # PID Nominal
+            if was_ann_val:
+                # Bumpless transfer: RNA -> PID
+                erro_tr = r_curr - y_atual_val
+                u_p_tr = Kp * erro_tr
+                u_d_tr = -(Kd / Ts) * (y_atual_val - y_1_val)
+                u_i_pid_val = u_opt - u_p_tr - u_d_tr
+                was_ann_val = False
+
             erro = r_curr - y_atual_val
             u_p = Kp * erro
-            u_i_val = u_i_val + Ki * (Ts / 2.0) * (erro + e_1_val)
+            u_i_pid_val += Ki * (Ts / 2.0) * (erro + e_1_val)
             u_d = -(Kd / Ts) * (y_atual_val - y_1_val)
-            u_calc = u_p + u_i_val + u_d
+            u_calc = u_p + u_i_pid_val + u_d
             u_opt = float(np.clip(u_calc, -10.0, 80.0))
             if u_calc != u_opt:
-                u_i_val -= (u_calc - u_opt)
+                u_i_pid_val -= (u_calc - u_opt)
             e_1_val = erro; y_1_val = y_atual_val
         else:
             # ANN
+            if not was_ann_val:
+                # Bumpless transfer: PID -> RNA
+                u_i_res_val = 0.0
+                was_ann_val = True
+
             ref_window = x2ref_full_custom[k : k + N]
             pval = np.concatenate([xs_val[:, -1], ref_window])
             pval_scaled = scaler.transform(pval.reshape(1, -1))
             with torch.no_grad():
-                u_opt = float(np.clip(model(torch.tensor(pval_scaled, dtype=torch.float32)).item(), data["u_min"][0], data["u_max"][0]))
+                u_ann = float(model(torch.tensor(pval_scaled, dtype=torch.float32)).item())
             erro = r_curr - y_atual_val
+            if ENABLE_RESIDUAL_INTEGRATOR:
+                u_i_res_val += Ki_res * (Ts / 2.0) * (erro + e_1_val)
+                u_i_res_val = float(np.clip(u_i_res_val, -10.0, 10.0))
+                u_calc = u_ann + u_i_res_val
+                u_opt = float(np.clip(u_calc, data["u_min"][0], data["u_max"][0]))
+            else:
+                u_opt = float(np.clip(u_ann, data["u_min"][0], data["u_max"][0]))
+
+            # Tracking mode do integrador PID para retorno suave
+            u_p_tr = Kp * erro
+            u_d_tr = -(Kd / Ts) * (y_atual_val - y_1_val)
+            u_i_pid_val = u_opt - u_p_tr - u_d_tr
             e_1_val = erro; y_1_val = y_atual_val
-            u_i_val = u_opt - (Kp * erro) - (-(Kd / Ts) * (y_atual_val - y_1_val))
             
         res = F(x0=xs_val[:, -1], p=u_opt)
         xf_new = res["xf"].full().flatten()
@@ -1003,15 +1135,37 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
         y_sim_val.append(y_atual_val)
         u_sim_val.append(u_opt)
         
-    plt.figure(figsize=(14, 5))
-    plt.plot(tvec_custom[:len(y_sim_val)], x2ref_custom[:len(y_sim_val)], "k--", label="Reference")
-    plt.plot(tvec_custom[:len(y_sim_val)], y_sim_val, "b-", label="y (Angle)")
-    plt.axvspan(0, T_PID_START, color="gray", alpha=0.15, label="PID Control")
-    plt.axvspan(steps_custom*Ts - T_PID_END, steps_custom*Ts, color="gray", alpha=0.15)
-    plt.xlabel("Time [s]"); plt.ylabel("Angle [deg]")
-    plt.title(f"Python SIL Validation - {name}")
-    plt.legend(); plt.grid(True); plt.tight_layout()
-    plt.savefig(os.path.join(PLOTS_DIR, f"{filename_prefix}_plot.png")); plt.show(block=False); plt.pause(0.1)
+    tvec_plot = tvec_custom[:len(y_sim_val)]
+    fig_v, (ax_v1, ax_v2) = plt.subplots(2, 1, figsize=(7.2, 4.4), sharex=True,
+                                         gridspec_kw={'height_ratios': [2.2, 1.2]})
+    
+    ax_v1.plot(tvec_plot, x2ref_custom[:len(y_sim_val)], color='#111111', linestyle='--', lw=1.1, label=r'Referência $r(t)$')
+    ax_v1.plot(tvec_plot, y_sim_val, color='#1f77b4', lw=1.2, label=r'Saída $y(t)$')
+    ax_v1.axvspan(0, T_PID_START, color='#7f7f7f', alpha=0.15, label='PID')
+    ax_v1.axvspan(steps_custom*Ts - T_PID_END, steps_custom*Ts, color='#7f7f7f', alpha=0.15)
+    ax_v1.set_ylabel(r'Ângulo $\theta$ [$^\circ$]')
+    ax_v1.set_title(f'Validação SIL - {name}', fontsize=9.5, fontweight='bold', pad=4)
+    ax_v1.grid(True, linestyle='--', alpha=0.5)
+    ax_v1.legend(loc='upper right', framealpha=0.95)
+    ax_v1.set_xlim(0, tvec_plot[-1])
+
+    ax_v2.plot(tvec_plot, u_sim_val, color='#d62728', lw=1.0, label=r'Controle $u(t)$')
+    ax_v2.axvspan(0, T_PID_START, color='#7f7f7f', alpha=0.15)
+    ax_v2.axvspan(steps_custom*Ts - T_PID_END, steps_custom*Ts, color='#7f7f7f', alpha=0.15)
+    ax_v2.set_xlabel('Tempo [s]')
+    ax_v2.set_ylabel(r'Controle $u$ [\%]')
+    ax_v2.grid(True, linestyle='--', alpha=0.5)
+    ax_v2.legend(loc='upper right', framealpha=0.95)
+
+    plt.tight_layout()
+    for d in [PLOTS_DIR, os.path.join(current_dir, 'plots'), 
+             os.path.join(root_dir, 'tcc', 'img', 'resultados'), 
+             os.path.join(root_dir, 'img', 'resultados')]:
+        if d and (os.path.exists(d) or d == PLOTS_DIR):
+            os.makedirs(d, exist_ok=True)
+            fig_v.savefig(os.path.join(d, f"{filename_prefix}_plot.png"), dpi=300, bbox_inches='tight')
+            fig_v.savefig(os.path.join(d, f"{filename_prefix}_plot.pdf"), format='pdf', bbox_inches='tight')
+    plt.show(block=False); plt.pause(0.1)
 
     df_export = pd.DataFrame({"tempo_ms": (tvec_custom[:len(y_sim_val)] * 1000).astype(int), 
                               "angulo_deg": y_sim_val, "u_pct": u_sim_val, 
@@ -1048,7 +1202,8 @@ df_val = 1.0 / (n_mid * Ts)
 freqs = np.arange(df_val, f_max + 1e-9, df_val)
 phases = np.random.uniform(0, 2 * np.pi, len(freqs))
 ms = np.sum([np.sin(2*np.pi*f*t_mid + ph) for f, ph in zip(freqs, phases)], axis=0)
-ms = ms / np.max(np.abs(ms)) * 40.0 + 65.0
+ms = ms - ms[0]  # Garante partida suave em 45 deg sem degrau
+ms = ms / np.max(np.abs(ms)) * 40.0 + 45.0
 x2ref_val3[n_pid_start : steps_val - n_pid_end] = ms
 x2ref_val3[steps_val - n_pid_end : steps_val] = 45.0
 

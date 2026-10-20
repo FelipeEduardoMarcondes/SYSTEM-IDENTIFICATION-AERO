@@ -1,0 +1,524 @@
+% Este trabalho está licenciado sob a licença Creative Commons CC-BY-SA.
+% Você é livre para usar, compartilhar e adaptar este material, desde que seja atribuída a autoria e que as obras derivadas mantenham a mesma licença.
+
+% ---
+% Pacotes Principais
+% ---
+\usepackage[left=3cm,right=2cm,top=3cm,bottom=2cm]{geometry}    % layout de página
+\usepackage{lmodern}		% Usa a fonte Latin Modern
+\usepackage[T1]{fontenc}	% Selecao de codigos de fonte.
+\usepackage[utf8]{inputenc}	% Codificacao do documento (conversão automática dos acentos)
+\usepackage{indentfirst}	% Indenta o primeiro parágrafo de cada seção.
+\usepackage{color}			% Controle das cores
+\usepackage{xcolor}
+\usepackage{graphicx}		% Inclusão de gráficos
+\usepackage{microtype} 		% para melhorias de justificação
+\usepackage{pslatex}        % torna o documento padrão para as fontes Times/Helvetica/Courier
+% \usepackage{url}
+\usepackage{booktabs}
+\usepackage{subfig}
+\usepackage{pdfpages}
+\usepackage{lastpage}
+\usepackage{fancyhdr}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{amsmath, amssymb, amsthm, amsfonts}
+\usepackage{setspace}
+\usepackage{chngcntr}
+\usepackage{keystroke}
+\usepackage{tocloft}
+\usepackage{longtable, ltcaption}
+\usepackage{newfloat}
+\usepackage{tikz}
+\usepackage{hyperref}
+\usepackage{fancyvrb}
+\usepackage{titlesec}
+\usepackage{ifthen}
+\usepackage{tabularx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{pgfgantt}
+% ---
+% ---
+% Pacote de citações
+% ---
+% \usepackage[alf,abnt-etal-text=it,abnt-repeated-author-omit=yes,abnt-etal-list=0,abnt-etal-cite=4,abnt-emphasize=bf]{abntex2cite}
+\usepackage[alf,abnt-etal-text=it,abnt-repeated-author-omit=no,abnt-etal-list=0,abnt-etal-cite=4,abnt-emphasize=bf]{abntex2cite}
+% ---
+
+\usepackage{listings}
+\lstset{
+  xleftmargin=1cm,      % 1 cm de "indentação" à esquerda
+  breaklines=true,      % quebra linhas longas
+  breakatwhitespace=true,
+  basicstyle=\ttfamily\small
+}
+
+% Troca "Listing" por "Listagem"
+\renewcommand{\lstlistingname}{Listagem}
+
+% Se quiser também mudar o plural:
+\renewcommand{\lstlistlistingname}{Lista de Listagens}
+
+% Define enumerate no padrão a), b), c)...
+\setlist[enumerate]{label=\alph*), leftmargin=3em}
+\setlist[itemize]{leftmargin=3em}
+
+\newcommand{\sourceFig}[1]{%
+    \vspace{-2.5ex}
+    \caption*{\small Fonte: #1}%
+}
+
+\newcommand{\sourceTab}[1]{%
+    \caption*{\small Fonte: #1}%
+}
+
+
+
+% ---
+% Customizações de Fontes e Tamanhos de Letras usados na Classe ABNTEX2
+% ---
+\renewcommand{\chaptitlefont}{\ABNTEXchapterfont\ABNTEXchapterfontsize}
+
+\setsecheadstyle{\ABNTEXsectionfont\ABNTEXsectionfontsize\ABNTEXsectionupperifneeded}
+
+\renewcommand{\ABNTEXchapterfont}{\rmfamily}
+\renewcommand{\ABNTEXchapterfontsize}{\normalsize\bfseries}
+
+\renewcommand{\ABNTEXpartfont}{\ABNTEXchapterfont}
+\renewcommand{\ABNTEXpartfontsize}{\LARGE\bfseries}
+\renewcommand{\cftpartfont}{\normalfont\rmfamily\bfseries}
+\renewcommand{\cftpartpagefont}{\normalfont\rmfamily\bfseries}
+
+\renewcommand{\ABNTEXsectionfont}{\ABNTEXchapterfont}
+\renewcommand{\ABNTEXsectionfontsize}{\normalsize}
+
+\titleformat{\section}
+  {\MakeUppercase}   % transforma em caixa alta
+  {\thesection}{1em}{}
+  
+\renewcommand{\ABNTEXsubsectionfont}{\ABNTEXsectionfont}
+\renewcommand{\ABNTEXsubsectionfontsize}{\normalsize}
+
+
+\titleformat{\subsection}
+  {\bfseries}   % transforma em negrito
+  {\thesubsection}{1em}{}
+
+
+\renewcommand{\ABNTEXsubsubsectionfont}{\ABNTEXsubsectionfont}
+\renewcommand{\ABNTEXsubsubsectionfontsize}{\normalsize}
+
+\renewcommand{\ABNTEXsubsubsubsectionfont}{\ABNTEXsubsectionfont}
+\renewcommand{\ABNTEXsubsubsubsectionfontsize}{\normalsize}
+% ---
+
+% ---
+% Customização do Sumário (Distância entre número e nome do item)
+% ---
+\setlength{\cftlastnumwidth}{3.5em}
+\cftsetindents{part}{0em}{\cftlastnumwidth}
+\cftsetindents{chapter}{0em}{\cftlastnumwidth}
+\cftsetindents{section}{0em}{\cftlastnumwidth}
+\cftsetindents{subsection}{0em}{\cftlastnumwidth}
+\cftsetindents{subsubsection}{0em}{\cftlastnumwidth}
+\cftsetindents{paragraph}{0em}{\cftlastnumwidth}
+\cftsetindents{subparagraph}{0em}{\cftlastnumwidth}
+
+
+% entries in the table of contents
+\renewcommand{\cftsectionfont}{\normalfont\MakeUppercase}
+\renewcommand{\cftsectionpagefont}{\normalfont}
+
+% subsection entries (in the table of contents)
+\renewcommand{\cftsubsectionfont}{\bfseries}
+\renewcommand{\cftsubsectionpagefont}{\bfseries}
+
+% subsection entries (in the table of contents)
+\renewcommand{\cftsubsubsectionfont}{\normalfont}
+\renewcommand{\cftsubsubsectionpagefont}{\normalfont}
+
+\captionsetup{justification=centering, font=small}
+
+   
+% ---
+% Possibilita criação de Quadros e Lista de quadros.
+% Ver https://github.com/abntex/abntex2/issues/176
+%
+\renewcommand{\insertchapterspace}{}
+\newcommand{\listofquadrosname}{Lista de Quadros}
+\DeclareFloatingEnvironment[
+    fileext=loq,
+    listname={Lista de Quadros},
+    name=Quadro,
+    placement=p,
+    within=none,
+    chapterlistsgaps=off,
+    ]{quadro}
+
+\newlistof{listofquadros}{loq}{\listofquadrosname}
+\newlistentry{quadro}{loq}{0}
+
+% configurações para atender às regras da ABNT
+\setfloatadjustment{quadro}{\centering}
+\counterwithout{quadro}{chapter}
+\renewcommand{\cftquadroname}{\quadroname\space} 
+\renewcommand*{\cftquadroaftersnum}{\hfill--\hfill}
+
+
+\setfloatlocations{quadro}{hbtp} % Ver https://github.com/abntex/abntex2/issues/176
+% ---
+
+
+
+% ---
+% Possibilita criação de Gráficos e Lista de Gráficos.
+% Ver https://github.com/abntex/abntex2/issues/176
+%
+\renewcommand{\insertchapterspace}{}
+\newcommand{\listofplotsname}{Lista de Gráficos}
+\DeclareFloatingEnvironment[
+    fileext=lop,
+    listname={Lista de Gráficos},
+    name=Gráfico,
+    placement=p,
+    within=none,
+    chapterlistsgaps=off,
+    ]{plot}
+
+\newlistof{listofplots}{lop}{\listofplotsname}
+\newlistentry{plot}{lop}{0}
+
+% configurações para atender às regras da ABNT
+\setfloatadjustment{plot}{\centering}
+\counterwithout{plot}{chapter}
+\renewcommand{\cftplotname}{\plotname\space} 
+\renewcommand*{\cftplotaftersnum}{\hfill--\hfill}
+
+
+\setfloatlocations{plot}{hbtp} % Ver https://github.com/abntex/abntex2/issues/176
+% ---
+
+
+
+
+
+\setlength{\cftbeforechapterskip}{0pt} % Altera o espaçamento entre itens do sumário
+% ---
+
+% ---
+% Customizações Adicionais
+% ---
+
+
+\captionsetup[figure]{aboveskip=2pt, belowskip=0pt}
+\captionsetup[plot]{aboveskip=2pt, belowskip=0pt}
+\captionsetup[table]{aboveskip=2pt, belowskip=0pt}
+\captionsetup[quadro]{aboveskip=2pt, belowskip=0pt}
+
+
+
+
+
+
+
+\providecommand{\imprimirEscola}{}
+\newcommand{\escola}[1]{\renewcommand{\imprimirEscola}{#1}}
+
+\providecommand{\imprimirCurso}{}
+\newcommand{\curso}[1]{\renewcommand{\imprimirCurso}{#1}}
+
+\providecommand{\imprimirCidade}{}
+\newcommand{\cidade}[1]{\renewcommand{\imprimirCidade}{#1}}
+
+\providecommand{\imprimirsubtitulo}{}
+\newcommand{\subtitulo}[1]{\renewcommand{\imprimirsubtitulo}{#1}}
+
+\providecommand{\imprimirexaminadorA}{}
+\newcommand{\examinadorA}[1]{\renewcommand{\imprimirexaminadorA}{#1}}
+
+\providecommand{\imprimirexaminadorB}{}
+\newcommand{\examinadorB}[1]{\renewcommand{\imprimirexaminadorB}{#1}}
+
+\counterwithout{equation}{chapter} % define uma numeração contínua (1,2,3, ...) de equações. Para uma numeração com dependência do número do capítulo (1.1, 1.2, ...), basta apagar esta linha.
+
+\setlength{\ABNTEXsignwidth}{10cm} % define o comprimento da linha de assinatura na folha de aprovação
+
+\setlength{\ABNTEXsignthickness}{0.5pt} % define a espessura da linha de assinatura na folha de aprovação
+
+% Redefine o ambiente citacao para que as citações diretas com mais de 3 linhas tenham recuo de 4 cm
+\renewenvironment{citacao}[1][default]{%
+   \list{}{\leftmargin=0cm}%
+   %\ABNTEXfontereduzida%
+   \small % 10pt
+   \addtolength{\leftskip}{\ABNTEXcitacaorecuo} % recuo de 4 cm da margem esquerda
+   \item[]%
+   \begin{SingleSpace}%
+   \ifthenelse{\not\equal{#1}{default}}{\itshape\selectlanguage{#1}}{}%
+ }{%
+   \end{SingleSpace}%
+   \endlist}%
+
+
+% O tamanho do parágrafo é dado por:
+\setlength{\parindent}{1.25cm}
+
+%\setlength{\parskip}{0.2cm}  % tente também \onelineskip
+
+% Controle do espaçamento entre um parágrafo e outro:
+\setlength{\cftparskip}{0pt}
+
+%\renewcommand{\baselinestretch}{1.5}
+\linespread{1.5} % espaço entre linhas 1,5cm
+
+% Altera o aspecto da cor azul
+\definecolor{blue}{RGB}{41,5,195}
+% ---
+
+
+\newtheorem{definition}{Definição}[chapter]
+\newtheorem{theorem}{Teorema}[chapter]
+\newtheorem{corollary}{Corolário}[theorem]
+\newtheorem{lemma}[theorem]{Lema}
+
+% informações do PDF
+\makeatletter
+\hypersetup{
+     	%pagebackref=true,
+		pdftitle={\@title}, 
+		pdfauthor={\@author},
+    	pdfsubject={\imprimirpreambulo},
+	    pdfcreator={LaTeX with abnTeX2},
+		pdfkeywords={abnt}{latex}{abntex}{abntex2}{projeto de pesquisa}, 
+		colorlinks=true,       		% false: boxed links; true: colored links
+    	linkcolor=black,          	% color of internal links
+    	citecolor=black,        		% color of links to bibliography
+    	filecolor=black,      		% color of file links
+		urlcolor=black,
+		bookmarksdepth=4
+}
+\makeatother
+% --- 
+
+% ---
+% Modelo de Capa conforme Manual PUCPR
+\renewcommand{\imprimircapa}{
+\begin{capa}
+    \begin{center}
+        % \includegraphics[height=15ex]{img/brasao.png}\\[1.5ex]
+ 		\MakeUppercase{\textbf{\imprimirinstituicao}}\\
+ 		\MakeUppercase{\textbf{\imprimirEscola}}\\
+ 		\MakeUppercase{\textbf{\imprimirCurso}}\\
+ 		\vspace{1.3cm}
+		\MakeUppercase{\textbf{\imprimirautor}}\\
+        \vspace{7cm}
+        \MakeUppercase{\textbf{\imprimirtitulo}}\\
+        \MakeUppercase{\textbf{\imprimirsubtitulo}}
+        \vfill
+        \MakeUppercase{\textbf{\imprimirCidade}}\\
+        \textbf{\imprimirdata}
+    \end{center}
+\end{capa}
+}
+
+% ---
+% Modelo de Folha de Rosto conforme Manual PUCPR
+\renewcommand{\imprimirfolhaderosto}{
+
+% =========================
+% Preâmbulo automático
+% Idealmente não deve ser alterado manualmente.
+% Apenas as variáveis em dados_academicos.tex devem ser alteradas.
+% =========================
+
+\newcommand{\textopreambulo}{}
+
+\ifthenelse{\equal{\imprimirTrabalhoTipo}{tcc}}{
+  \renewcommand{\textopreambulo}{
+    Trabalho de Conclusão de Curso apresentado ao Curso de Graduação em \imprimirCurso\ da \imprimirinstituicao,
+    como requisito parcial à obtenção do título de \imprimirTituloConcedido.
+  }
+}{}
+
+\ifthenelse{\equal{\imprimirTrabalhoTipo}{espec}}{
+  \renewcommand{\textopreambulo}{
+    Trabalho de Conclusão de Curso apresentado ao Curso de Especialização em \imprimirCurso\ da \imprimirinstituicao,
+    como requisito parcial à obtenção do título de \imprimirTituloConcedido.
+  }
+}{}
+
+\ifthenelse{\equal{\imprimirTrabalhoTipo}{msc-qual}}{
+  \renewcommand{\textopreambulo}{
+    Documento apresentado ao \imprimirPrograma\ da \imprimirinstituicao,
+    como requisito parcial à obtenção do título de \imprimirTituloConcedido.
+  }
+}{}
+
+\ifthenelse{\equal{\imprimirTrabalhoTipo}{msc}}{
+  \renewcommand{\textopreambulo}{
+    Dissertação apresentada ao \imprimirPrograma\ da \imprimirinstituicao,
+    como requisito parcial à obtenção do título de \imprimirTituloConcedido.
+  }
+}{}
+
+\ifthenelse{\equal{\imprimirTrabalhoTipo}{phd-qual}}{
+  \renewcommand{\textopreambulo}{
+    Documento apresentado ao \imprimirPrograma\ da \imprimirinstituicao,
+    como requisito parcial à obtenção do título de \imprimirTituloConcedido.
+  }
+}{}
+
+\ifthenelse{\equal{\imprimirTrabalhoTipo}{phd}}{
+  \renewcommand{\textopreambulo}{
+    Tese apresentada ao \imprimirPrograma\ da \imprimirinstituicao,
+    como requisito parcial à obtenção do título de \imprimirTituloConcedido.
+  }
+}{}
+
+
+% Linha opcional do coorientador (se não estiver vazio)
+\newcommand{\linhaCoorientador}{}
+\edef\tempCoorientador{\imprimirNomeCoorientador}
+\if\relax\detokenize\expandafter{\tempCoorientador}\relax
+  % vazio, não faz nada
+\else
+  \renewcommand{\linhaCoorientador}{\\ Coorientador: \imprimirNomeCoorientador}
+\fi
+
+\preambulo{
+  \textopreambulo\\
+  Orientador: \imprimirNomeOrientador
+  \linhaCoorientador
+}
+
+\begin{folhaderosto}
+    \begin{center}
+     	\MakeUppercase{\textbf{\imprimirautor}}\\
+     	\vspace{10.6cm}
+     	\MakeUppercase{\textbf{\imprimirtitulo}} \\
+     	\MakeUppercase{\textbf{\imprimirsubtitulo}}
+     \end{center}
+     \vspace{0.4cm}
+     \hspace{8cm} % recuo de 8cm
+        \begin{minipage}{8cm}
+			\SingleSpacing % espaçamento simples
+			\imprimirpreambulo
+		\end{minipage}\\
+	\begin{center}
+        \vfill
+        \MakeUppercase{\textbf{\imprimirCidade}}\\
+        \textbf{\imprimirdata}
+    \end{center}
+\end{folhaderosto}
+}
+% ---
+
+\makeatletter
+\renewcommand{\cite}[2][]{%
+  \begingroup
+    \edef\tempa{#1}%
+    % Sem página
+    \ifx\tempa\@empty
+      (\citeauthoronline{#2},~\citeyear{#2})%
+    % Com página
+    \else
+      (\citeauthoronline{#2},~\citeyear{#2},~#1)%
+    \fi
+  \endgroup
+}
+\makeatother
+
+\renewcommand{\citeauthor}[1]{\citeauthoronline{#1}}
+
+% Ajustar o ambiente agradecimentos
+\makeatletter
+\renewenvironment{agradecimentos}{%
+  \chapter*{Agradecimentos}%
+  % sobe o texto em aproximadamente uma linha
+  \vspace*{-\baselineskip}%
+  \begingroup
+    \setlength{\parindent}{0pt}% como você colocou no AtBeginEnvironment
+    \setlength{\parskip}{0pt}% sem espaço antes do primeiro parágrafo
+    % a partir do segundo parágrafo, usar \baselineskip como parskip
+    \let\oldpar\par
+    \def\par{\oldpar\setlength{\parskip}{\baselineskip}}%
+}{%
+  \par
+  \endgroup
+  \clearpage
+}
+\makeatother
+
+% Menos hifenizações, mas ainda permitindo quando necessário
+\sloppy
+\pretolerance=2000
+\tolerance=3000
+\hyphenpenalty=600
+\exhyphenpenalty=600
+
+\setlist[itemize]{leftmargin=1.06em, label=\textendash}
+
+\usepackage{caption}
+\usepackage{float} % para [H]
+
+\newenvironment{figura}[2][H]{%
+  \begin{figure}[#1]
+    \centering
+    \begin{minipage}{#2}
+      \captionsetup{width=\textwidth,justification=raggedright,singlelinecheck=false}%
+}{%
+    \end{minipage}
+  \end{figure}
+}
+
+\newenvironment{tabela}[2][H]{%
+  \begin{table}[#1]
+    \centering
+    \begin{minipage}{#2}
+      \captionsetup{width=\textwidth,justification=raggedright,singlelinecheck=false}%
+}{%
+    \end{minipage}
+  \end{table}
+}
+
+% Novo ambiente: quadro2
+\newenvironment{quadro2}[2][H]{%
+  \begin{quadro}[#1]
+    \centering
+    \begin{minipage}{#2}
+      \captionsetup{width=\textwidth,justification=raggedright,singlelinecheck=false}%
+}{%
+    \end{minipage}
+  \end{quadro}
+}
+
+\newenvironment{grafico}[2][H]{%
+  \begin{plot}[#1]
+    \centering
+    \begin{minipage}{#2}
+      \captionsetup{width=\textwidth,justification=raggedright,singlelinecheck=false}%
+}{%
+    \end{minipage}
+  \end{plot}
+}
+
+\renewcommand\url[1]{#1}
+
+% =========================
+% Setters + getters (imprimir)
+% =========================
+\makeatletter
+\newcommand{\trabalhoTipo}[1]{\def\@trabalhoTipo{#1}}
+\newcommand{\tituloConcedido}[1]{\def\@tituloConcedido{#1}}
+\newcommand{\programa}[1]{\def\@programa{#1}}
+\newcommand{\nomeOrientador}[1]{\def\@nomeOrientador{#1}}
+\newcommand{\nomeCoorientador}[1]{\def\@nomeCoorientador{#1}}
+
+% Getters (sem @) para usar no texto com segurança
+\newcommand{\imprimirTrabalhoTipo}{\@trabalhoTipo}
+\newcommand{\imprimirTituloConcedido}{\@tituloConcedido}
+\newcommand{\imprimirPrograma}{\@programa}
+\newcommand{\imprimirNomeOrientador}{\@nomeOrientador}
+\newcommand{\imprimirNomeCoorientador}{\@nomeCoorientador}
+\makeatother

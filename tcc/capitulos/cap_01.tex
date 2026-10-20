@@ -1,0 +1,64 @@
+%----------------Cap_01----------------%
+\chapter{Introdução}
+
+% ------------------------------------------------------------
+% Contextualização
+% ------------------------------------------------------------
+O crescimento acelerado dos veículos aéreos não tripulados (VANTs) nas últimas décadas transformou setores como logística, monitoramento ambiental, agricultura de precisão e defesa. Plataformas de decolagem e aterrissagem vertical (VTOL), em particular os quadrotores, tornaram-se objetos de intensa investigação em razão de suas capacidades únicas de manobra, todavia impõem desafios igualmente expressivos de controle: dinâmica intrínsecamente não-linear, acoplamento entre eixos e forte sensibilidade a perturbações externas como rajadas de vento \cite{nguyen2020}. A operação segura e eficiente dessas plataformas exige algoritmos capazes de satisfazer simultaneamente requisitos de precisão de rastreamento, rejeição robusta a perturbações e execução em tempo real sob severas restrições computacionais dos microcontroladores embarcados.
+
+Nesse contexto, o aeropêndulo consolida-se como uma bancada de experimentação, onde sistema reproduz a dinâmica essencial de um rotor VTOL em um único grau de liberdade, permitindo a comparação controlada de estratégias de controle em laboratório. Sua dinâmica não-linear, determinada pelo torque aerodinâmico do conjunto motor-hélice e pela não-linearidade gravitacional intrínseca ao pêndulo, exige técnicas de controle além dos métodos lineares clássicos. A bancada utilizada neste trabalho foi originalmente projetada e construída por \citeonline{lima2025}, cujo sistema mecânico e eletrônico é reaproveitado e estendido com novos algoritmos de controle.
+
+% ------------------------------------------------------------
+% Motivação / Justificativa
+% ------------------------------------------------------------
+O Controle Preditivo Não-Linear (NMPC) destaca-se entre as estratégias avançadas por combinar tratamento explícito de restrições, previsão do comportamento futuro da planta e desempenho reconhecidamente superior ao PID clássico em sistemas não-lineares \cite{mayne2000}. No entanto, a solução repetida de um Problema de Controle Ótimo a cada período de amostragem implica um custo computacional que pode ultrapassar os recursos disponíveis em microcontroladores de baixo custo operando em dinâmicas rápidas. Plataformas VTOL de pequeno porte tipicamente exigem períodos de amostragem da ordem de 10\,ms, intervalo que representa uma barreira prática para a implantação direta do NMPC em unidades de baixo poder computacional.
+
+A abordagem de MPC aproximado por redes neurais surge como alternativa promissora, uma rede treinada offline para imitar a política do NMPC pode ser avaliada em tempo de inferência constante e reduzido, compatível com microcontroladores de classe Cortex-M \cite{karg2020}. A substituição da otimização repetida por uma única passagem \textit{feedforward} reduz o custo computacional em ordens de grandeza sem exigir reformulação do modelo ou dos objetivos de controle, tornando a estratégia particularmente atrativa para implantação embarcada em sistemas com restrições rígidas de memória e tempo \cite{david2021}.
+
+% ------------------------------------------------------------
+% Revisão da Literatura
+% ------------------------------------------------------------
+\section{Estado da Arte}
+
+\subsection{Controle clássico}
+Controladores clássicos como o PID (Proporcional-Integral-Derivativo) são a espinha dorsal de inúmeras aplicações industriais e robóticas. O desenvolvimento formal dessa lei de controle, também conhecida como controle de três termos, foi apresentado em 1922 pelo engenheiro Nicolas Minorsky \cite{bennett1996}.
+
+Em plataformas ágeis, como VANTs, o controle PID muitas vezes não é suficiente de forma isolada, sendo relegado a uma malha interna de controle de atitude ou velocidade, o que cria a necessidade de controladores externos mais sofisticados capazes de garantir estabilidade sistêmica otimizada. Esse cenário motiva a adoção de algoritmos mais avançados, como o Controle Preditivo Baseado em Modelo (MPC), capaz de gerenciar diretamente sistemas de múltiplas entradas e múltiplas saídas com restrições operacionais rígidas \cite{nguyen2020}.
+
+\subsection{Controle Preditivo Não-Linear}
+O Controle Preditivo Não-Linear (NMPC) fundamenta-se na resolução de um problema de controle ótimo em tempo discreto e horizonte finito, em que um otimizador avalia um modelo preditivo para minimizar uma função de custo ao longo do horizonte de predição, lidando ativamente com restrições de estado e entrada. Uma de suas maiores vantagens em relação ao PID clássico é a característica de \textit{preview} (visão antecipada), pela qual o controlador avalia o comportamento futuro e reage a referências antes mesmo do erro se acumular \cite{mayne2000}. Embora o elevado custo computacional de resolver iterativamente online o problema de Programação Não-Linear (NLP) seja um desafio para o hardware embarcado, a adoção de métodos de otimização diretos reduz drasticamente a carga de processamento, viabilizando a aplicação do NMPC mesmo na dinâmica inerentemente rápida de robôs aéreos \cite{nguyen2020}.
+
+\subsection{MPC Explícito e suas limitações}
+Buscando contornar o custo computacional da otimização online, surgiu o conceito de MPC Explícito (EMPC). Nessa abordagem, a lei de controle é pré-computada offline por meio da resolução de um problema de programação multiparamétrica, resultando em uma função afim por partes (PWA) definida sobre partições politópicas do espaço de estados, a execução online resume-se, então, a identificar o polítopo atual e aplicar a equação correspondente \cite{bemporad2002}. A principal limitação de escalabilidade do EMPC reside no crescimento exponencial do número de regiões politópicas à medida que o horizonte de predição e o número de restrições aumentam, tornando sua aplicação em sistemas embarcados restrita a problemas de baixíssima dimensionalidade \cite{bemporad2002}. Esse gargalo motiva fortemente a adoção de abordagens de aproximação da lei de controle por inteligência artificial, como o uso de redes neurais \cite{alsmeier2024}.
+
+\subsection{Aproximação de leis de controle por redes neurais}
+A limitação de escalabilidade de memória do EMPC impulsiona a aproximação da sua lei de controle explícita por uma rede neural previamente treinada. \citeonline{karg2020} demonstraram matematicamente que Redes Neurais Profundas (DNNs) com funções de ativação ReLU conseguem representar de maneira exata as funções afins por partes das leis de controle do MPC. O principal desafio técnico desta abordagem recai sobre o erro de aproximação e a perda de garantias intrínsecas do MPC original. Para lidar com os \textit{trade-offs} entre tamanho do modelo e segurança, pesquisadores aplicam a Desigualdade de Hoeffding para conferir limites estatísticos e garantir a satisfação de restrições com alta probabilidade \cite{hertneck2018}; alternativamente, derivam-se limites no pior caso via constantes de Lipschitz para certificar que os desvios da rede em relação à lei nominal estão contidos no limite de robustez
+\cite{alsmeier2024}.
+
+\subsection{Identificação de sistemas para alimentar o NMPC}
+Para a concepção offline de um projeto de NMPC, a precisão do modelo preditivo subjacente é vital para as predições de estados. Muitos sistemas, como motores BLDC em um aeropêndulo, exibem atritos e aerodinâmicas difíceis de modelar analiticamente. Nesses casos, a identificação baseada em dados de entrada e saída torna-se altamente efetiva. A partir de ensaios experimentais, é possível treinar modelos de predição que capturam os efeitos dinâmicos dominantes, incluindo não-linearidades aerodinâmicas negligenciadas pelos modelos físicos clássicos, e integrá-los diretamente ao esquema MPC \cite{jiang2022}.
+
+\subsection{Redes neurais MLP arquitetura e treinamento supervisionado} A fim de aproximar a política de controle, as Redes Neurais \textit{Feedforward} (FFNN), ou Perceptrons Multicamadas (MLP), mostram-se candidatas ideais devido à sua capacidade de mapeamento estático livre de \textit{delays} recorrentes. A arquitetura típica consiste em camadas ocultas com funções de ativação ReLU e uma camada de saída linear. A geração do \textit{dataset} se da pela exploração em malha fechada do controlador MPC exato sobre estados iniciais diversos, registrando-se os pares de ``estado atual'' $\rightarrow$ ``ação de controle ótima''; o treinamento subsequente ocorre com aprendizado supervisionado focado em minimizar o Erro Quadrático Médio (MSE), por meio de algoritmos baseados em descida de gradiente estocástico, como o otimizador Adam \cite{karg2020}.
+
+\subsection{Inferência de redes neurais em hardware embarcado (TinyML)} Executar algoritmos preditivos em microcontroladores (MCUs) requer superar restrições críticas de memória e frequência de relógio típicas do domínio TinyML. Sem o suporte de sistemas operacionais tradicionais, bibliotecas padronizadas frequentemente não operam adequadamente nesses hardwares. \textit{Frameworks} focados como o TensorFlow Lite Micro (TFLM) fornecem a base necessária, operando em poucas dezenas de kilobytes para viabilizar a inferência profunda em dispositivos restritos. Ferramentas comerciais dedicadas, como a extensão \texttt{STM32Cube.AI} da STMicroelectronics, convertem as matrizes geradas no treinamento (TensorFlow/Keras) em código C otimizado e quantizado para a família STM32 \cite{david2021}.
+
+\subsection{Trabalhos relacionados e lacuna identificada}
+Trabalhos recentes evidenciam a convergência das redes neurais no controle MPC. \citeonline{jiang2022} utilizaram uma rede FFNN estritamente como modelo de dinâmica translacional preditiva em tempo real dentro de um MPC. Similarmente, \citeonline{sanyal2024} formularam a RAMP-Net, que emprega Redes Neurais Informadas pela Física (PINNs) para compensar distúrbios em um sistema NMPC de drones. \citeonline{li2024} propuseram estratégias diretas na variedade topológica $SO(3)$ com um Learning-MPC, exigindo, contudo, hardware veicular de alta capacidade para operação em tempo real.
+% ============================================================
+\section{Objetivos}
+
+\subsection{Objetivo Geral}
+
+Desenvolver e validar experimentalmente um controlador neural embarcado que aproxima a política de controle ótima de um NMPC para rastreamento angular de um aeropêndulo instrumentado, demonstrando viabilidade de implantação em tempo real no microcontrolador com desempenho comparável ao controlador preditivo exato.
+
+\subsection{Objetivos Específicos}
+
+Os objetivos específicos do trabalho são:
+
+\begin{enumerate}
+    \item sintetizar um controlador PID como referência de desempenho e para estabilização da planta durante os ensaios de identificação;
+    \item identificar os parâmetros do modelo dinâmico grey-box do aeropêndulo por meio de ensaios experimentais, obtendo um modelo validado para síntese de controladores;
+    \item formular e resolver offline o Problema de Controle Ótimo do NMPC, gerando a política ótima e o \textit{dataset} de treinamento da rede neural;
+    \item treinar uma rede MLP para aproximar a política do NMPC e implantar o modelo resultante na bancada;
+    \item comparar experimentalmente os três controladores, PID, NMPC e MLP embarcada em termos de desempenho de rastreamento, rejeição a perturbações e custo computacional em hardware embarcado.
+\end{enumerate}

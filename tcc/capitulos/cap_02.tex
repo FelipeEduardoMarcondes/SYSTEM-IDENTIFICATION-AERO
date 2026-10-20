@@ -1,0 +1,997 @@
+%----------------Cap_02----------------%
+\chapter{Detalhamento do Projeto}
+ 
+Este capítulo apresenta o detalhamento completo da fase experimental do projeto, cobrindo a descrição do sistema físico, a modelagem e identificação do modelo dinâmico e a implementação do controlador no hardware embarcado. A arquitetura da solução está sintetizada no diagrama de blocos da Figura~\ref{fig:diagrama-blocos-projeto}, que organiza o desenvolvimento em duas fases.
+ 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{img/blocos-projeto.png}
+    \caption{Diagrama de Blocos do Projeto}
+    \label{fig:diagrama-blocos-projeto}
+\end{figure}
+
+ A fase offline corresponde: (i)~a síntese e implantação do controlador PID em malha fechada, utilizado tanto para estabilizar a planta durante a coleta de dados quanto como referência de desempenho na comparação final (Seção~\ref{sec:pid}); (ii)~a aquisição dos dados de identificação em malha fechada com o PID ativo e a estimação dos parâmetros do modelo dinâmico via \textit{multiple shooting} (Seção~\ref{sec:identificacao}); (iii)~a formulação e resolução do NMPC via CasADi, a geração do \textit{dataset} e o treinamento da rede neural MLP (Seção~\ref{sec:sintese}). A fase de operação em tempo real, na parte inferior, corresponde à implantação do controlador embarcado no STM32 e sua atuação sobre a planta física (Seção~\ref{sec:embarcado}). A Seção~\ref{sec:descricao_fisica} descreve a bancada e os componentes de hardware que suportam ambas as fases.
+ 
+% ------------------------------------------------------------
+\section{Descrição do Sistema Físico}
+\label{sec:descricao_fisica}
+A infraestrutura física e mecânica da bancada do aeropêndulo utilizada neste trabalho foi originalmente projetada e construída por \citeonline{lima2025}. O sistema mecânico pré-existente e reaproveitado compreende a base de madeira, as torres de suporte, o eixo de alumínio instrumentado e a haste pendular contendo o motor \textit{brushless} (BLDC) acoplado.
+
+O aeropêndulo atua como um sistema de um grau de liberdade, composto por esse braço rígido livre para rotacionar em torno do eixo horizontal fixo. A posição angular $\theta$ é medida em relação à horizontal, sendo $0^\circ$ definido quando o sistema está em repouso com o motor na posição inferior.
+
+% ------------------------------------------------------------
+\subsection{Estrutura Mecânica}
+
+A estrutura física do aeropêndulo é montada sobre uma base de madeira compensada. Dois suportes triangulares confeccionados em MDF sustentam o eixo de rotação do sistema. As faces foram unidas por colagem nas arestas, e peças impressas em 3D foram fixadas nos cantos de cada torre e parafusadas à base.
+
+Para fixar o eixo de alumínio às torres, é utilizado um cuboide retangular contendo um rolamento de esferas, permitindo que o eixo gire livremente. No centro do eixo foi usinado e rosqueado um furo para encaixe da haste do pêndulo.
+
+A haste rosqueada também permite a fixação e remoção facilitada de contrapesos, que foram usinados e rosqueados para se encaixar diretamente na haste. Um suporte impresso em 3D acopla o motor BLDC à extremidade da haste. A propulsão é gerada por uma hélice bipá de passo fixo. Um alojamento impresso em 3D para a Unidade de Medição Inercial (IMU) foi desenvolvido e fixado ao eixo de rotação, responsável por capturar o ângulo do sistema. A Figura~\ref{fig:montagem-bancada} ilustra o formato atual da bancada. Os principais parâmetros construtivos do sistema são resumidos na Tabela~\ref{tab:componentes_mecanicos}.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1\textwidth]{img/montagem-bancada.png}
+    \caption{Desenho da Bancada}
+    \label{fig:montagem-bancada}
+\end{figure}
+
+\begin{table}[h!]
+    \centering
+    \caption{Componentes mecânicos do aeropêndulo}
+    \label{tab:componentes_mecanicos}
+    \begin{tabular}{ll}
+        \hline
+        \textbf{Componente}       & \textbf{Material / Modelo}              \\
+        \hline
+        Base                      & Madeira compensada                      \\
+        Torres de suporte         & MDF com reforços em PLA (impressão 3D)  \\
+        Eixo de rotação           & Alumínio                                \\
+        Mancal                    & Rolamento de esferas                    \\
+        Haste do pêndulo          & Haste rosqueada                         \\
+        Contrapesos               & Peças rosqueadas (ajustáveis)           \\
+        Suporte do motor          & PLA (impressão 3D)                      \\
+        Alojamento da IMU         & PLA (impressão 3D)                      \\
+        Motor                     & EMAX RS2306                             \\
+        Hélice                    & Bipá, passo fixo                        \\
+        \hline
+    \end{tabular}
+\end{table}
+
+% ------------------------------------------------------------
+\subsection{Sensores}
+
+% ------------------------------------------------------------
+\subsubsection{Unidade de Medição Inercial (IMU)}
+
+A unidade de medição inercial utilizada é o ICM-20948, fabricado pela InvenSense (TDK), um dispositivo MEMS de 9 eixos que integra giroscópio triaxial, acelerômetro triaxial e magnetômetro triaxial em um único encapsulamento QFN de 3$\times$3$\times$1\,mm \cite{invensense2021icm20948}.
+
+A comunicação com o microcontrolador é realizada via I$^2$C no modo \textit{fast} (400\,kHz), utilizando os pinos SCL e SDA do STM32. O endereço I$^2$C do dispositivo é definido pelo nível lógico do pino AD0, com AD0 em nível baixo, o endereço é \texttt{0x68}. Os dados do giroscópio e do acelerômetro são utilizados em conjunto na estimação do ângulo gerado pelo braço do aeropêndulo.
+
+O giroscópio apresenta fundo de escala programável de $\pm250$, $\pm500$, $\pm1000$ ou $\pm2000$\,dps, com ADC de 16 bits e sensibilidade de 131\,LSB/dps na configuração de menor fundo de escala. A densidade espectral de ruído típica é de 0,015\,dps/$\sqrt{\text{Hz}}$, e o filtro passa-baixas digital (DLPF) é configurável entre 5,7 e 197\,Hz \cite{invensense2021icm20948}. A Tabela~\ref{tab:icm_gyro} resume os parâmetros do giroscópio que são relevantes para a aplicação.
+
+\begin{table}[h]
+    \centering
+    \caption{Parâmetros do giroscópio do ICM-20948 utilizados no projeto.}
+    \label{tab:icm_gyro}
+    \begin{tabular}{lcc}
+        \hline
+        \textbf{Parâmetro} & \textbf{Valor} & \textbf{Unidade} \\
+        \hline
+        Fundo de escala selecionado & $\pm500$ & dps \\
+        Sensibilidade                & 65,5   & LSB/dps \\
+        Resolução do ADC             & 16     & bits \\
+        Frequência de amostragem     & 100    & Hz \\
+        Largura de banda do DLPF     & 51,2   & Hz \\
+        Interface de comunicação     & I$^2$C & --- \\
+        Tensão de alimentação (VDD)  & 3,3    & V \\
+        \hline
+    \end{tabular}
+\end{table}
+
+A frequência de amostragem de 100\,Hz satisfaz o requisito de $T_s \leq 10$\,ms imposto pela dinâmica do aeropêndulo, e a largura de banda do filtro de 51,2\,Hz é suficiente para capturar os modos dinâmicos relevantes sem amplificar ruído de alta frequência.
+
+A leitura dos registradores de saída do giroscópio é executada via interrupção de timer no STM32, garantindo periodicidade determinística.
+
+% ------------------------------------------------------------
+\subsection{Microcontrolador STM32 Nucleo-F446RE}
+
+O núcleo de processamento do aeropêndulo é composto pelo microcontrolador STM32F446, baseado na arquitetura Arm Cortex-M4 de 32 bits, operando a uma frequência de clock máxima de 180\,MHz. Este processador incorpora uma Unidade de Ponto Flutuante (FPU) em hardware que suporta todas as instruções de precisão única do padrão IEEE 754, o que elimina a sobrecarga computacional de emulação por software e otimiza a execução em tempo real do algoritmo de controle do aeropêndulo e da filtragem dos sensores. A arquitetura de memória do dispositivo conta com 512\,KB de memória Flash para armazenamento do firmware e 128\,KB de memória SRAM para alocação dinâmica de variáveis e buffers de execução \cite{stm32}.
+
+Os periféricos internos atendem aos requisitos dinâmicos e de interface do sistema, dividindo-se nas seguintes funções:
+
+\begin{itemize}
+    \item \textbf{Inter-Integrated Circuit (I$^2$C):} Barramento serial síncrono configurado no modo \textit{Fast Mode} (400\,kHz) para comunicação direta com a IMU ICM-20948, realizando a leitura periódica dos registradores do acelerômetro e giroscópio.
+    \item \textbf{Temporizador (TIM):} Configurado em modo de geração de PWM (\textit{Pulse Width Modulation}) com resolução adequada para o acionamento do ESC (\textit{Electronic Speed Controller}), regulando de forma determinística a potência elétrica entregue ao motor \textit{brushless}.
+    \item \textbf{Universal Asynchronous Receiver-Transmitter (UART):} Interface serial assíncrona estabelecida com taxa de transmissão elevada (ex.: 500.000\,baud) para o envio de telemetria em tempo real (ângulo estimado, erro, ação de controle) para o computador de ensaios e recepção de comandos de depuração.
+\end{itemize}
+
+A Tabela~\ref{tab:perifericos_stm32} especifica a atribuição física de pinos e periféricos utilizada na implementação do protótipo.
+
+\begin{table}[h]
+    \centering
+    \caption{Mapeamento de periféricos e pinos do STM32F446 para o aeropêndulo.}
+    \label{tab:perifericos_stm32}
+    \begin{tabularx}{\textwidth}{llXX}
+        \hline
+        \textbf{Periférico} & \textbf{Pino} & \textbf{Função Configurada} & \textbf{Destino / Interface} \\
+        \hline
+        \\
+        I2C1\_SCL  & PB8  & Clock do barramento I$^2$C (400\,kHz) & Pino SCL da IMU ICM-20948 \\
+        I2C1\_SDA  & PB9  & Dados do barramento I$^2$C (400\,kHz) & Pino SDA da IMU ICM-20948 \\
+        TIM1\_CH1  & PA8  & Saída PWM (Sinal de Controle) & Entrada de Sinal do ESC \\
+        USART2\_TX & PA2  & Transmissão Serial Assíncrona & Receptor USB-UART \\
+        USART2\_RX & PA3  & Recepção Serial Assíncrona    & Receptor USB-UART \\
+        \hline
+    \end{tabularx}
+\end{table}
+
+A Figura~\ref{fig:esquematico} apresenta o esquemático elétrico simplificado da bancada, ilustrando a interligação entre o STM32 Nucleo-F446RE, a IMU ICM-20948 e o ESC. A fonte de alimentação do motor (VBAT) é independente da 
+alimentação lógica do microcontrolador.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1\textwidth]{img/diagrama-eletrico.png}
+    \caption{Esquemático elétrico simplificado da bancada}
+    \label{fig:esquematico}
+\end{figure}
+
+% ============================================================
+\section{Identificação do Modelo Dinâmico}
+\label{sec:identificacao}
+
+A síntese do Controle Preditivo Não-Linear (NMPC) exige um modelo matemático rigoroso, mas a modelagem puramente analítica do aeropêndulo impõe dificuldades práticas, visto que parâmetros físicos são de difícil mensuração isolada e o arranjo motor-hélice introduz não-linearidades que costumam ser ignoradas. Contudo, as abordagens clássicas de identificação baseadas em modelos lineares possuem restrições estruturais que as tornam insuficientes para representar os efeitos aerodinâmicos em todo o envelope operacional da planta \cite{jiang2022}.
+
+Diante dessas limitações, adota-se uma abordagem híbrida: a estrutura do modelo é derivada analiticamente a partir dos princípios físicos do sistema, enquanto os parâmetros de difícil mensuração são estimados por identificação experimental. Pela Segunda Lei de Newton aplicada à dinâmica rotacional, considerando  explicitamente a massa do conjunto motor-hélice $m_1$ posicionada à distância  $L_1$ do pivô e a massa do contrapeso $m_2$ posicionada à distância $L_2$ no  lado oposto, a equação de movimento do aeropêndulo é:
+
+\begin{equation}
+    J\ddot{\theta} + b\dot{\theta} + (m_1 L_1 - m_2 L_2)\,g\sin(\theta) = \tau(u),
+    \label{eq:dinamica}
+\end{equation}
+\noindent onde $\theta$ é o ângulo de inclinação em relação à vertical,  $\dot{\theta}$ a velocidade angular, $J$ o momento de inércia total, $b$ o  coeficiente de atrito viscoso, $g$ a aceleração da gravidade e $\tau(u)$ o  torque gerado pelo empuxo do motor em função do sinal de controle $u$. O termo  $(m_1 L_1 - m_2 L_2)\,g\sin(\theta)$ caracteriza a não-linearidade gravitacional  intrínseca ao sistema, cujo valor efetivo depende do balanço entre o torque  restaurador do motor e o torque compensatório do contrapeso, tornando inadequada  qualquer representação linear para operação em ampla faixa angular \cite{khalil2002}.
+
+Para o formalismo do NMPC, é necessário representar o sistema na forma de  espaço de estados não-linear $\dot{x} = f(x, u)$. Definindo o vetor de estados  $x = [\theta,\;\dot{\theta}]^\top$ e isolando $\ddot{\theta}$ na  Equação~\ref{eq:dinamica}, obtém-se:
+
+\begin{equation}
+    \dot{x} = f(x,\, u) =
+    \begin{bmatrix}
+        \dot{\theta} \\[4pt]
+        \dfrac{\tau(u) - b\dot{\theta} - (m_1 L_1 - m_2 L_2)\,g\sin(\theta)}{J}
+    \end{bmatrix},
+    \label{eq:estadonl}
+\end{equation}
+\noindent forma exigida pelo NMPC para propagar os estados ao longo do horizonte de predição \cite{mayne2000}. Os parâmetros geométricos e de massa ($m_1$, $m_2$,  $L_1$ e $L_2$) são medidos fisicamente e fixados no modelo. Os parâmetros $J$,  $b$ e a constante de empuxo $K_\tau$, assumindo $\tau(u) = K_\tau u$, não são  diretamente mensuráveis de forma isolada e são estimados por identificação  experimental, conforme descrito nas subseções seguintes.
+
+% ------------------------------------------------------------
+\subsection{Ensaios no Sistema}
+ \label{subsec:ensaios}
+
+Os ensaios de identificação são conduzidos com o aeropêndulo operando em malha fechada, com o controlador PID (Seção~\ref{sec:pid}) ativo para estabilizar a planta e garantir que o sistema percorra o espaço de operação de forma segura. O STM32 é responsável pela execução do PID, pela geração dos sinais de referência e pela aquisição dos dados de saída em tempo real via UART.
+ 
+\subsubsection{Sinais de Excitação}
+
+Para garantir uma cobertura adequada da dinâmica do sistema em todo o envelope operacional, são empregados três tipos de sinais de excitação complementares, todos aplicados como referência de posição ao controlador PID embarcado, que opera em malha fechada estabilizando a planta durante a coleta de dados.
+
+\begin{itemize}
+
+    \item \textbf{Multi-seno com fases aleatórias:} sinal utilizado como excitação principal para identificação dinâmica. O sinal é construído como uma soma de $d$ senoides de amplitudes iguais, distribuídas uniformemente até a frequência máxima $f_\text{max}$, com fases $\varphi_k$ sorteadas independentemente em $[0, 2\pi)$:
+    %
+    \begin{equation}
+        u(t) = \sum_{k=1}^{d} a\cos\!\bigl(\omega_k t + \varphi_k\bigr), \qquad \omega_k = \frac{2\pi k}{M T_s},
+    \end{equation}
+    %
+    onde $M$ é o número de amostras de um período e $T_s$ o período de amostragem. A escolha de fases aleatórias produz fator de crista reduzido em relação ao caso com fases em zero \cite{ljung1999}. O sinal resultante é persistentemente excitante de ordem $2d$, distribui a potência de forma uniforme no espectro até $f_\text{max}$ e excita continuamente toda a faixa de amplitude operacional.
+    
+    \item \textbf{\textit{Swept sine}} sinal senoidal cuja frequência varia linearmente de $f_1$ a $f_2 = f_\text{max}$ ao longo do período de ensaio \cite{ljung1999}. Apresenta fator de crista idêntico ao de uma senoide pura ($\sqrt{2}$) e permite inspecionar visualmente a variação de amplitude e fase da resposta ao longo da faixa de frequências, complementando a análise espectral do multi-seno.
+    
+    \item \textbf{Sequência de degraus de amplitude variada:} degraus com amplitudes sorteadas aleatoriamente em $[-A_\text{max},\, A_\text{max}]$, cada um com duração fixa $T_\text{deg}$. Este sinal é reservado exclusivamente ao conjunto de validação, pois seu perfil é análogo aos comandos aplicados durante a operação do controlador em rastreamento de referência \cite{ljung1999}, e avalia a capacidade de generalização do modelo para entradas diferentes das utilizadas no ajuste dos parâmetros.
+
+\end{itemize}
+
+Em todos os casos, o sinal de referência é enviado ao controlador PID embarcado, que atua sobre o ESC via PWM, de modo que os pares $(\theta(t),\, u(t))$ coletados refletem a dinâmica do sistema em operação real em malha fechada.
+
+\subsubsection{Procedimento de Coleta de Dados}
+
+Durante os ensaios, os dados serão transmitidos em tempo real pela interface USART2 do STM32 a uma taxa de 500.000\,baud para um computador. Cada quadro de telemetria conterá o instante de tempo, o sinal de controle $u(t)$ (duty cycle PWM) e o ângulo estimado $\theta(t)$, obtidos respectivamente da IMU ICM-20948. Os dados serão capturados e armazenados via script Python com a biblioteca \texttt{pyserial} e posteriormente importados para pré-processamento e identificação. O pseudocódigo \ref{alg:aquisicao_dados} registra a estrutura geral.
+
+\begin{algorithm}[H]
+\caption{Ciclo de Controle e Aquisição de Dados do IMU}
+\begin{algorithmic}[1]
+\label{alg:aquisicao_dados}
+\Procedure{Setup}{}
+    \State Inicializar IMU, ESC e porta Serial
+    \State Calibrar offset do giroscópio
+\EndProcedure
+
+\Statex
+\Procedure{Loop}{}
+    \State Aguardar comando ``START'' com a sequência de degraus
+
+    \State $tempoInicio \gets \text{obterTempoAtual()}$
+    \State $tempoDecorrido \gets 0$
+
+    \While{$tempoDecorrido < duracaoTotal$}
+        \State Aguardar próximo instante de amostragem ($100\,\text{Hz} \to 10\,\text{ms}$)
+
+        \State $degrauAtual \gets \text{obter degrau da sequência para } tempoDecorrido$
+        \State Aplicar $degrauAtual$ como referência ao controlador PID
+
+        \State Ler acelerômetro e giroscópio do IMU
+        \State Calcular ângulo pelo filtro complementar
+
+        \State $timestamp \gets \text{obterTempoAtual()}$
+        \State Enviar $(timestamp, \text{ângulo}, degrauAtual)$ pela porta serial
+
+        \State $tempoDecorrido \gets \text{obterTempoAtual()} - tempoInicio$
+    \EndWhile
+
+    \State Parar motor ($ESC \gets \text{neutro}$)
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+
+\subsubsection{Divisão dos Dados}
+\label{subsec:divisao_dados}
+
+Os experimentos são organizados em três conjuntos cronologicamente
+distintos: o ensaio com multi-seno é destinado exclusivamente à
+identificação, o ensaio com degraus de amplitude variada é reservado para a validação do modelo estimado, e o \textit{swept sine} é utilizado como caracterização auxiliar em frequência. Essa separação garante que o modelo seja avaliado em condições genuinamente diferentes das utilizadas no ajuste dos parâmetros \cite{ljung1999}.
+
+% ------------------------------------------------------------
+\subsection{Método de Identificação por \textit{Multiple Shooting}}
+\label{subsec:multiple_shooting}
+
+A identificação paramétrica é realizada pelo método \textit{grey-box} não-linear 
+via \textit{multiple shooting}. O vetor de parâmetros a estimar é 
+$\hat{\theta} = [J,\, b,\, K_\tau]^\top$, enquanto os parâmetros geométricos e 
+de massa ($m_1$, $m_2$, $L_1$ e $L_2$) são medidos fisicamente e fixados no 
+modelo para reduzir o espaço de busca e garantir a observabilidade do sistema.
+
+A implementação do otimizador é realizada em Python, utilizando o framework JAX  para diferenciação automática e a biblioteca Diffrax para a solução numérica  diferenciável das equações diferenciais ordinárias \cite{helonayala_ms}. O  problema de programação não-linear (NLP) resultante é resolvido pelo método  SLSQP via \texttt{scipy.optimize.minimize}, com gradientes e jacobianos  calculados automaticamente pelo JAX, eliminando a necessidade de diferenciação  numérica por diferenças finitas.
+
+\subsubsection*{Formulação do Problema de Otimização}
+
+Considera-se o sistema descrito pela ODE
+\begin{equation}
+    \dot{x}(t) = f\!\left(x(t),\, u(t),\, \hat{\theta}\right),
+    \label{eq:ode_id}
+\end{equation}
+\noindent onde $f(\cdot)$ é definida pela equação de movimento~\eqref{eq:estadonl} e $x = [\theta,\;\dot{\theta}]^\top$. Dado o conjunto de medições $x^m(t_k)$ nos instantes discretos $t_k$, o objetivo é encontrar $\hat{\theta}$ que minimize a discrepância entre a predição do modelo e as observações.
+
+O horizonte de tempo $[t_0, t_f]$, contendo $N$ instantes de amostragem, é dividido em $M$ intervalos não sobrepostos. Para cada intervalo $i \in \{0, 1, \ldots, M-1\}$, introduz-se uma variável de estado inicial local $s_i$. O conjunto completo de variáveis de decisão é
+\begin{equation}
+    \mathcal{X} = \left\{\hat{\theta},\; s_0,\; s_1,\; \ldots,\; s_{M-1}\right\}.
+\end{equation}
+
+A função objetivo minimiza a soma dos erros quadráticos entre a predição do modelo em cada intervalo e as medições correspondentes:
+\begin{equation}
+    \min_{\mathcal{X}}\;
+    \sum_{i=0}^{M-1}\;\sum_{k \in \mathcal{K}_i}
+    \left\|\hat{x}(t_k;\, s_i,\, \hat{\theta}) - x^m(t_k)\right\|^2,
+    \label{eq:obj_ms}
+\end{equation}
+\noindent onde $\mathcal{K}_i$ é o conjunto de índices temporais pertencentes ao $i$-ésimo intervalo e $\hat{x}(t_k;\, s_i,\, \hat{\theta})$ é o estado predito pelo modelo integrando numericamente a ODE~\eqref{eq:ode_id} a partir do estado inicial $s_i$.
+
+As restrições de continuidade garantem que a trajetória global seja fisicamente consistente entre intervalos adjacentes:
+\begin{equation}
+    s_{i+1} - F(s_i,\, u_i,\, \hat{\theta}) = 0,
+    \quad \forall\, i \in \{0, 1, \ldots, M-2\},
+    \label{eq:continuidade_ms}
+\end{equation}
+\noindent onde $F(s_i, u_i, \hat{\theta})$ denota o estado ao final do intervalo $i$, obtido por integração da ODE~\eqref{eq:ode_id} sobre toda a sua duração. O problema completo de programação não-linear (NLP) é então
+\begin{equation}
+\begin{aligned}
+    \min_{\mathcal{X}}\;
+    & \sum_{i=0}^{M-1}\;\sum_{k \in \mathcal{K}_i}
+      \left\|\hat{x}(t_k;\, s_i,\, \hat{\theta}) - x^m(t_k)\right\|^2 \\
+    \text{s.a.}\;
+    & s_{i+1} - F(s_i,\, u_i,\, \hat{\theta}) = 0,
+      \quad \forall\, i \in \{0, 1, \ldots, M-2\}.
+\end{aligned}
+    \label{eq:nlp_ms}
+\end{equation}
+
+Em comparação com o \textit{single shooting}, que simula o sistema sobre todo o horizonte a partir de um único estado inicial, o \textit{multiple shooting} confina as não-linearidades a intervalos curtos e torna o NLP estruturalmente esparso, melhorando o condicionamento numérico e a taxa de convergência quando resolvido com métodos gradiente e diferenciação automática \cite{helonayala_ms}.
+
+% ------------------------------------------------------------
+\subsection{Validação do Modelo Identificado}
+ 
+Concluídos os ensaios experimentais, os parâmetros livres $J$, $b$ e $K_\tau$
+serão estimados via \textit{multiple shooting} conforme a formulação da
+Seção~\ref{subsec:multiple_shooting}. Os valores obtidos serão apresentados com
+seus respectivos intervalos de confiança de 95\%, permitindo avaliar a
+incerteza paramétrica associada ao procedimento de identificação.
+ 
+A qualidade do modelo será avaliada sobre o conjunto de validação retido,
+composto pelos ensaios de degraus de amplitude variada. Serão reportados o
+coeficiente de ajuste (\textit{fit}\,\%) e o erro quadrático médio (RMSE) entre
+a trajetória angular simulada e a medida. Complementarmente, será conduzida uma
+análise de resíduos para verificar as condições de brancura e independência em
+relação à entrada, atestando a adequação estrutural do modelo identificado
+\cite{ljung1999}. O critério de aceite é definido pelo julgamento de engenharia
+sobre os resíduos e pela análise conjunta das métricas de ajuste.
+ 
+ 
+% ============================================================
+\section{Síntese do Controlador}
+\label{sec:sintese}
+ 
+Esta seção descreve a síntese dos três controladores avaliados no projeto. O
+controlador PID é sintetizado primeiro, pois desempenha papel duplo, ele estabiliza
+a planta durante os ensaios de identificação em malha fechada e serve como
+referência de desempenho na comparação final. Em seguida, o NMPC é formulado e
+resolvido offline via CasADi, e sua política ótima é utilizada para gerar o
+\textit{dataset} de treinamento da rede neural MLP.
+ 
+% ------------------------------------------------------------
+% ------------------------------------------------------------
+\subsection{Síntese do Controlador PID}
+\label{sec:pid}
+
+O controlador PID cumpre duas funções no projeto, a de estabilizar o aeropêndulo em
+malha fechada durante os ensaios de coleta de dados para identificação e servir
+como referência de desempenho na comparação final com o NMPC e a MLP embarcada.
+
+A síntese inicial parte do modelo linear de segunda ordem obtido pela linearização da
+equação de movimento~\eqref{eq:dinamica} em torno de um ponto de equilíbrio
+$(\theta_0, u_0)$ pelo desenvolvimento em série de Taylor de primeira ordem,
+que fornece
+\begin{equation}
+    \delta\dot{x} = A\,\delta x + B\,\delta u,
+    \label{eq:linear_eq}
+\end{equation}
+\noindent onde $A = \partial f/\partial x\big|_{x_0,u_0}$ e
+$B = \partial f/\partial u\big|_{x_0,u_0}$ são as matrizes Jacobianas avaliadas
+no ponto de operação. Os ganhos do controlador ($K_p$, $K_i$ e $K_d$) foram sintonizados computacionalmente a partir dessa função de transferência linearizada, utilizando técnicas de resposta em frequência para garantir margem de fase adequada e minimizar o tempo de acomodação.
+
+Contudo, para a operação no microcontrolador STM32, a lei de controle exige
+discretização com período de amostragem $T_s = 10$\,ms. A implementação digital evita o fenômeno do \textit{derivative kick} ao aplicar a ação derivativa diretamente sobre a variável de processo $y[k]$ estimada pela IMU, e não sobre o erro $e[k] = r[k] - y[k]$ \cite{astrom1995}. O termo integral é discretizado pelo método Trapezoidal (transformada de Tustin), o termo derivativo é aproximado pela diferença atrasada (\textit{backward Euler}) aplicada diretamente sobre a medição. As componentes do controlador no instante discreto $k$ são definidas por:
+\begin{align}
+    u_p[k] &= K_p\, e[k] \\
+    u_i[k] &= u_i[k-1] + K_i \frac{T_s}{2} \bigl(e[k] + e[k-1]\bigr) \\
+    u_d[k] &= -\frac{K_d}{T_s} \bigl(y[k] - y[k-1]\bigr)
+\end{align}
+
+A ação de controle ideal requerida é a soma das parcelas $u_{ideal}[k] = u_p[k] + u_i[k] + u_d[k]$.
+Dadas as restrições operacionais do atuador (ESC e motor), o sinal efetivamente 
+aplicado à planta é saturado simetricamente:
+\begin{equation}
+    u[k] = \text{sat}(u_{ideal}[k],\; -u_{max},\; u_{max}).
+\end{equation}
+
+Para prevenir o acúmulo excessivo do termo integral e a consequente degradação da resposta  transitória durante os períodos de saturação do atuador (\textit{integral windup}), implementa-se um mecanismo de anti-windup por \textit{back-calculation} reativo:
+\begin{equation}
+    u_i[k] \leftarrow u_i[k] - \bigl(u_{ideal}[k] - u[k]\bigr).
+\end{equation}
+\noindent Esse retrocálculo subtrai o excesso de controle diretamente da memória 
+do integrador, garantindo que o controlador abandone o estado de saturação sem atrasos 
+assim que o erro de rastreamento mudar de sinal \cite{astrom1995}.
+% ------------------------------------------------------------
+\subsection{NMPC: Formulação do Problema de Controle Ótimo}
+\label{subsec:nmpc_ocp}
+
+O NMPC fundamenta-se na resolução repetida, a cada período de amostragem $T_s$, de um Problema de Controle Ótimo (OCP) em horizonte finito \cite{rawlings2017}. A síntese offline desse controlador exige ferramentas capazes de (i)~expressar simbolicamente o modelo dinâmico não-linear, (ii)~transcrever o OCP em um Problema de Programação Não-Linear (NLP) e (iii)~calcular automaticamente as derivadas de primeira e segunda ordem
+exigidas pelo resolvedor numérico. O framework CasADi atende a esses três requisitos de forma integrada \cite{andersson2019}.
+
+\subsubsection*{Problema de Controle Ótimo em Horizonte Finito}
+
+Para o estado atual $x_k$ e a referência $x_{ref,k} = [\theta_{ref,k},\; 0]^\top$, define-se o conjunto de sequências de controle admissíveis
+\begin{equation}
+    \mathcal{U}_N(x_k) := \bigl\{U_k \mid
+        (x_{k+j|k},\, u_{k+j}) \in \mathcal{Z},\;
+        x_{k+N|k} \in \mathcal{X}_f,\;
+        j = 0,\ldots,N-1
+    \bigr\},
+    \label{eq:admissivel}
+\end{equation}
+\noindent onde $\mathcal{Z} := \mathcal{X} \times \mathcal{U}$ é o conjunto admissível de pares estado-controle e $\mathcal{X}_f \subseteq \mathcal{X}$ é o conjunto terminal. O domínio de factibilidade do OCP é
+\begin{equation}
+    \mathcal{X}_N := \bigl\{x \in \mathcal{X} \mid
+        \mathcal{U}_N(x) \neq \emptyset \bigr\},
+    \label{eq:factivel}
+\end{equation}
+\noindent ou seja, o conjunto de estados a partir dos quais existe ao menos uma sequência de controle que satisfaz todas as restrições e conduz o sistema ao conjunto terminal em $N$ passos \cite{rawlings2017}.
+
+O OCP resolvido no instante $k$ é
+\begin{equation}
+    \min_{U_k}\;
+    \underbrace{\sum_{j=0}^{N-1}
+    \ell\!\left(x_{k+j|k},\, u_{k+j},\, x_{ref,k}\right)}_{\text{custo acumulado}}
+    +\;
+    \underbrace{V_f\!\left(x_{k+N|k},\, x_{ref,k}\right)}_{\text{custo terminal}}
+    \label{eq:ocp}
+\end{equation}
+\noindent sujeito a
+\begin{align}
+    x_{k+j+1|k} &= x_{k+j|k} + T_s\, f\!\left(x_{k+j|k},\, u_{k+j}\right),
+    && j = 0, \ldots, N-1, \label{eq:ocp_dinamica} \\
+    x_{k|k}      &= x_k, \label{eq:ocp_ic} \\
+    u_{k+j}      &\in \mathcal{U}, && j = 0, \ldots, N-1, \label{eq:ocp_u} \\
+    x_{k+j|k}    &\in \mathcal{X}, && j = 1, \ldots, N, \label{eq:ocp_x} \\
+    x_{k+N|k}    &\in \mathcal{X}_f, \label{eq:ocp_terminal}
+\end{align}
+\noindent onde $N$ é o horizonte de predição; $U_k = \{u_{k}, \ldots, u_{k+N-1}\}$ é a sequência de controle a otimizar; $x_{k+j|k}$ é o estado predito $j$ passos à frente, propagado pela discretização de Euler explícita da dinâmica contínua~\eqref{eq:estadonl}; e $\mathcal{U}$ e $\mathcal{X}$ são os conjuntos admissíveis de entrada e de estado.
+
+\subsubsection*{Custo de Estágio e Custo Terminal}
+
+O custo de estágio adota a forma quadrática em relação ao vetor de estados completo $x = [\theta,\; \dot{\theta}]^\top$ e ao vetor de referência $x_{ref} = [\theta_{ref},\; 0]^\top$:
+\begin{equation}
+    \ell(x, u, x_{ref}) =
+    (x - x_{ref})^\top Q\,(x - x_{ref}) + u^\top R\, u,
+    \label{eq:custo_estagio}
+\end{equation}
+\noindent onde $Q \in \mathbb{R}^{2\times2}$ e $R \in \mathbb{R}$ são, respectivamente, as matrizes de peso definidas positivas ($Q \succ 0$ e $R > 0$). A matriz $Q$ penaliza o erro de rastreamento angular e a velocidade angular, garantindo o amortecimento do sistema, enquanto $R$ penaliza o esforço de controle, inibindo variações bruscas no sinal enviado ao ESC. A positividade estrita de $Q$ e $R$ garante que $\ell(x, u, x_{ref}) \geq \alpha_1(|x - x_{ref}|)$ para alguma função de classe $\mathcal{K}_\infty$, condição necessária para que a função de valor ótimo $V_N^0(\cdot)$ admita uma cota inferior compatível com os requisitos de uma função de Lyapunov \cite{rawlings2017}.
+
+
+O custo terminal é definido de forma análoga sobre o vetor de estados:
+\begin{equation}
+    V_f(x, x_{ref}) =
+    (x - x_{ref})^\top P\,(x - x_{ref}),
+    \label{eq:custo_terminal}
+\end{equation}
+\noindent onde a matriz $P \succ 0$ é obtida pela solução da equação de Lyapunov do sistema linearizado em torno do ponto de equilíbrio, operando sob uma lei de controle local estabilizante $u = K(x - x_{ref})$. Essa escolha garante que $V_f$ atue como uma Função de Lyapunov de Controle (CLF) local: para todo $x \in \mathcal{X}_f$, existe $u = Kx$ tal que
+\begin{equation}
+    V_f\!\left(f(x, u),\, x_{ref}\right) - V_f(x, x_{ref})
+    \leq -\ell(x, u, x_{ref}),
+    \label{eq:clf}
+\end{equation}
+\noindent condição denominada suposição básica de estabilidade por
+\citeonline{rawlings2017}. O conjunto terminal
+$\mathcal{X}_f$ é escolhido como um subconjunto compacto e invariante por
+controle em torno de $\theta_{ref}$, tipicamente um subnível de $V_f$, de
+modo que~\eqref{eq:clf} seja satisfeita para todo $x \in \mathcal{X}_f$.
+
+\subsubsection*{Estratégia de Horizonte Deslizante e Viabilidade Recursiva}
+
+A estratégia de horizonte deslizante (\textit{receding horizon}) aplica apenas a primeira ação ótima $u_k^* = u^0(0; x_k)$ da sequência $U_k^* = \arg\min \eqref{eq:ocp}$, descarta os demais elementos e resolve novamente o OCP no instante seguinte com o novo estado medido $x_{k+1}$, incorporando retroalimentação de forma natural \cite{mayne2000}. A lei de controle implícita resultante é
+\begin{equation}
+    \kappa_N(x_k) := u^0(0;\, x_k), \qquad x_k \in \mathcal{X}_N.
+    \label{eq:lei_controle}
+\end{equation}
+
+Uma propriedade fundamental dessa estratégia é a viabilidade recursiva, se o OCP é factível para o estado inicial $x_0 \in \mathcal{X}_N$, então ele permanece factível para todos os estados subsequentes $x_k$ do sistema em malha fechada $x^+ = f(x,
+\kappa_N(x))$, desde que $\mathcal{X}_f$ seja invariante por controle \cite{rawlings2017}. Isso garante que o controlador nunca encontra um estado para o qual não exista solução, evitando falhas em operação.
+Sob as condições~\eqref{eq:clf}, pode-se mostrar que a função de valor ótimo satisfaz
+\begin{equation}
+    V_N^0\!\left(f(x, \kappa_N(x))\right) \leq V_N^0(x) - \ell(x,\kappa_N(x))
+    \quad \forall x \in \mathcal{X}_N,
+    \label{eq:descida}
+\end{equation}
+\noindent o que caracteriza $V_N^0(\cdot)$ como uma função de Lyapunov do sistema em malha fechada, assegurando estabilidade assintótica da origem (erro de rastreamento nulo) em $\mathcal{X}_N$ \cite{rawlings2017}.
+
+O OCP~\eqref{eq:ocp}--\eqref{eq:ocp_terminal} é transcrito em um NLP e resolvido pelo CasADi \cite{andersson2019}, que constrói grafos de expressão simbólica (DAGs) e calcula automaticamente as derivadas de primeira e segunda ordem exigidas pelo resolvedor numérico IPOPT.
+
+% ------------------------------------------------------------
+\subsection{Geração do \textit{Dataset}}
+
+A política de controle ótima gerada pelo NMPC em malha fechada é utilizada para compor o \textit{dataset} de treinamento da rede neural MLP, conforme o bloco central da fase offline na Figura~\ref{fig:diagrama-blocos-projeto}. Para cada instante de simulação, o OCP~\eqref{eq:ocp} é parametrizado pela referência corrente $\theta_{ref,k}$, e registra-se o par entrada-saída:
+\begin{equation}
+    \mathcal{D} = \bigl\{
+        \bigl(x_k,\; u_k^*\bigr)
+    \bigr\}_{k=1}^{M},
+    \label{eq:dataset}
+\end{equation}
+\noindent onde $x_k = [\theta_k,\, \dot{\theta}_k,\, \theta_{ref,k}]^\top \in \mathbb{R}^3$ é o vetor de entrada no instante $k$, composto pelos estados do sistema e pela referência angular que parametriza o OCP, e $u_k^* \in \mathbb{R}$ é a ação de controle ótima fornecida pelo NMPC. A inclusão de $\theta_{ref,k}$ como componente do vetor de entrada é necessária para que a rede neural replique o comportamento do controlador em diferentes pontos de rastreamento, em harmonia com a formulação do OCP da Seção~\ref{subsec:nmpc_ocp}. A cobertura do espaço de estados e de referências é garantida pela variação sistemática das condições iniciais e dos degraus de \textit{setpoint} ao longo das trajetórias simuladas \cite{karg2020}.
+
+O \textit{dataset} é normalizado componente a componente para o intervalo $[-1, 1]$ antes do treinamento, procedimento padrão que melhora o condicionamento do problema de otimização do aprendizado e a convergência do algoritmo Adam \cite{karg2020}.
+
+% ------------------------------------------------------------
+\subsection{Arquitetura e Treinamento da MLP em PyTorch}
+
+A implementação e o treinamento da rede neural MLP são realizados utilizando o PyTorch. O PyTorch é uma biblioteca de aprendizado de máquina que unifica facilidade de uso e alta performance computacional. Diferentemente de frameworks baseados na construção prévia de grafos estáticos de fluxo de dados, o PyTorch adota o paradigma de execução dinâmica e imperativa. Isso permite que os modelos de aprendizado profundo sejam programados e depurados como programas Python convencionais, mantendo o controle total do fluxo sob responsabilidade do usuário \cite{paszke2019}.
+A estrutura da rede, a configuração dos hiperparâmetros e a rotina de otimização, que inclui um critério de parada prematura (\textit{early stopping}) para evitar \textit{overfitting}, estão consolidadas no Algoritmo~\ref{alg:treino_mlp}.
+
+\begin{algorithm}
+\caption{Treinamento da Rede Neural para Aproximação do Controlador}
+\label{alg:treino_mlp}
+\begin{algorithmic}[1]
+
+\Procedure{TreinarAproximador}{}
+
+    \State Carregar dataset gerado pelo controlador ótimo
+    \State Dividir dataset em conjuntos de treino, validação e teste
+    \State Inicializar rede neural e otimizador
+    \State $melhorLoss \gets \infty$, \quad $contadorPaciencia \gets 0$
+
+    \Statex
+    \For{cada época}
+        \State Atualizar pesos minimizando o erro nos batches de treino
+        \State Avaliar erro no conjunto de validação
+
+        \If{houve melhora na validação}
+            \State Registrar melhora e salvar pesos atuais
+            \State Resetar contador de paciência
+        \Else
+            \State Incrementar contador de paciência
+            \If{paciência esgotada}
+                \State \textbf{break} \Comment{\textit{Early stopping}}
+            \EndIf
+        \EndIf
+    \EndFor
+
+    \Statex
+    \State Restaurar melhores pesos
+    \State Avaliar desempenho final no conjunto de teste
+    \State Exportar modelo para implantação embarcada
+
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+% ============================================================
+\section{Controle Embarcado em Tempo Real}
+\label{sec:embarcado}
+
+% ------------------------------------------------------------
+\subsection{Conversão do Modelo via X-CUBE-AI}
+
+O STM32Cube.AI é uma ferramenta de software desenvolvida pela STMicroelectronics projetada para a implantação de aprendizado de máquina em microcontroladores (TinyML). Esse ecossistema atua como um gerador de código baseado em compilação, recebendo modelos treinados em plataformas como Keras e TensorFlow Lite para gerar código C otimizado para a linha de microcontroladores STM32 \cite{stmu2526}.
+
+Diferentemente de abordagens baseadas em interpretadores embarcados, que processam a topologia do modelo em tempo de execução, a geração de código nativo pode aumentar consideravelmente o desempenho da inferência. Como apontado por \citeonline{david2021}, metodologias baseadas em compilação fixam as chamadas de operação diretamente em código de máquina, eliminando as etapas de roteamento do interpretador. A ferramenta analisa a topologia da rede neural, otimiza o uso de \textit{buffers} e mapeia as operações matemáticas diretamente para as capacidades de hardware do processador alvo, minimizando o uso de memória Flash e SRAM e permitindo a execução de inferências com restrições de latência e consumo energético.
+
+% ------------------------------------------------------------
+\subsection{Firmware de Controle no STM32}
+
+O firmware de controle utiliza uma arquitetura orientada a eventos e não-bloqueante para garantir o atendimento ao \textit{deadline} de $T_s = 10$\,ms. Um temporizador de hardware (TIM) operando a 100\,Hz atua como base de tempo determinística. A cada disparo do timer, a CPU apenas inicia a transferência dos dados inerciais da IMU via I$^2$C utilizando acesso direto à memória (DMA) e retorna imediatamente do contexto de interrupção, não bloqueando a execução.
+
+Apenas quando a transferência I$^2$C é concluída, uma interrupção de conclusão do DMA (\textit{Transfer Complete}) é acionada, desencadeando a rotina de controle principal. Neste momento, com os dados inerciais já disponíveis na memória SRAM, o processador realiza a leitura da referência angular, a estimação do estado atual via filtro complementar, a inferência da rede neural e a atualização do \textit{duty cycle} do PWM no ESC, conforme o Algoritmo~\ref{alg:isr_controle}.
+
+As operações de ponto flutuante, em particular o cálculo de \texttt{atan2} no filtro complementar e as multiplicações matriciais da MLP gerada pelo X-CUBE-AI, são executadas nativamente pela FPU do Cortex-M4, eliminando a sobrecarga de emulação por software. A transmissão da telemetria ao final da rotina também é delegada a um canal DMA vinculado à UART. Essa delegação maciça da movimentação de dados aos periféricos garante que o tempo de CPU fique dedicado estritamente aos cálculos de controle.
+
+\begin{algorithm}[H]
+\caption{Rotina de Controle em Tempo Real (Arquitetura DMA)}
+\label{alg:isr_controle}
+\begin{algorithmic}[1]
+\Statex \textbf{Base de Tempo:} $f_s = 100$\,Hz ($T_s = 10$\,ms)
+\Statex
+
+\Procedure{Timer\_ISR}{}
+    \State \Comment{Disparo determinístico a cada 10ms}
+    \State $\text{IniciarLeituraIMU\_DMA()}$ \Comment{Inicia transação I$^2$C em background}
+\EndProcedure
+
+\Statex
+\Procedure{I2C\_DMA\_Complete\_ISR}{}
+    \State \Comment{1. Leitura da Referência (UART)}
+    \State $\theta_{ref} \gets \text{LerReferencia()}$
+
+    \Statex
+    \State \Comment{2. Estimação de Estados (FPU)}
+    \State $\theta, \dot{\theta} \gets \text{EstimarEstados(Buffer\_I2C)}$
+
+    \Statex
+    \State \Comment{3. Cálculo da Ação de Controle (Inferência)}
+    \State $x \gets [\theta,\; \dot{\theta},\; \theta_{ref}]^\top$
+    \State $u \gets \text{Controlador}(x)$
+
+    \Statex
+    \State \Comment{4. Atuação (PWM)}
+    \State $\text{AplicarControle}(u)$
+
+    \Statex
+    \State \Comment{5. Registro de Dados (UART DMA)}
+    \State $\text{IniciarTelemetria\_DMA}(\theta,\; \dot{\theta},\; \theta_{ref},\; u)$
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+\chapter{Análise dos Riscos}
+
+A análise de riscos identifica os principais fatores que podem comprometer a execução do projeto. Cada risco é avaliado quanto à probabilidade de ocorrência, impacto sobre os objetivos e severidade, e acompanhado de ações preventivas e de contingência.
+
+% ----------------------------------------------------------------
+\section{Divergência do Modelo Dinâmico Identificado}
+
+A aerodinâmica do conjunto motor-hélice apresenta não-linearidades que podem não ser capturadas durante a identificação experimental. Se o modelo grey-box for impreciso, o NMPC gerará ações subótimas e a rede neural aprenderá uma política de controle falha, comprometendo todo o pipeline subsequente.
+
+\textbf{Probabilidade:} Média. \textbf{Impacto:} Alto. \textbf{Severidade:} Alta.
+
+\textbf{Ação de redução:} Empregar sinais de excitação complementares (multi-seno para identificação e degraus de amplitude variada para validação), garantindo cobertura adequada da faixa operacional, e verificar a adequação do modelo por análise de resíduos e inspeção das métricas de ajuste.
+
+\textbf{Ação de contingência:} Caso o modelo não apresente qualidade satisfatória na validação, revisar a estrutura do modelo, por exemplo adicionando um termo de atrito não-linear, e repetir os ensaios antes de prosseguir para a síntese do NMPC.
+
+% ----------------------------------------------------------------
+\section{Exaustão de Recursos de Hardware no STM32}
+
+O microcontrolador Nucleo-F446RE possui limites rígidos de memória (512\,KB de Flash e 128\,KB de SRAM). Uma rede MLP superdimensionada em precisão de ponto flutuante pode causar estouro de memória ou fazer com que o tempo de inferência exceda o período de amostragem de $T_s = 10$\,ms, desestabilizando a malha de controle.
+
+\textbf{Probabilidade:} Média. \textbf{Impacto:} Alto. \textbf{Severidade:} Alta.
+
+\textbf{Ação de redução:} Dimensionar a MLP com arquitetura compacta e estimar o consumo de memória e o tempo de inferência via X-CUBE-AI antes da implantação definitiva, ajustando o número de neurônios e camadas conforme necessário.
+
+\textbf{Ação de contingência:} Reduzir a profundidade ou a largura da rede e aplicar quantização de INT8 via X-CUBE-AI para reduzir o \textit{footprint} de memória e a latência de inferência dentro dos limites do hardware.
+
+% ----------------------------------------------------------------
+\section{Instabilidade do Controlador Neural por Dados Fora da Distribuição}
+
+Diferentemente do NMPC analítico, redes neurais não oferecem garantias de estabilidade. Se o aeropêndulo for submetido a uma perturbação que o conduza a um estado não coberto pelo \textit{dataset} de treinamento, a saída da rede pode ser catastrófica, levando o sistema ao colapso físico.
+
+\textbf{Probabilidade:} Média. \textbf{Impacto:} Crítico. \textbf{Severidade:} Crítica.
+
+\textbf{Ação de redução:} Ampliar a cobertura do espaço de estados durante a geração do \textit{dataset}, variando sistematicamente condições iniciais e referências angulares, e incluir trajetórias com perturbações para tornar a política aprendida mais robusta.
+
+\textbf{Ação de contingência:} Implementar saturação na saída da rede neural e manter o controlador PID como modo de segurança (\textit{fallback}), ativado automaticamente quando $|\theta|$ exceder o limite operacional ou quando a ação de controle ultrapassar os limites físicos do ESC.
+
+
+% ============================================================
+%----------------Cronograma----------------%
+%----------------Cronograma----------------%
+\chapter{Cronograma do Projeto}
+
+O cronograma divide-se em duas fases principais. O primeiro semestre
+abrange a infraestrutura, a identificação experimental e a síntese do
+controlador clássico; o segundo concentra-se na inteligência
+computacional e na validação em hardware real. A
+Figura~\ref{fig:cronograma-tcc} ilustra o diagrama de Gantt do projeto.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1\textwidth]{img/cronograma-tcc.PNG}
+    \caption{Cronograma do Projeto}
+    \label{fig:cronograma-tcc}
+\end{figure}
+
+% ============================================================
+\section{Semestre 1}
+
+% ------------------------------------------------------------
+\subsection{Etapa 1 - Instalação do Motor e Integração de Sensores}
+\label{subsec:etapa1}
+
+
+\subsubsection*{Ações já executadas}
+
+A bancada foi montada e o firmware de aquisição implementado no Arduino
+Mega, aproveitando a estrutura mecânica pré-existente descrita na
+Seção~\ref{sec:descricao_fisica}. O microcontrolador passou a ler a IMU
+ICM-20948 via I$^2$C, estimar o ângulo por filtro complementar, gerar
+o sinal PWM para o ESC e transmitir telemetria em formato CSV a
+500\,000\,baud. As conexões elétricas estão de forma
+compatível com o STM32 Nucleo-F446RE, de modo que a migração de
+plataforma para as etapas seguintes restringe-se à substituição do
+microcontrolador, sem alteração no cabeamento.
+
+\subsubsection*{Resultados obtidos}
+
+A calibração do \textit{offset} do giroscópio por média de 500 amostras
+em repouso produziu bias estável e reprodutível entre reinicializações.
+A estimação angular via filtro complementar ($\alpha = 0{,}98$)
+mostrou-se consistente com referências visuais ao longo do envelope
+operacional. O pipeline de telemetria CSV foi validado com aquisição
+contínua sem perdas de quadros a 100\,Hz.
+
+\subsubsection*{Entregáveis}
+\begin{itemize}
+    \item Bancada operacional com motor, ESC e IMU integrados;
+    \item Firmware de aquisição funcional (Arduino);
+    \item Pipeline de telemetria CSV validado;
+    \item Diagrama elétrico do sistema compatível com STM32.
+\end{itemize}
+
+% ------------------------------------------------------------
+\subsection{Etapa 2 - PID Preliminar}
+\label{subsec:etapa2}
+
+
+\subsubsection*{Ações já executadas}
+
+O controlador PID foi sintonizado preliminarmente a partir da função de
+transferência linearizada em torno de $\theta_0 = 40^\circ$, com ganhos
+$K_p = 0{,}58$, $K_i = 0{,}66$ e $K_d = 0{,}20$, e implantado no
+Arduino para estabilizar a planta durante os primeiros ensaios em malha
+fechada. O objetivo desta etapa é exclusivamente viabilizar a coleta de
+dados para identificação, a sintonização definitiva ocorre na
+Etapa~\ref{subsec:etapa4}, após o modelo identificado estar disponível.
+
+\subsubsection*{Resultados obtidos}
+
+As Figuras~\ref{fig:pid-60}--\ref{fig:pid-40} comparam a resposta ao
+degrau real (vermelho) com a simulação do modelo linear por ZOH (azul)
+em três pontos de operação. Em $40^\circ$ (ponto de linearização) o
+erro de modelagem ficou abaixo de $\pm 6^\circ$ nos transientes com
+convergência a zero em regime permanente. Em $30^\circ$ e $60^\circ$
+surgiram erros de regime permanente da ordem de $10^\circ$ e
+$20^\circ$, respectivamente, confirmando a não-linearidade do sistema e
+motivando o emprego do modelo \textit{grey-box} não-linear para a
+síntese do NMPC.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{img/pid-60.png}
+    \caption{Resposta ao degrau de $60^\circ$: simulação vs.\ real.}
+    \label{fig:pid-60}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{img/pid-30.png}
+    \caption{Resposta ao degrau de $30^\circ$: simulação vs.\ real.}
+    \label{fig:pid-30}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{img/pid-40.png}
+    \caption{Resposta ao degrau de $40^\circ$: simulação vs.\ real.}
+    \label{fig:pid-40}
+\end{figure}
+
+\subsubsection*{Entregáveis}
+\begin{itemize}
+    \item Firmware com PID preliminar funcional;
+    \item Gráficos de resposta ao degrau em três pontos de operação;
+    \item Planta estabilizada e pronta para ensaios de identificação.
+\end{itemize}
+
+% ------------------------------------------------------------
+\subsection{Etapa 3 - Identificação e Validação do Modelo Físico}
+\label{subsec:etapa3}
+
+\subsubsection*{Ações em andamento}
+
+A etapa de identificação e validação encontra-se em andamento. O ensaio destinado à validação foi realizado com o PID preliminar estabilizando a planta e uma sequência de degraus de amplitude variada aplicada como referência, conforme descrito na Seção~\ref{subsec:ensaios}. A Figura~\ref{fig:sinal-degraus-val} ilustra o perfil do sinal de referência projetado no MATLAB, e a Figura~\ref{fig:ensaio-val-degraus} apresenta os dados experimentais registrados.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{img/simu-multiplo.png}
+    \caption{Sinal de validação}
+    \label{fig:sinal-degraus-val}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{img/multiplo-degrau.png}
+    \caption{Ensaio de validação}
+    \label{fig:ensaio-val-degraus}
+\end{figure}
+
+Para a estimação dos parâmetros $\hat{\theta} = [J,\, b,\, K_\tau]^\top$, será conduzido o ensaio principal com sinal multi-seno. Os dados coletados ($\theta(t)$, $u(t)$) neste ensaio constituirão o conjunto de identificação e serão processados pelo método de \textit{multiple shooting} via JAX e Diffrax, conforme descrito na Seção~\ref{subsec:multiple_shooting}, garantindo a excitação persistente necessária. O ensaio com \textit{swept sine} para caracterização em frequência será conduzido na sequência.
+
+\subsubsection*{Entregáveis}
+\begin{itemize}
+    \item Datasets de identificação (multi-seno) e validação (degraus, CSV\@;
+    \item Parâmetros estimados $[J,\, b,\, K_\tau]$ com intervalos de confiança de 95\%;
+    \item Gráficos de validação com métricas \textit{fit}\,\% e RMSE\@;
+    \item Análise de resíduos atestando adequação estrutural do modelo.
+\end{itemize}
+% ------------------------------------------------------------
+\subsection{Etapa 4 - PID Final no STM32}
+\label{subsec:etapa4}
+
+
+\subsubsection*{Ações futuras}
+
+Com o modelo identificado disponível, os ganhos do PID serão revisados
+por técnicas de resposta em frequência. O firmware discreto com
+anti-windup por \textit{back-calculation} será portado ao STM32
+Nucleo-F446RE. Serão realizados ensaios
+de rastreamento de degraus em $30^\circ$, $45^\circ$ e $60^\circ$,
+sequência multidegrau e rejeição a distúrbio impulsivo.
+
+\subsubsection*{Entregáveis}
+\begin{itemize}
+    \item Firmware STM32 com PID final validado;
+    \item Gráficos de rastreamento e rejeição a distúrbios;
+    \item Primeiras colunas da Tabela~\ref{tab:comparacao_controladores}
+          preenchidas (tempo de acomodação, \textit{overshoot}, RMSE e
+          tempo de execução).
+\end{itemize}
+
+% ------------------------------------------------------------
+\subsection{Etapa 5 - Simulação do NMPC Ótimo}
+\label{subsec:etapa5}
+
+
+\subsubsection*{Ações futuras}
+
+O OCP definido nas Equações~\eqref{eq:ocp}--\eqref{eq:ocp_terminal}
+será implementado em Python com CasADi usando o modelo não-linear
+identificado. Inclui sintonização das matrizes $Q$, $R$ e $P$,
+definição do horizonte $N$ e das restrições operacionais, e resolução
+pelo solver IPOPT. As trajetórias do NMPC serão comparadas com as do
+PID em simulação.
+
+\subsubsection*{Entregáveis}
+\begin{itemize}
+    \item Script CasADi com OCP implementado e resolvido;
+    \item Gráficos comparativos NMPC vs.\ PID em simulação;
+    \item Tempo médio de solução do NLP como referência de custo
+          computacional do controlador exato.
+\end{itemize}
+
+% ============================================================
+\section{Semestre 2}
+
+% ------------------------------------------------------------
+\subsection{Etapa 6 - Geração de \textit{Dataset} e Treinamento da MLP}
+\label{subsec:etapa6}
+
+\subsubsection*{Ações futuras}
+
+A política ótima do NMPC será explorada em simulação de malha fechada
+com condições iniciais e referências angulares diversificadas para gerar
+o \textit{dataset} $\mathcal{D}$ (Equação~\eqref{eq:dataset}). Em
+seguida, uma rede MLP será treinada em PyTorch com otimizador Adam e
+\textit{early stopping} para aproximar essa política, conforme o
+Algoritmo~\ref{alg:treino_mlp}.
+
+\subsubsection*{Entregáveis}
+\begin{itemize}
+    \item Dataset normalizado com cobertura adequada do espaço de
+          estados;
+    \item Modelo MLP treinado;
+    \item Curva de aprendizado e distribuição do erro de aproximação
+          no conjunto de teste.
+\end{itemize}
+
+% ------------------------------------------------------------
+\subsection{Etapa 7 - Otimização e Implantação da Rede no STM32}
+\label{subsec:etapa7}
+
+
+\subsubsection*{Ações futuras}
+
+O modelo MLP será convertido para código C otimizado via X-CUBE-AI e
+integrado ao firmware de controle com arquitetura DMA, substituindo o
+bloco de cálculo do PID pela inferência da rede
+(Algoritmo~\ref{alg:isr_controle}). O consumo de Flash e SRAM e o tempo
+de inferência serão medidos no hardware real; se necessário, a rede
+será comprimida por redução de camadas ou quantização INT8.
+
+\subsubsection*{Entregáveis}
+\begin{itemize}
+    \item Firmware STM32 com MLP embarcada via X-CUBE-AI;
+    \item Relatório de uso de Flash, SRAM e tempo de inferência medido;
+    \item Conformidade com o \textit{deadline} $T_s = 10$\,ms
+          documentada.
+\end{itemize}
+
+% ------------------------------------------------------------
+\subsection{Etapa 8 - Ensaios Experimentais}
+
+
+\subsubsection*{Ações futuras}
+
+Os mesmos ensaios do PID (Etapa~\ref{subsec:etapa4}) serão repetidos
+com a MLP embarcada: rastreamento de degraus em $30^\circ$, $45^\circ$
+e $60^\circ$, sequência multidegrau e rejeição a distúrbio impulsivo.
+
+\subsubsection*{Entregáveis}
+\begin{itemize}
+    \item Datasets experimentais da MLP embarcada;
+    \item Gráficos comparativos PID, NMPC (simulação) e MLP (hardware).
+\end{itemize}
+
+% ------------------------------------------------------------
+\subsection{Etapa 9 - Análise Comparativa e Defesa Final}
+\label{subsec:etapa9}
+
+
+\subsubsection*{Ações futuras}
+
+Os resultados de todas as etapas serão consolidados na
+Tabela~\ref{tab:comparacao_controladores}, preenchendo as métricas de
+tempo de acomodação, \textit{overshoot}, RMSE, tempo de execução e uso
+de memória para os três controladores. A análise discutirá os
+\textit{trade-offs} entre desempenho, custo computacional e
+complexidade de implementação.
+
+\subsubsection*{Entregáveis}
+\begin{itemize}
+    \item Tabela comparativa completa;
+    \item Texto final do TCC revisado;
+    \item Apresentação para defesa.
+\end{itemize}
+
+% ============================================================
+\chapter{Procedimentos de Teste e Validação}
+
+Os procedimentos de teste e validação estão organizados em quatro etapas sequenciais, cobrindo desde a qualidade do modelo identificado até a comparação final entre os três controladores implementados.
+
+% ------------------------------------------------------------
+\section{Validação do Modelo Identificado}
+
+A qualidade do modelo grey-box obtido via \textit{multiple shooting} será avaliada sobre o conjunto de validação retido, composto pelos ensaios de degraus de amplitude variada, conforme descrito na Seção~\ref{subsec:divisao_dados}.
+
+Serão reportadas as seguintes métricas:
+
+\begin{itemize}
+    \item Coeficiente de ajuste (\textit{fit}\,\%) entre a trajetória angular simulada $\hat{\theta}(t)$ e a medida $\theta(t)$;
+    \item Erro Quadrático Médio (RMSE) entre $\hat{\theta}(t)$ e $\theta(t)$;
+    \item Análise de resíduos, verificando independência em relação à entrada, atestando a adequação estrutural do modelo;
+    \item Resposta a degraus não utilizados na identificação, avaliando a capacidade de generalização do modelo.
+\end{itemize}
+
+% ------------------------------------------------------------
+\section{Validação do Controlador PID}
+
+O controlador PID será validado no sistema físico com os seguintes ensaios:
+
+\begin{itemize}
+    \item Rastreamento de referências em degrau nas amplitudes de
+          $30°$, $45°$ e $60°$, medindo tempo de acomodação e overshoot;
+    \item Sequência de degraus com amplitudes variadas
+          ($60°$, $30°$, $-60°$, $-30°$), avaliando o comportamento
+          em toda a faixa de operação;
+    \item Rejeição a distúrbio impulsivo aplicado manualmente ao braço do aeropêndulo durante operação em regime permanente;
+    \item Registro do tempo de execução da rotina de controle no STM32, verificando o atendimento ao \textit{deadline} de $T_s = 10$\,ms.
+\end{itemize}
+
+% ------------------------------------------------------------
+\section{Validação do NMPC Simulado}
+
+O NMPC ótimo, desenvolvido offline via CasADi, será validado em simulação antes da geração do dataset. Os critérios de avaliação são:
+
+\begin{itemize}
+    \item Comparação das trajetórias NMPC e PID sobre as mesmas referências de degrau, avaliando tempo de acomodação e overshoot;
+    \item Verificação do respeito às restrições de entrada ($u \in [-0{,}3,\; 0{,}3]$) e de estado ao longo de toda a trajetória;
+    \item Medição do tempo médio de resolução do NLP pelo solver CasADi, como referência de custo computacional do NMPC exato.
+\end{itemize}
+
+% ------------------------------------------------------------
+\section{Validação da MLP Embarcada}
+
+A rede neural implantada no STM32 via X-CUBE-AI será avaliada em duas etapas.
+
+\subsection{Fidelidade à Política Ótima}
+
+Sobre o conjunto de teste retido ($15\%$ do dataset), serão calculados:
+
+\begin{itemize}
+    \item Erro Quadrático Médio (MSE) e Erro Absoluto Médio (MAE) entre a ação de controle da MLP $\hat{u}$ e a do NMPC exato $u^*$;
+    \item Distribuição dos erros de aproximação ao longo da faixa de estados de operação.
+\end{itemize}
+
+\subsection{Desempenho em Malha Fechada}
+
+Os mesmos ensaios realizados para o PID (rastreamento, rejeição a distúrbios e sequência de degraus) serão repetidos com a MLP, permitindo comparação direta. Adicionalmente, serão medidos:
+
+\begin{itemize}
+    \item Tempo de inferência da rede no STM32, que deve ser inferior a $T_s = 10$\,ms;
+    \item Uso de memória Flash e SRAM após a implantação via X-CUBE-AI;
+    \item Porcentagem de utilização de CPU durante a rotina de interrupção.
+\end{itemize}
+
+% ------------------------------------------------------------
+\section{Análise Comparativa Final}
+
+Os resultados dos três controladores serão consolidados na Tabela~\ref{tab:comparacao_controladores}, que constitui o principal resultado quantitativo do trabalho.
+
+\begin{table}[h]
+    \centering
+    \caption{Comparação de desempenho entre os controladores avaliados.}
+    \label{tab:comparacao_controladores}
+    \begin{tabularx}{\textwidth}{Xccc}
+        \hline
+        \textbf{Métrica} & \textbf{PID} & \textbf{NMPC} & \textbf{MLP} \\
+        \hline
+        Tempo de acomodação médio (s)   & -- & -- & -- \\
+        Overshoot máximo (\%)           & -- & -- & -- \\
+        RMSE de rastreamento (graus)    & -- & -- & -- \\
+        Tempo de execução por ciclo (ms)& -- & -- & -- \\
+        Uso de CPU (\%)                 & -- & -- & -- \\
+        Uso de Flash (KB)               & -- & -- & -- \\
+        Uso de SRAM (KB)                & -- & -- & -- \\
+        \hline
+    \end{tabularx}
+\end{table}
+
+% ================================================================
+% ENTRADAS .bib A ADICIONAR
+% ================================================================
+%
+% @misc{helonayala_ms,
+%   author = {Ayala, Helon},
+%   title  = {Multiple shooting -- SYSID},
+%   year   = {2025},
+%   url    = {https://helonayala.github.io/sysid/multiple_shooting.html},
+%   note   = {Acesso em: 28 mai. 2026}
+% }
+%
+% @book{rawlings2017,
+%   author    = {Rawlings, James B. and Mayne, David Q. and Diehl, Moritz},
+%   title     = {Model Predictive Control: Theory, Computation, and Design},
+%   edition   = {2},
+%   publisher = {Nob Hill Publishing},
+%   year      = {2017}
+% }
+%

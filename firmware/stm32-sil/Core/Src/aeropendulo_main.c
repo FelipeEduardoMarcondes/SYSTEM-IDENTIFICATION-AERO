@@ -76,6 +76,15 @@ extern void I2C_ClearBus(void);
 #define KI              0.6647f
 #define KD              0.2f
 
+/* ── Integrador Residual RNA (Rejeição de Offset em Malha Fechada) ──────── */
+#define USE_RESIDUAL_INTEGRATOR 1
+#define KI_RES                  0.20f
+#define UI_RES_MAX             10.0f
+
+/* ── Chaveamento Temporal (ms) ───────────────────────────────────────────── */
+#define T_PID_START_MS          5000U
+#define T_PID_END_MS            70000U
+
 /* ── Limites de controle ─────────────────────────────────────────────────── */
 #define U_MAX           100.0f
 
@@ -114,9 +123,11 @@ static uint16_t i2c_tmo       = I2C_TIMEOUT_INIT; /* começa generoso, reduz ap�
 static float angulo_filtrado = 0.0f;
 static float gyro_bias       = 0.0f;
 
-/* --- PID ----------------------------------------------------------------- */
+/* --- PID e RNA ----------------------------------------------------------- */
 static float e_1 = 0.0f;
 static float u_i = 0.0f;
+static float u_i_res = 0.0f;
+static uint8_t was_ann_mode = 0;
 static float y_1 = 0.0f;
 static float r   = 45.0f;   /* referencia corrente (graus) */
 
@@ -473,6 +484,8 @@ static void resetar_controlador(void)
     float y_atual = angulo_filtrado + 90.0f;
     e_1 = r - y_atual;
     u_i = 0.0f;
+    u_i_res = 0.0f;
+    was_ann_mode = 0;
     y_1 = y_atual;
 }
 
@@ -775,8 +788,21 @@ static void ciclo_controle(void)
         }
     } else {
         // Logica de chaveamento PID -> ANN -> PID na bancada real
-        if (t_exp < 5000 || t_exp >= 65000) {
+        uint32_t t_switch_end = T_PID_END_MS;
+        if (wave_ativo && wave_len > 1000) {
+            t_switch_end = (wave_len * 10U) - T_PID_START_MS;
+        }
+
+        if (t_exp < T_PID_START_MS || t_exp >= t_switch_end) {
             // PID
+            if (was_ann_mode) {
+                // Bumpless transfer: RNA -> PID
+                float u_p_tr = KP * e;
+                float u_d_tr = -(KD / TS) * (y_med - y_1);
+                u_i = u - u_p_tr - u_d_tr;
+                was_ann_mode = 0;
+            }
+
             float u_p = KP * e;
             u_i       = u_i + KI * (TS / 2.0f) * (e + e_1);          /* Tustin      */
             float u_d = -(KD / TS) * (y_med - y_1);                   /* backward    */
@@ -789,6 +815,12 @@ static void ciclo_controle(void)
             if (u_calc != u) u_i -= (u_calc - u);
         } else {
             // ANN (MPC)
+            if (!was_ann_mode) {
+                // Bumpless transfer: PID -> RNA
+                u_i_res = 0.0f;
+                was_ann_mode = 1;
+            }
+
             float nn_in[NY_MODEL + NU_MODEL + 100];
             for(int i=0; i<NY_MODEL; i++) nn_in[i] = sil_y_hist[i];
             for(int i=0; i<NU_MODEL; i++) nn_in[NY_MODEL+i] = sil_u_hist[i];
@@ -828,11 +860,21 @@ static void ciclo_controle(void)
             uint32_t c_ann2 = DWT->CYCCNT;
             t_ann_ms  = (float)(c_ann2  - c_ann1)  / (float)(hclk_mhz * 1000.0f);
 
+#if USE_RESIDUAL_INTEGRATOR
+            // Integrador Residual para anulação de erro de regime e atrito na bancada
+            u_i_res += KI_RES * (TS / 2.0f) * (e + e_1);
+            if (u_i_res > UI_RES_MAX)  u_i_res = UI_RES_MAX;
+            if (u_i_res < -UI_RES_MAX) u_i_res = -UI_RES_MAX;
+            u += u_i_res;
+#endif
+
             if (u > 80.0f) u = 80.0f;
             if (u < -10.0f) u = -10.0f;
 
-            // Mantem variaveis do PID para transicao
-            u_i = u - (KP * e) - (-(KD / TS) * (y_med - y_1));
+            // Mantém integrador PID rastreando em segundo plano para retorno suave
+            float u_p_tr = KP * e;
+            float u_d_tr = -(KD / TS) * (y_med - y_1);
+            u_i = u - u_p_tr - u_d_tr;
         }
     }
 
@@ -843,6 +885,7 @@ static void ciclo_controle(void)
     esc_set_us(pct_para_us(u));
 #else
     float y_med = sil_y_hist[0];
+    float e     = r - y_med;
     float u;
     float t_ann_ms = 0.0f;
     
@@ -853,24 +896,39 @@ static void ciclo_controle(void)
             u = openloop_u;
         }
     } else {
-        // Logica de chaveamento PID -> ANN -> PID
-        if (t_exp < 5000 || t_exp >= 65000) {
+        // Logica de chaveamento PID -> ANN -> PID no SIL Virtual
+        uint32_t t_switch_end = T_PID_END_MS;
+        if (wave_ativo && wave_len > 1000) {
+            t_switch_end = (wave_len * 10U) - T_PID_START_MS;
+        }
+
+        if (t_exp < T_PID_START_MS || t_exp >= t_switch_end) {
             // PID
-            float e = r - y_med;
+            if (was_ann_mode) {
+                // Bumpless transfer: RNA -> PID
+                float u_p_tr = KP * e;
+                float u_d_tr = -(KD / TS) * (y_med - y_1);
+                u_i = u - u_p_tr - u_d_tr;
+                was_ann_mode = 0;
+            }
+
             float u_p = KP * e;
-            u_i = u_i + KI * (0.01f / 2.0f) * (e + e_1); // Usando Ts = 0.01 no SIL
-            float u_d = -(KD / 0.01f) * (y_med - y_1);
+            u_i = u_i + KI * (TS / 2.0f) * (e + e_1); // Usando TS no SIL
+            float u_d = -(KD / TS) * (y_med - y_1);
             float u_calc = u_p + u_i + u_d;
             
             u = u_calc;
-            if (u > 80.0f) u = 80.0f; // bounds do python
+            if (u > 80.0f) u = 80.0f;
             if (u < -10.0f) u = -10.0f;
             if (u_calc != u) u_i -= (u_calc - u);
-            
-            e_1 = e;
-            y_1 = y_med;
         } else {
             // ANN
+            if (!was_ann_mode) {
+                // Bumpless transfer: PID -> RNA
+                u_i_res = 0.0f;
+                was_ann_mode = 1;
+            }
+
             float nn_in[NY_MODEL + NU_MODEL + 100];
             for(int i=0; i<NY_MODEL; i++) nn_in[i] = sil_y_hist[i];
             for(int i=0; i<NU_MODEL; i++) nn_in[NY_MODEL+i] = sil_u_hist[i];
@@ -910,11 +968,20 @@ static void ciclo_controle(void)
             uint32_t c_ann2 = DWT->CYCCNT;
             t_ann_ms  = (float)(c_ann2  - c_ann1)  / (float)(hclk_mhz * 1000.0f);
 
-            // Mantem variaveis do PID para transicao
-            float e = r - y_med;
-            e_1 = e;
-            y_1 = y_med;
-            u_i = u - (KP * e) - (-(KD / 0.01f) * (y_med - y_1));
+#if USE_RESIDUAL_INTEGRATOR
+            u_i_res += KI_RES * (TS / 2.0f) * (e + e_1);
+            if (u_i_res > UI_RES_MAX)  u_i_res = UI_RES_MAX;
+            if (u_i_res < -UI_RES_MAX) u_i_res = -UI_RES_MAX;
+            u += u_i_res;
+#endif
+
+            if (u > 80.0f) u = 80.0f;
+            if (u < -10.0f) u = -10.0f;
+
+            // Mantém variáveis do PID para transição suave
+            float u_p_tr = KP * e;
+            float u_d_tr = -(KD / TS) * (y_med - y_1);
+            u_i = u - u_p_tr - u_d_tr;
         }
     }
 
@@ -925,6 +992,9 @@ static void ciclo_controle(void)
 
     float t_narx_ms = (float)(c_narx2 - c_narx1) / (float)(hclk_mhz * 1000.0f);
     float t_total_ms = t_ann_ms + t_narx_ms;
+
+    e_1 = e;
+    y_1 = y_med;
 #endif
 #ifndef SIL_MODE
     e_1 = e;

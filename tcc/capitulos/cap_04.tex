@@ -1,0 +1,33 @@
+%----------------Cap_04----------------%
+\chapter{Conclusão}
+ 
+Este trabalho propôs e documentou o desenvolvimento de um controlador neural
+embarcado que aproxima a política ótima de um Controle Preditivo Não-Linear
+(NMPC) para rastreamento angular de um aeropêndulo instrumentado. A motivação
+central reside na incompatibilidade entre o custo computacional da otimização
+repetida do NMPC e os recursos disponíveis em microcontroladores de baixo custo,
+problema recorrente em plataformas VTOL de pequeno porte.
+
+Como referência de desempenho e como mecanismo de estabilização durante os
+ensaios de identificação, um controlador PID foi sintonizado a partir do modelo
+linearizado e implementado digitalmente com discretização trapezoidal e
+anti-windup por \textit{back-calculation}. Os resultados preliminares da
+Etapa~\ref{subsec:etapa2} confirmaram a não-linearidade do sistema, motivando o emprego do modelo não-linear para a síntese do NMPC.
+ 
+A estratégia adotada é tecnicamente viável. Os três principais riscos identificados, divergência do modelo identificado, exaustão dos recursos de hardware e
+instabilidade do controlador neural por dados fora da distribuição, possuem
+ações preventivas e de contingência estabelecidas. A etapa de identificação (Etapa~\ref{subsec:etapa3})
+encontra-se em andamento e as etapas subsequentes dependem diretamente da
+qualidade do modelo obtido. Caso o critério de ajuste não seja satisfeito, a
+estrutura do modelo será revisada antes de prosseguir. A compacidade da arquitetura
+MLP e a quantização via X-CUBE-AI constituem caminhos de contingência caso
+os limites de Flash e SRAM do STM32F446 sejam ultrapassados.
+ 
+O cronograma prevê a conclusão da identificação e da síntese do NMPC no
+primeiro semestre, reservando o segundo para o treinamento da rede, a implantação
+embarcada e os ensaios experimentais comparativos. A comparação final entre PID,
+NMPC e MLP embarcada, consolidada na Tabela~\ref{tab:comparacao_controladores},
+constituirá a principal contribuição quantitativa do trabalho e permitirá avaliar
+objetivamente os \textit{trade-offs} entre desempenho de rastreamento, rejeição a
+perturbações e custo computacional em hardware embarcado de baixo custo.
+ 

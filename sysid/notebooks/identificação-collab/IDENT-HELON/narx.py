@@ -1,206 +1,492 @@
 # %% [markdown]
-# # NARX model
+# # Identificação do Modelo Não-Linear NARX (Aeropêndulo)
 # 
-# NARX model for the 1/4 drone dataset.
+# Modelo NARX (*Nonlinear AutoRegressive with eXogenous inputs*) polinomial para a planta
+# de 1 GDL (aeropêndulo) utilizando o algoritmo FROLS (*Forward Regression Orthogonal Least Squares*)
+# com critério de seleção por ERR (*Error Reduction Ratio*).
+#
+# Gera gráficos e relatórios no padrão acadêmico (IEEE / PUCPR / ABNT), salvando automaticamente
+# as figuras em alta resolução (.png 300 DPI e .pdf vetorial) para uso no TCC / artigo.
 
 # %%
+import os
+import sys
+import json
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 
-# --- Install/import the sysid course library (works locally and on Google Colab) ---
+# ==============================================================================
+# CONFIGURAÇÃO DE DIRETÓRIOS E IMPORTAÇÕES
+# ==============================================================================
+current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
+root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
+
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+# Diretórios de saída para salvar os gráficos
+plots_dirs = [
+    os.path.join(current_dir, 'plots')
+]
+
+tcc_img_dir = os.path.join(root_dir, 'tcc', 'img', 'resultados')
+if os.path.exists(tcc_img_dir):
+    plots_dirs.append(tcc_img_dir)
+
+overleaf_img_dir = os.path.join(root_dir, 'img', 'resultados')
+if os.path.exists(overleaf_img_dir):
+    plots_dirs.append(overleaf_img_dir)
+
+for d in plots_dirs:
+    os.makedirs(d, exist_ok=True)
+
+# Importa aerodata
+try:
+    from aerodata import readData
+except ImportError:
+    sys.path.append(root_dir)
+    from aerodata import readData
+
+# Instala/importa a biblioteca de identificação sysid
 try:
     from sysid import NARX
 except ImportError:
-    import sys
     import subprocess
     subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'git+https://github.com/helonayala/sysid.git'])
     from sysid import NARX
 
-import sys
-import os
+# ==============================================================================
+# PADRONIZAÇÃO VISUAL ACADÊMICA (IEEE / ABNT / PUCPR)
+# ==============================================================================
+def setup_academic_style():
+    """Configura o Matplotlib para gráficos com estética acadêmica e publicação."""
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "legend.fontsize": 8.5,
+        "legend.title_fontsize": 9,
+        "axes.linewidth": 0.8,
+        "lines.linewidth": 1.2,
+        "grid.linewidth": 0.5,
+        "grid.linestyle": "--",
+        "grid.alpha": 0.5,
+        "legend.frameon": True,
+        "legend.framealpha": 0.95,
+        "legend.edgecolor": "0.85",
+        "figure.autolayout": False,
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.05,
+    })
 
-# Adiciona o diretório raiz do projeto ao sys.path para importar aerodata
-current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
-root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
-if root_dir not in sys.path:
-    sys.path.append(root_dir)
+setup_academic_style()
 
-from aerodata import readData
-
+def save_academic_plot(fig, filename_base, dirs=plots_dirs):
+    """Salva a figura simultaneamente em PNG (300 DPI) e PDF vetorial em todas as pastas alvo."""
+    for d in dirs:
+        png_path = os.path.join(d, f"{filename_base}.png")
+        pdf_path = os.path.join(d, f"{filename_base}.pdf")
+        fig.savefig(png_path, dpi=300, bbox_inches='tight')
+        fig.savefig(pdf_path, format='pdf', bbox_inches='tight')
+    print(f"  -> Gráfico salvo: {filename_base} (.png e .pdf) em {len(dirs)} pastas.")
 
 # %% [markdown]
-# ## Load and preprocess the datasets
+# ## Carregamento e Pré-Processamento dos Datasets
 # 
-# Closed-loop 1/4 drone acquisitions. Each signal is sliced to a fixed useful time window (20–80 s) and decimated by a common factor, then stored in a `data` dictionary.
+# Ensaios em malha fechada coletados na bancada do aeropêndulo operando a 100 Hz.
+# Cada sinal é aparado nas extremidades para descartar transitórios de partida (10 s)
+# e parada (13 s).
 
 # %%
-DECIMATION = 1        # Aumente isso para 10 ou 20 se o treino estiver demorando muito!
-TRIM_START_SEC = 10.0  # Descarta exatamente os primeiros 10 segundos
-TRIM_END_SEC = 13.0     # Descarta exatamente os últimos 5 segundos
+DECIMATION = 1          # Decimação (1 = 100 Hz original)
+TRIM_START_SEC = 10.0   # Descarta primeiros 10 segundos
+TRIM_END_SEC = 13.0     # Descarta últimos 13 segundos
 
-def load_processed(name, trim_start=TRIM_START_SEC, trim_end=TRIM_END_SEC, decimation=DECIMATION):
-    """Load a dataset from aerodata, trim by fixed time margins, and decimate. Returns u, y, t, ref."""
-    # Carrega o sinal original inteiro do aerodata
-    y, u, t, ref = readData(dataset_name=name, return_ref=True)
+def load_processed(fname, trim_start=TRIM_START_SEC, trim_end=TRIM_END_SEC, decimation=DECIMATION):
+    """Carrega dataset via aerodata, corta margens transitórias e normaliza o vetor de tempo."""
+    y, u, t, ref = readData(dataset_name=fname, return_ref=True)
     
-    # Calcula os índices baseados no tempo (ex: tempo inicial + 10s)
     t_start_target = t[0] + trim_start
     t_end_target = t[-1] - trim_end
     
     idx_start = np.searchsorted(t, t_start_target)
     idx_end = np.searchsorted(t, t_end_target)
     
-    # Se por acaso o corte for maior que o sinal, pega tudo
     if idx_start >= idx_end:
         idx_start, idx_end = 0, len(t)
-    
-    # Aplica o corte e a decimação
+        
     sl = slice(idx_start, idx_end, decimation)
-    u, y, t = u[sl], y[sl], t[sl]
+    u_c, y_c, t_c = u[sl], y[sl], t[sl]
+    
+    # Reseta o tempo para iniciar exatamente em t = 0
+    t_c = t_c - t_c[0]
     
     if len(ref) > 0:
-        ref = ref[sl]
+        ref_c = ref[sl]
     else:
-        ref = np.full_like(t, np.nan)
+        ref_c = np.full_like(t_c, np.nan)
         
-    return u, y, t, ref
+    return u_c, y_c, t_c, ref_c
 
-def plot_all_datasets(datasets, main_title):
-    n = len(datasets)
-    fig, axes = plt.subplots(n, 1, figsize=(12, 3*n), sharex=False)
-    if n == 1: axes = [axes]
-    for ax, (name, d) in zip(axes, datasets.items()):
-        u, y, t, ref = d
-        ax.plot(t, ref, '--', color='red', label='Ref')
-        ax.plot(t, y, color='blue', label='y')
-        ax.plot(t, u, color='green', label='u', alpha=0.5)
-        ax.set_title(name)
-        ax.legend(loc='upper right')
-        ax.grid(True)
-    plt.suptitle(main_title)
-    plt.tight_layout()
-    plt.show(block=False)
-    plt.pause(0.1)
-
+# Arquivos de Validação (3 ensaios em 45 graus)
 val_files = {
-    'multisine_45_val': 'multi-seno-45-030Hz_0904_20-23.csv',
-    'chirp_45_val':     'chirp-45-amp35_0904_20-13.csv',
-    'steps_45_val':     'seq-degraus-45-2_0904_20-45.csv'
+    'multisine_45_val': {
+        'file': 'RODADA-7/multi-seno-45-030Hz_0904_20-23.csv',
+        'label': 'Multisseno (45°, 0.30 Hz)'
+    },
+    'chirp_45_val': {
+        'file': 'RODADA-7/chirp-45-amp35_0904_20-13.csv',
+        'label': 'Chirp (45°, Amp ±35°)'
+    },
+    'steps_45_val': {
+        'file': 'RODADA-7/seq-degraus-45-2_0904_20-45.csv',
+        'label': 'Sequência de Degraus (45°)'
+    }
 }
 
 val_datasets = {
-    name: load_processed(f'data/experimentos/RODADA-7/{fname}')
-    for name, fname in val_files.items()
+    key: load_processed(meta['file'])
+    for key, meta in val_files.items()
 }
 
+# Arquivos de Treinamento (6 ensaios: máxima frequência e máximo range em 45° e 60°)
 train_files = {
-    'multisine_45_train': 'multi-seno-45-040Hz_0904_20-26.csv',
-    'chirp_45_train':     'chirp-45-amp25_0904_20-11.csv',
-    'steps_45_train':     'aprbs-45-1_0904_19-54.csv',
-    'multisine_60_train': 'multi-seno-60-030Hz_0904_20-32.csv',
-    'chirp_60_train':     'chirp-60-amp40_0904_20-16.csv',
-    'steps_60_train':     'aprbs-60-1_0904_20-04.csv'
+    'multisine_45_train': {
+        'file': 'RODADA-7/multi-seno-45-050Hz_0904_20-29.csv',
+        'label': 'Multisseno (45°, 0.50 Hz)'
+    },
+    'chirp_45_train': {
+        'file': 'RODADA-7/chirp-45-amp45_0904_20-15.csv',
+        'label': 'Chirp (45°, Amp ±45°)'
+    },
+    'steps_45_train': {
+        'file': 'RODADA-7/aprbs-45-1_0904_19-54.csv',
+        'label': 'APRBS (45°)'
+    },
+    'multisine_60_train': {
+        'file': 'RODADA-7/multi-seno-60-050Hz_0904_20-38.csv',
+        'label': 'Multisseno (60°, 0.50 Hz)'
+    },
+    'chirp_60_train': {
+        'file': 'RODADA-7/chirp-60-amp60_0904_20-20.csv',
+        'label': 'Chirp (60°, Amp ±60°)'
+    },
+    'steps_60_train': {
+        'file': 'RODADA-7/aprbs-60-1_0904_20-04.csv',
+        'label': 'APRBS (60°)'
+    }
 }
 
 train_datasets = {
-    name: load_processed(f'data/experimentos/RODADA-7/{fname}')
-    for name, fname in train_files.items()
+    key: load_processed(meta['file'])
+    for key, meta in train_files.items()
 }
 
 # %% [markdown]
-# ## Processed datasets
-
-# Plot Treinamento
-plot_all_datasets(train_datasets, "Conjuntos de Treinamento")
-
-# Plot Validação
-plot_all_datasets(val_datasets, "Conjuntos de Validação")
-
-# %% [markdown]
-# ## Train / test split
+# ## Gráfico Padronizado dos Sinais de Treinamento
 # 
-# **Explicit split**: `mix_45` and `mix_60` are used entirely for training. Validation sets are used entirely for testing.
+# Painel exibindo a riqueza de excitação dos 6 ensaios utilizados para estimar os parâmetros do NARX.
 
 # %%
-train_data, test_mask = [], {}
+def plot_training_datasets_grid(train_ds, meta_dict):
+    """Gera um painel com os 6 conjuntos de treino (Ângulo em cima, Controle em baixo)."""
+    fig, axes = plt.subplots(3, 2, figsize=(11.5, 7.5), sharex=False)
+    axes_flat = axes.flatten()
+    
+    for i, (key, meta) in enumerate(meta_dict.items()):
+        ax = axes_flat[i]
+        u, y, t, ref = train_ds[key]
+        
+        # Subplot duplo via twinx ou dois eixos
+        ax.plot(t, y, color='#1f77b4', lw=1.1, label=r'Ângulo $\theta$')
+        if not np.all(np.isnan(ref)):
+            ax.plot(t, ref, color='#d62728', ls='--', lw=1.0, alpha=0.8, label=r'Ref $r$')
+        ax.set_ylabel(r'$\theta$ [$^\circ$]', color='#1f77b4')
+        ax.tick_params(axis='y', labelcolor='#1f77b4')
+        ax.set_title(meta['label'], fontsize=9.5, fontweight='bold', pad=4)
+        ax.grid(True)
+        
+        ax_u = ax.twinx()
+        ax_u.plot(t, u, color='#2ca02c', lw=0.9, alpha=0.75, label=r'Controle $u$')
+        ax_u.set_ylabel(r'$u$ [\%]', color='#2ca02c')
+        ax_u.tick_params(axis='y', labelcolor='#2ca02c')
+        ax.set_xlabel('Tempo [s]')
+        
+        if i == 0:
+            lines_1, labels_1 = ax.get_legend_handles_labels()
+            lines_2, labels_2 = ax_u.get_legend_handles_labels()
+            ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper right', fontsize=8)
 
-# Use entire train datasets for fitting
+    plt.suptitle("Conjunto de Ensaios Experimentais para Treinamento do Modelo NARX", fontsize=11, fontweight='bold', y=0.995)
+    plt.tight_layout()
+    save_academic_plot(fig, "narx_train_datasets")
+    plt.close(fig)
+
+print("Gerando gráfico dos sinais de treinamento...")
+plot_training_datasets_grid(train_datasets, train_files)
+
+# %% [markdown]
+# ## Treinamento do Modelo NARX (FROLS / ERR)
+# 
+# - Ordens de memória: $n_y = 15$, $n_u = 15$ (150 ms)
+# - Grau polinomial: $\ell = 2$
+# - Critério de parada: 10 componentes selecionados
+
+# %%
+train_data = []
 for name, d in train_datasets.items():
     u, y, t, ref = d
     train_data.append((u, y))
 
-# Test masks for validation sets are all True (100% test)
-for name, d in val_datasets.items():
-    u, y, t, ref = d
-    test_mask[name] = np.ones(len(y), bool)
-
-print(f'Training blocks: {len(train_data)} (entire datasets)')
-
-# %% [markdown]
-# ## Model identification (multiple datasets)
-
-# %%
 ny_model = 15
 nu_model = 15
 poly_order_model = 2
 n_components = 10
 
-narx_model = NARX(nu=nu_model, ny=ny_model, poly_order_l=poly_order_model,
-                  n_components=n_components)
+print(f"\nTreinando modelo NARX (ny={ny_model}, nu={nu_model}, grau={poly_order_model}, componentes={n_components})...")
+narx_model = NARX(nu=nu_model, ny=ny_model, poly_order_l=poly_order_model, n_components=n_components)
 narx_model.fit(train_data)
 narx_model.print()
 
+# %% [markdown]
+# ## Validação em Simulação Livre (*Free-Run*)
+# 
+# Avaliação recursiva sem realimentação dos estados medidos para verificar estabilidade e fidelidade dinâmica.
+
+# %%
+ml = narx_model._max_lag_internal_
+
+def compute_metrics(y_true, y_pred):
+    """Calcula métricas quantitativas de ajuste (RMSE, MAE, FIT%)."""
+    err = y_true - y_pred
+    rmse = np.sqrt(np.mean(err ** 2))
+    mae = np.mean(np.abs(err))
+    denom = np.linalg.norm(y_true - np.mean(y_true))
+    fit = 100.0 * (1.0 - np.linalg.norm(err) / denom) if denom > 1e-6 else 0.0
+    r2 = 1.0 - (np.sum(err ** 2) / np.sum((y_true - np.mean(y_true)) ** 2)) if denom > 1e-6 else 0.0
+    return rmse, mae, fit, r2
+
+# Executa as simulações em free-run e compila os resultados
+val_results = {}
+for key, meta in val_files.items():
+    u, y, t, ref = val_datasets[key]
+    print(f"Simulando Free-Run para '{meta['label']}' ({len(t) - ml} passos)...")
+    y_fr = narx_model.predict(u, y_history_for_lags_or_osa=y[:ml], mode='FR')
+    
+    t_val = t[ml:]
+    y_true = y[ml:]
+    u_val = u[ml:]
+    ref_val = ref[ml:]
+    
+    rmse, mae, fit, r2 = compute_metrics(y_true, y_fr)
+    val_results[key] = {
+        'label': meta['label'],
+        't': t_val,
+        'y_true': y_true,
+        'y_fr': y_fr,
+        'u': u_val,
+        'ref': ref_val,
+        'rmse': float(rmse),
+        'mae': float(mae),
+        'fit': float(fit),
+        'r2': float(r2)
+    }
+
+# Tabela no console
+print("\n" + "="*70)
+print(f"{'Ensaio de Validação':<32} | {'RMSE [°]':<10} | {'MAE [°]':<10} | {'FIT [%]':<10}")
+print("="*70)
+for key, res in val_results.items():
+    print(f"{res['label']:<32} | {res['rmse']:<10.3f} | {res['mae']:<10.3f} | {res['fit']:<10.2f}")
+print("="*70)
 
 # %% [markdown]
-# ## Final evaluation
-# 
-# Free-run simulation over each validation dataset. The reported RMSE is computed on the entire signal.
+# ## Geração dos Gráficos de Validação em Padrão Acadêmico
 
 # %%
-def plot_all_free_runs(val_datasets, narx_model):
-    n = len(val_datasets)
-    fig, axes = plt.subplots(n, 1, figsize=(12, 3*n), sharex=False)
-    if n == 1: axes = [axes]
-    ml = narx_model._max_lag_internal_
-    results = {}
-    for ax, (name, d) in zip(axes, val_datasets.items()):
-        u, y, t, ref = d
-        y_fr = narx_model.predict(u, y_history_for_lags_or_osa=y[:ml], mode='FR')
-        tt, ym = t[ml:], y[ml:]
-        m = test_mask[name][ml:]
-        rmse_test = np.sqrt(np.mean((ym[m] - y_fr[m]) ** 2))
-        results[name] = rmse_test
-        ax.plot(tt, ym, color='black', label='Measured y')
-        ax.plot(tt, y_fr, '--', color='crimson', label='NARX Free-Run')
-        ax.axvspan(t[ml], t[-1], color='orange', alpha=0.15)
-        ax.set_title(f"{name} (RMSE = {rmse_test:.3f})")
-        ax.legend(loc='upper right')
-        ax.grid(True)
-    plt.suptitle("Free-Run Validation")
+def plot_single_validation(res, filename_base):
+    """Gera gráfico individual de validação com 2 subplots (Ângulo e Controle)."""
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7.2, 4.3), sharex=True,
+                                   gridspec_kw={'height_ratios': [2.2, 1.2]})
+    
+    t = res['t']
+    y_true = res['y_true']
+    y_fr = res['y_fr']
+    u = res['u']
+    
+    # Subplot Superior: Ângulo
+    ax1.plot(t, y_true, color='#111111', lw=1.1, label=r'Medido $y(k)$')
+    ax1.plot(t, y_fr, color='#d62728', ls='--', lw=1.3, label=r'NARX Free-Run $\hat{y}(k)$')
+    if not np.all(np.isnan(res['ref'])):
+        ax1.plot(t, res['ref'], color='#7f7f7f', ls=':', lw=0.9, alpha=0.7, label=r'Referência $r(k)$')
+        
+    ax1.set_ylabel(r'Ângulo $\theta$ [$^\circ$]')
+    ax1.grid(True)
+    ax1.legend(loc='upper right', framealpha=0.95)
+    ax1.set_xlim(0, t[-1])
+    
+    # Caixa com métricas
+    metric_text = (f"RMSE = {res['rmse']:.3f}" + r"$^\circ$" + "\n"
+                   f"MAE = {res['mae']:.3f}" + r"$^\circ$" + "\n"
+                   f"FIT = {res['fit']:.1f}\\%")
+    ax1.text(0.02, 0.95, metric_text, transform=ax1.transAxes,
+             verticalalignment='top', fontsize=8.5,
+             bbox=dict(boxstyle='round,pad=0.4', facecolor='white', edgecolor='0.8', alpha=0.92))
+    
+    # Subplot Inferior: Controle
+    ax2.plot(t, u, color='#1f77b4', lw=1.0, label=r'Excitação $u(k)$')
+    ax2.set_xlabel('Tempo [s]')
+    ax2.set_ylabel(r'Controle $u$ [\%]')
+    ax2.grid(True)
+    ax2.legend(loc='upper right', framealpha=0.95)
+    
     plt.tight_layout()
-    plt.show(block=False)
-    plt.pause(0.1)
-    return results
+    save_academic_plot(fig, filename_base)
+    plt.close(fig)
 
-print('\nFree-run test RMSE [deg]:')
-results = plot_all_free_runs(val_datasets, narx_model)
-for name, rmse in results.items():
-    print(f'  {name:10s} : {rmse:.3f}')
+# Gera os plots individuais
+plot_single_validation(val_results['multisine_45_val'], "narx_freerun")
+plot_single_validation(val_results['multisine_45_val'], "narx_val_multisine")
+plot_single_validation(val_results['chirp_45_val'], "narx_val_chirp")
+plot_single_validation(val_results['steps_45_val'], "narx_val_steps")
+
+# %% [markdown]
+# ## Painel Consolidado de Validação (3 Ensaios Lado a Lado)
+# 
+# Figura unificada ideal para monografia e artigos (3 colunas com Ângulo em cima e Controle em baixo).
 
 # %%
-import json
+def plot_consolidated_validation(val_dict):
+    """Gera figura unificada com 3 colunas comparando todos os ensaios de validação."""
+    fig, axes = plt.subplots(2, 3, figsize=(12.0, 4.8), sharex=False,
+                             gridspec_kw={'height_ratios': [2.2, 1.2]})
+    
+    keys = ['multisine_45_val', 'chirp_45_val', 'steps_45_val']
+    
+    for col, key in enumerate(keys):
+        res = val_dict[key]
+        t = res['t']
+        
+        ax_y = axes[0, col]
+        ax_u = axes[1, col]
+        
+        # Superior: Ângulo
+        ax_y.plot(t, res['y_true'], color='#111111', lw=1.1, label='Medido $y(k)$')
+        ax_y.plot(t, res['y_fr'], color='#d62728', ls='--', lw=1.2, label=r'NARX $\hat{y}(k)$')
+        ax_y.set_title(res['label'], fontsize=9.5, fontweight='bold', pad=4)
+        ax_y.grid(True)
+        ax_y.set_xlim(0, t[-1])
+        
+        if col == 0:
+            ax_y.set_ylabel(r'Ângulo $\theta$ [$^\circ$]')
+            ax_y.legend(loc='upper right', fontsize=8)
+            
+        # Métricas na coluna
+        txt = f"RMSE = {res['rmse']:.2f}" + r"$^\circ$" + f"\nFIT = {res['fit']:.1f}\\%"
+        ax_y.text(0.03, 0.94, txt, transform=ax_y.transAxes,
+                  verticalalignment='top', fontsize=8,
+                  bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='0.85', alpha=0.9))
+        
+        # Inferior: Controle
+        ax_u.plot(t, res['u'], color='#1f77b4', lw=1.0, label='Controle $u(k)$')
+        ax_u.set_xlabel('Tempo [s]')
+        ax_u.grid(True)
+        ax_u.set_xlim(0, t[-1])
+        if col == 0:
+            ax_u.set_ylabel(r'Controle $u$ [\%]')
+            
+    plt.suptitle("Validação em Simulação Livre (Free-Run) do Modelo NARX Polinomial", fontsize=11, fontweight='bold', y=0.995)
+    plt.tight_layout()
+    save_academic_plot(fig, "narx_val_consolidado")
+    plt.close(fig)
 
-model_data = {
-    'ny': narx_model.ny,
-    'nu': narx_model.nu,
-    'l': narx_model.poly_order_l,
-    'terms': list(narx_model.selected_P_colnames_),
-    'theta': [float(t) for t in narx_model.theta_]
+print("Gerando painel consolidado de validação...")
+plot_consolidated_validation(val_results)
+
+# %% [markdown]
+# ## Exportação do Modelo e das Equações
+# 
+# Salva:
+# - `narx_model.json`: compatível com mpc_v2, mpc_v3, mpc_v4 e outros scripts.
+# - `narx_metrics.json`: métricas quantitativas de cada ensaio.
+# - `narx_equation.tex`: equação matemática formatada em LaTeX para a Monografia.
+# - `narx_equation.txt`: equação em formato texto legível.
+
+# %%
+# 1. Exporta narx_model.json
+terms_list = list(narx_model.selected_P_colnames_)
+theta_list = [float(t) for t in narx_model.theta_]
+
+model_json = {
+    'ny': int(narx_model.ny),
+    'nu': int(narx_model.nu),
+    'l': int(narx_model.poly_order_l),
+    'terms': terms_list,
+    'theta': theta_list,
+    'metrics': {
+        k: {'rmse': v['rmse'], 'mae': v['mae'], 'fit': v['fit'], 'r2': v['r2']}
+        for k, v in val_results.items()
+    }
 }
 
-caminho_json = os.path.join(current_dir, 'narx_model.json')
-with open(caminho_json, 'w') as f:
-    json.dump(model_data, f, indent=4)
+json_path = os.path.join(current_dir, 'narx_model.json')
+with open(json_path, 'w', encoding='utf-8') as f:
+    json.dump(model_json, f, indent=4)
+print(f"\n[OK] Modelo exportado: {json_path}")
 
-print(f"\nModel parameters exported to {caminho_json} successfully!")
-plt.show()
+# 2. Exporta narx_metrics.json
+metrics_json = {
+    k: {
+        'label': v['label'],
+        'rmse_deg': v['rmse'],
+        'mae_deg': v['mae'],
+        'fit_percent': v['fit'],
+        'r2_score': v['r2'],
+        'samples': len(v['t'])
+    }
+    for k, v in val_results.items()
+}
+metrics_path = os.path.join(current_dir, 'narx_metrics.json')
+with open(metrics_path, 'w', encoding='utf-8') as f:
+    json.dump(metrics_json, f, indent=4)
+print(f"[OK] Métricas exportadas: {metrics_path}")
+
+# 3. Exporta narx_equation.tex e narx_equation.txt
+eq_terms_latex = []
+eq_terms_txt = []
+
+for term, th in zip(terms_list, theta_list):
+    sign_tex = "+" if th >= 0 else "-"
+    val = abs(th)
+    
+    if term == 'constant':
+        eq_terms_latex.append(f"{sign_tex} {val:.4f}")
+        eq_terms_txt.append(f"{sign_tex} {val:.6f}")
+    else:
+        # Formata índices: y(k-1) -> y[k-1] ou y_{k-1}
+        t_tex = term.replace('y(k-', 'y[k-').replace('u(k-', 'u[k-').replace(')', ']')
+        eq_terms_latex.append(f"{sign_tex} {val:.4e} \\cdot {t_tex}" if val < 1e-3 else f"{sign_tex} {val:.4f} \\cdot {t_tex}")
+        eq_terms_txt.append(f"{sign_tex} {val:.6e} * {term}" if val < 1e-3 else f"{sign_tex} {val:.6f} * {term}")
+
+latex_equation = "\\hat{y}(k) = " + " ".join(eq_terms_latex).lstrip("+ ")
+txt_equation = "y_hat(k) = " + " ".join(eq_terms_txt).lstrip("+ ")
+
+tex_path = os.path.join(current_dir, 'narx_equation.tex')
+with open(tex_path, 'w', encoding='utf-8') as f:
+    f.write(f"% Equação NARX identificada via FROLS/ERR\n\\begin{{equation}}\n    {latex_equation}\n    \\label{{eq:narx_identificado}}\n\\end{{equation}}\n")
+print(f"[OK] Equação LaTeX exportada: {tex_path}")
+
+txt_path = os.path.join(current_dir, 'narx_equation.txt')
+with open(txt_path, 'w', encoding='utf-8') as f:
+    f.write(f"Modelo NARX Identificado:\n{txt_equation}\n\nTermos e Parâmetros:\n")
+    for i, (term, th) in enumerate(zip(terms_list, theta_list), 1):
+        f.write(f"{i:2d}. {term:<20s} : {th:+.8e}\n")
+print(f"[OK] Equação em texto exportada: {txt_path}")
+
+print("\nProcesso de identificação, validação e salvamento de gráficos concluído com sucesso!")

@@ -1,0 +1,326 @@
+@inproceedings{Alsmeier2024,
+   title={Imitation Learning of MPC with Neural Networks: Error Guarantees and Sparsification},
+   url={http://dx.doi.org/10.1109/CDC56724.2024.10886138},
+   DOI={10.1109/cdc56724.2024.10886138},
+   booktitle={2024 IEEE 63rd Conference on Decision and Control (CDC)},
+   publisher={IEEE},
+   author={Alsmeier, Hendrik and Theiner, Lukas and Savchenko, Anton and Mesbah, Ali and Findeisen, Rolf},
+   year={2024},
+   month=Dec, pages={4777–4782} }
+
+
+@article{mayne2000,
+title = {Constrained model predictive control: Stability and optimality},
+journal = {Automatica},
+volume = {36},
+number = {6},
+pages = {789-814},
+year = {2000},
+issn = {0005-1098},
+doi = {https://doi.org/10.1016/S0005-1098(99)00214-9},
+url = {https://www.sciencedirect.com/science/article/pii/S0005109899002149},
+author = {D.Q. Mayne and J.B. Rawlings and C.V. Rao and P.O.M. Scokaert},
+keywords = {Model predictive control, Stability, Optimality, Robustness},
+abstract = {Model predictive control is a form of control in which the current control action is obtained by solving, at each sampling instant, a finite horizon open-loop optimal control problem, using the current state of the plant as the initial state; the optimization yields an optimal control sequence and the first control in this sequence is applied to the plant. An important advantage of this type of control is its ability to cope with hard constraints on controls and states. It has, therefore, been widely applied in petro-chemical and related industries where satisfaction of constraints is particularly important because efficiency demands operating points on or close to the boundary of the set of admissible states and controls. In this review, we focus on model predictive control of constrained systems, both linear and nonlinear and discuss only briefly model predictive control of unconstrained nonlinear and/or time-varying systems. We concentrate our attention on research dealing with stability and optimality; in these areas the subject has developed, in our opinion, to a stage where it has achieved sufficient maturity to warrant the active interest of researchers in nonlinear control. We distill from an extensive literature essential principles that ensure stability and use these to present a concise characterization of most of the model predictive controllers that have been proposed in the literature. In some cases the finite horizon optimal control problem solved on-line is exactly equivalent to the same problem with an infinite horizon; in other cases it is equivalent to a modified infinite horizon optimal control problem. In both situations, known advantages of infinite horizon optimal control accrue.}
+}
+
+@article{bemporad2002,
+title = {The explicit linear quadratic regulator for constrained systems},
+journal = {Automatica},
+volume = {38},
+number = {1},
+pages = {3-20},
+year = {2002},
+issn = {0005-1098},
+doi = {https://doi.org/10.1016/S0005-1098(01)00174-1},
+url = {https://www.sciencedirect.com/science/article/pii/S0005109801001741},
+author = {Alberto Bemporad and Manfred Morari and Vivek Dua and Efstratios N. Pistikopoulos},
+keywords = {Piecewise linear controllers, Linear quadratic regulators, Constraints, Predictive control},
+abstract = {For discrete-time linear time invariant systems with constraints on inputs and states, we develop an algorithm to determine explicitly, the state feedback control law which minimizes a quadratic performance criterion. We show that the control law is piece-wise linear and continuous for both the finite horizon problem (model predictive control) and the usual infinite time measure (constrained linear quadratic regulation). Thus, the on-line control computation reduces to the simple evaluation of an explicitly defined piecewise linear function. By computing the inherent underlying controller structure, we also solve the equivalent of the Hamilton–Jacobi–Bellman equation for discrete-time linear constrained systems. Control based on on-line optimization has long been recognized as a superior alternative for constrained systems. The technique proposed in this paper is attractive for a wide range of practical problems where the computational complexity of on-line optimization is prohibitive. It also provides an insight into the structure underlying optimization-based controllers.}
+}
+
+
+@book{rawlings2017,
+  title={Model Predictive Control: Theory, Computation, and Design},
+  author={Rawlings, J.B. and Mayne, D.Q. and Diehl, M.},
+  isbn={9780975937730},
+  url={https://books.google.com.br/books?id=MrJctAEACAAJ},
+  year={2017},
+  publisher={Nob Hill Publishing}
+}
+
+
+@misc{bertsekas2024modelpredictivecontrolreinforcement,
+      title={Model Predictive Control and Reinforcement Learning: A Unified Framework Based on Dynamic Programming}, 
+      author={Dimitri P. Bertsekas},
+      year={2024},
+      eprint={2406.00592},
+      archivePrefix={arXiv},
+      primaryClass={eess.SY},
+      url={https://arxiv.org/abs/2406.00592}, 
+}
+
+@misc{david2021,
+      title={TensorFlow Lite Micro: Embedded Machine Learning on TinyML Systems}, 
+      author={Robert David and Jared Duke and Advait Jain and Vijay Janapa Reddi and Nat Jeffries and Jian Li and Nick Kreeger and Ian Nappier and Meghna Natraj and Shlomi Regev and Rocky Rhodes and Tiezhen Wang and Pete Warden},
+      year={2021},
+      eprint={2010.08678},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2010.08678}, 
+}
+
+@article{hertneck2018,
+   title={Learning an Approximate Model Predictive Controller With Guarantees},
+   volume={2},
+   ISSN={2475-1456},
+   url={http://dx.doi.org/10.1109/LCSYS.2018.2843682},
+   DOI={10.1109/lcsys.2018.2843682},
+   number={3},
+   journal={IEEE Control Systems Letters},
+   publisher={Institute of Electrical and Electronics Engineers (IEEE)},
+   author={Hertneck, Michael and Kohler, Johannes and Trimpe, Sebastian and Allgower, Frank},
+   year={2018},
+   month=July, pages={543–548} }
+
+@article{jiang2022,
+    AUTHOR = {Jiang, Bailun and Li, Boyang and Zhou, Weifeng and Lo, Li-Yu and Chen, Chih-Keng and Wen, Chih-Yung},
+    TITLE = {Neural Network Based Model Predictive Control for a Quadrotor UAV},
+    JOURNAL = {Aerospace},
+    VOLUME = {9},
+    YEAR = {2022},
+    NUMBER = {8},
+    ARTICLE-NUMBER = {460},
+    URL = {https://www.mdpi.com/2226-4310/9/8/460},
+    ISSN = {2226-4310},
+    ABSTRACT = {A dynamic model that considers both linear and complex nonlinear effects extensively benefits the model-based controller development. However, predicting a detailed aerodynamic model with good accuracy for unmanned aerial vehicles (UAVs) is challenging due to their irregular shape and low Reynolds number behavior. This work proposes an approach to model the full translational dynamics of a quadrotor UAV by a feedforward neural network, which is adopted as the prediction model in a model predictive controller (MPC) for precise position control. The raw flight data are collected by tracking various pre-designed trajectories with PX4 autopilot. The neural network model is trained to predict the linear accelerations from the flight log. The neural network-based model predictive controller is then implemented with the automatic control and dynamic optimization toolkit (ACADO) to achieve real-time online optimization. Software in the loop (SITL) simulation and indoor flight experiments are conducted to verify the controller performance. The results indicate that the proposed controller leads to a 40% reduction in the average trajectory tracking error compared to the traditional PID controller.},
+    DOI = {10.3390/aerospace9080460}
+}
+
+
+
+@article{karg2020,
+   title={Efficient Representation and Approximation of Model Predictive Control Laws via Deep Learning},
+   volume={50},
+   ISSN={2168-2275},
+   url={http://dx.doi.org/10.1109/TCYB.2020.2999556},
+   DOI={10.1109/tcyb.2020.2999556},
+   number={9},
+   journal={IEEE Transactions on Cybernetics},
+   publisher={Institute of Electrical and Electronics Engineers (IEEE)},
+   author={Karg, Benjamin and Lucia, Sergio},
+   year={2020},
+   month=Sept, pages={3866–3878} }
+
+@article{bennett1996,
+  author  = {Bennett, S.},
+  title   = {A Brief History of Automatic Control},
+  journal = {IEEE Control Systems Magazine},
+  year    = {1996},
+  month   = {June},
+}
+
+@article{li2024,
+   title={Learning Model Predictive Control for Quadrotors},
+   url={http://dx.doi.org/10.1109/ICRA46639.2022.9812077},
+   DOI={10.1109/icra46639.2022.9812077},
+   booktitle={2022 International Conference on Robotics and Automation (ICRA)},
+   publisher={IEEE},
+   author={Li, Guanrui and Tunchez, Alex and Loianno, Giuseppe},
+   year={2022},
+   month=May, pages={5872–5878} }
+
+
+
+@article{nguyen2020,
+  author       = {Huan Nguyen and
+                  Mina Kamel and
+                  Kostas Alexis and
+                  Roland Siegwart},
+  title        = {Model Predictive Control for Micro Aerial Vehicles: {A} Survey},
+  journal      = {CoRR},
+  volume       = {abs/2011.11104},
+  year         = {2020},
+  url          = {https://arxiv.org/abs/2011.11104},
+  eprinttype   = {arXiv},
+  eprint       = {2011.11104},
+  timestamp    = {Mon, 16 Feb 2026 17:21:01 +0100},
+  biburl       = {https://dblp.org/rec/journals/corr/abs-2011-11104.bib},
+  bibsource    = {dblp computer science bibliography, https://dblp.org}
+}
+
+@misc{sanyal2024,
+      title={RAMP-Net: A Robust Adaptive MPC for Quadrotors via Physics-informed Neural Network}, 
+      author={Sourav Sanyal and Kaushik Roy},
+      year={2023},
+      eprint={2209.09025},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2209.09025}, 
+}
+
+@misc{reiter2025synthesismodelpredictivecontrol,
+      title={Synthesis of Model Predictive Control and Reinforcement Learning: Survey and Classification}, 
+      author={Rudolf Reiter and Jasper Hoffmann and Dirk Reinhardt and Florian Messerer and Katrin Baumgärtner and Shamburaj Sawant and Joschka Boedecker and Moritz Diehl and Sebastien Gros},
+      year={2025},
+      eprint={2502.02133},
+      archivePrefix={arXiv},
+      primaryClass={eess.SY},
+      url={https://arxiv.org/abs/2502.02133}, 
+}
+
+
+@manual{invensense2021icm20948,
+  title        = {{ICM-20948} World's Lowest Power 9-Axis {MEMS}
+                  {MotionTracking} Device -- Datasheet {DS-000189}
+                  Rev. 1.5},
+  author       = {{InvenSense, a TDK Group Company}},
+  year         = {2021},
+  address      = {San Jose, CA},
+  url          = {https://invensense.tdk.com/download-resource/ds-000189-icm-20948-datasheet}
+}
+
+
+@manual{strm0390f446,
+  organization = {STMicroelectronics},
+  title        = {RM0390 Reference manual: STM32F446xx advanced Arm-based 32-bit MCUs},
+  year         = {2026},
+  note         = {Rev 9},
+  url          = {https://www.st.com/resource/en/reference_manual/rm0390-stm32f446xx-advanced-armbased-32bit-mcus-stmicroelectronics.pdf}
+}
+
+
+@INPROCEEDINGS{job2015,
+  author={Mila Mary Job and Subha Hency Jose, P.},
+  booktitle={2015 International Conference on Innovations in Information, Embedded and Communication Systems (ICIIECS)}, 
+  title={Modeling and control of mechatronic aeropendulum}, 
+  year={2015},
+  volume={},
+  number={},
+  pages={1-5},
+  keywords={Potentiometers;Mathematical model;Damping;Propellers;Silicon compounds;Acceleration;Gravity;Aeropendulum;PID;Linear Quadratic Regulator(LQR)},
+  doi={10.1109/ICIIECS.2015.7192959},
+  url={https://ieeexplore.ieee.org/document/7192959}}
+
+
+@book{ljung1999,
+    title={System Identification: Theory for the User},
+  author={Ljung, Lennart},
+  edition={2nd},
+  year={1999},
+  publisher={Prentice Hall PTR},
+  address={Upper Saddle River, NJ},
+  isbn={978-0136566953}
+}
+
+
+@misc{mathworks_nlgreyest,
+  author       = {{The MathWorks Inc.}},
+  title        = {nlgreyest - Estimate nonlinear grey-box model parameters},
+  year         = {2026},
+  url          = {https://www.mathworks.com/help/ident/ref/nlgreyest.html},
+  note         = {Acessado em: 17 de maio de 2026}
+}
+
+
+@article{andersson2019,
+author = {Andersson, Joel and Gillis, Joris and Horn, Greg and Rawlings, James and Diehl, Moritz},
+year = {2018},
+month = {07},
+pages = {},
+title = {CasADi: a software framework for nonlinear optimization and optimal control},
+volume = {11},
+journal = {Mathematical Programming Computation},
+doi = {10.1007/s12532-018-0139-4}
+}
+
+
+@misc{paszke2019,
+      title={PyTorch: An Imperative Style, High-Performance Deep Learning Library}, 
+      author={Adam Paszke and Sam Gross and Francisco Massa and Adam Lerer and James Bradbury and Gregory Chanan and Trevor Killeen and Zeming Lin and Natalia Gimelshein and Luca Antiga and Alban Desmaison and Andreas Köpf and Edward Yang and Zach DeVito and Martin Raison and Alykhan Tejani and Sasank Chilamkurthy and Benoit Steiner and Lu Fang and Junjie Bai and Soumith Chintala},
+      year={2019},
+      eprint={1912.01703},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/1912.01703}, 
+}
+
+@book{khalil2002,
+  title={Nonlinear Systems},
+  author={Khalil, H.K.},
+  isbn={9780130673893},
+  lccn={95045804},
+  series={Pearson Education},
+  year={2002},
+  publisher={Prentice Hall}
+}
+
+
+@manual{stm32,
+  title        = {UM1724 User Manual: STM32 Nucleo-64 boards (MB1136)},
+  author       = {{STMicroelectronics}},
+  revision     = {14},
+  year         = {2024},
+  month        = {January},
+  url          = {https://www.st.com/}
+}
+
+
+@manual{stmu2526,
+  title        = {UM2526 User manual: Getting started with X-CUBE-AI Expansion Package for Artificial Intelligence (AI)},
+  author       = {{STMicroelectronics}},
+  revision     = {8},
+  year         = {2022},
+  url          = {https://www.st.com/}
+}
+
+@inproceedings{lima2025,
+  author    = {de Lima, Lucas Colomera and Jos{\'e}, Ismael Abdala and de Paula, Pedro Gabriel and de Almeida, Edo Walfrido and Sim{\~o}es, Diego Barreto Pedroso and Nepomuceno, Leonardo Murilo and Ayala, Helon Vicente Hultmann},
+  title     = {Quarter Drone Bench for System Identification and Control},
+  booktitle = {28th ABCM International Congress of Mechanical Engineering (COBEM 2025)},
+  year      = {2025},
+  address   = {Curitiba, PR, Brazil},
+  organization = {ABCM}
+}
+
+
+
+@misc{helonayala_ms,
+   author = {Ayala, Helon Vicente Hultmann},
+   title  = {Multiple shooting -- SYSID},
+   year   = {2025},
+   url    = {https://helonayala.github.io/sysid/multiple_shooting.html},
+   note   = {Acesso em: 28 mai. 2026}
+ }
+
+
+
+@book{astrom1995,
+  title     = {PID Controllers: Theory, Design, and Tuning},
+  author    = {{\AA}str{\"o}m, Karl Johan and H{\"a}gglund, Tore},
+  edition   = {2nd},
+  year      = {1995},
+  publisher = {Instrument Society of America},
+  address   = {Research Triangle Park, NC},
+  isbn      = {978-1556175169}
+}
+
+@article{chen1989,
+  title     = {Orthogonal least squares methods and their application to non-linear system identification},
+  author    = {Chen, S. and Billings, S. A. and Luo, W.},
+  journal   = {International Journal of Control},
+  volume    = {50},
+  number    = {5},
+  pages     = {1873--1896},
+  year      = {1989},
+  publisher = {Taylor \& Francis}
+}
+
+@book{billings2013,
+  title     = {Nonlinear System Identification: NARMAX Methods in the Time, Frequency, and Spatio-Temporal Domains},
+  author    = {Billings, Stephen A.},
+  year      = {2013},
+  publisher = {John Wiley \& Sons},
+  address   = {Chichester, UK}
+}
+

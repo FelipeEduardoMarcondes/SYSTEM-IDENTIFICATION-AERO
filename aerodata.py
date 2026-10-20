@@ -44,39 +44,60 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False, start_idx=0,
     base_url = f"https://raw.githubusercontent.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO/{branch}/"
     
     urls = {
-        "multiseno": "data/experimentos/sysid_multiseno_validation_ref_0909_14-42.csv",
-        "degraus": "data/experimentos/degraus_0908_23-01.csv",
-        "chirp": "data/experimentos/chirp-60-amp50_0908_23-09.csv",
-        "mpc_100hz": "data/experimentos/referencia_mpc_0920_19-19.csv",
-        "multiseno_2": "data/experimentos/multi-seno-60-030Hz_0908_23-13.csv"
+        "multiseno": "sysid_multiseno_validation_ref_0909_14-42.csv",
+        "degraus": "degraus_0908_23-01.csv",
+        "chirp": "chirp-60-amp50_0908_23-09.csv",
+        "mpc_100hz": "referencia_mpc_0920_19-19.csv",
+        "multiseno_2": "multi-seno-60-030Hz_0908_23-13.csv"
     }
     
-    # Determina o caminho relativo esperado do arquivo
-    rel_path = ""
-    url = ""
-    if dataset_name in urls:
-        rel_path = urls[dataset_name]
-        url = base_url + rel_path
-    elif dataset_name.startswith("http"):
-        url = dataset_name
-    elif dataset_name.endswith(".csv"):
-        if dataset_name.startswith("data/"):
-            rel_path = dataset_name
-            url = base_url + rel_path
-        else:
-            rel_path = "data/experimentos/" + dataset_name
-            url = base_url + rel_path
-    else:
-        raise ValueError(f"Dataset nao encontrado. Escolha um destes: {list(urls.keys())}\n"
-                         "Ou passe o nome do arquivo exato (ex: 'ensaio.csv') ou a URL.")
+    repo_root = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(repo_root, "data", "experimentos", "coleta_dados")
     
-    try:
-        local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), rel_path) if rel_path else ""
+    normalized_name = dataset_name.replace('\\', '/')
+    local_path = ""
+    url = ""
+    
+    # Se for uma URL remota direta
+    if normalized_name.startswith("http://") or normalized_name.startswith("https://"):
+        url = normalized_name
+    else:
+        # Se for um dos apelidos tabelados
+        rel_target = urls.get(normalized_name, normalized_name)
+        
+        # Remove prefixos redundantes caso o usuário tenha passado o caminho relativo completo
+        for prefix in ["data/experimentos/coleta_dados/", "data/experimentos/", "coleta_dados/"]:
+            if rel_target.startswith(prefix):
+                rel_target = rel_target[len(prefix):]
+                break
+                
+        # 1. Candidato direto dentro de data/experimentos/coleta_dados/
+        candidate = os.path.join(data_dir, rel_target)
+        if os.path.exists(candidate) and os.path.isfile(candidate):
+            local_path = candidate
+        elif os.path.isabs(dataset_name) and os.path.exists(dataset_name):
+            local_path = dataset_name
+        else:
+            # 2. Busca recursiva EXCLUSIVAMENTE dentro de data/experimentos/coleta_dados
+            base_fname = os.path.basename(rel_target)
+            for root_folder, _, files in os.walk(data_dir):
+                if base_fname in files:
+                    local_path = os.path.join(root_folder, base_fname)
+                    break
+        
+        # URL remota no GitHub baseada na pasta canônica
         if local_path and os.path.exists(local_path):
-            print(f"Carregando dataset '{dataset_name}' localmente...")
+            rel_github = os.path.relpath(local_path, repo_root).replace('\\', '/')
+        else:
+            rel_github = f"data/experimentos/coleta_dados/{rel_target}"
+        url = base_url + rel_github
+
+    try:
+        if local_path and os.path.exists(local_path):
+            print(f"Carregando dataset '{dataset_name}' localmente ({local_path})...")
             df = pd.read_csv(local_path, on_bad_lines='skip')
         else:
-            print(f"Baixando dataset '{dataset_name}' do GitHub...")
+            print(f"Baixando dataset '{dataset_name}' do GitHub ({url})...")
             df = pd.read_csv(url, on_bad_lines='skip')
     except Exception as e:
         raise RuntimeError(f"Erro ao carregar '{dataset_name}': {e}")
