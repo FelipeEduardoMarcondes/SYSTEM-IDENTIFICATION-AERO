@@ -162,154 +162,161 @@ Para o formalismo do NMPC, é necessário representar o sistema na forma de  esp
 \noindent forma exigida pelo NMPC para propagar os estados ao longo do horizonte de predição \cite{mayne2000}. Os parâmetros geométricos e de massa ($m_1$, $m_2$,  $L_1$ e $L_2$) são medidos fisicamente e fixados no modelo. Os parâmetros $J$,  $b$ e a constante de empuxo $K_\tau$, assumindo $\tau(u) = K_\tau u$, não são  diretamente mensuráveis de forma isolada e são estimados por identificação  experimental, conforme descrito nas subseções seguintes.
 
 % ------------------------------------------------------------
-\subsection{Ensaios no Sistema}
- \label{subsec:ensaios}
+\subsection{Ensaios no Sistema e Estratégia de Excitação}
+\label{subsec:ensaios}
 
-Os ensaios de identificação são conduzidos com o aeropêndulo operando em malha fechada, com o controlador PID (Seção~\ref{sec:pid}) ativo para estabilizar a planta e garantir que o sistema percorra o espaço de operação de forma segura. O STM32 é responsável pela execução do PID, pela geração dos sinais de referência e pela aquisição dos dados de saída em tempo real via UART.
- 
-\subsubsection{Sinais de Excitação}
+Os ensaios de identificação foram conduzidos com o aeropêndulo operando obrigatoriamente em malha fechada, estabilizado por um controlador PID preliminar embarcado no microcontrolador STM32 (Seção~\ref{sec:pid}). A realimentação em malha fechada constituiu um requisito mandatório de segurança operacional: dada a natureza subamortecida da planta e a ausência de batentes amortecidos, ensaios em malha aberta conduziriam o braço do pêndulo a colisões destrutivas contra os limites físicos da bancada ou a regimes de saturação irreversível do atuador.
 
-Para garantir uma cobertura adequada da dinâmica do sistema em todo o envelope operacional, são empregados três tipos de sinais de excitação complementares, todos aplicados como referência de posição ao controlador PID embarcado, que opera em malha fechada estabilizando a planta durante a coleta de dados.
+O microcontrolador STM32 Nucleo-F446RE foi responsável pela execução determinística da lei de controle PID a uma taxa de amostragem de $f_s = 100$\,Hz ($T_s = 10$\,ms), pela injeção sincronizada dos sinais de referência dinâmicos e pelo envio contínuo da telemetria serial em tempo real para a estação de processamento em terra.
+
+\subsubsection{Riqueza Espectral e Seleção dos Sinais de Excitação}
+
+A identificação precisa da planta exige sinais de excitação com elevada riqueza espectral (\textit{persistently exciting}), capazes de estimular simultaneamente os múltiplos fenômenos físicos não-lineares acoplados: o empuxo aerodinâmico puramente quadrático do conjunto motor-hélice ($\tau(u) \propto \omega^2 \propto u^2$), a dinâmica de atraso de transporte eletromecânico e filtragem inercial, o amortecimento viscoso e a forte não-linearidade estática gravitacional descrita pelo termo $(m_1 L_1 - m_2 L_2)g\sin(\theta)$.
+
+Para assegurar a identificabilidade desses efeitos em todo o envelope físico, estabeleceram-se as seguintes premissas metodológicas de projeto dos sinais:
+
+\begin{enumerate}
+    \item \textbf{Frequência máxima de excitação ($f_{\max} = 0{,}50$\,Hz):} A largura de banda mecânica do aeropêndulo é dominada por polos lentos associados à inércia da haste e aos tempos de subida do empuxo aerodinâmico. Fixou-se, portanto, a frequência máxima de excitação em $f_{\max} = 0{,}50$\,Hz. Frequências superiores a esse patamar não acrescentam informação dinâmica relevante sobre o movimento de corpo rígido do aeropêndulo e induziriam vibrações estruturais parasitas nas torres de sustentação em MDF e nos suportes poliméricos em PLA, além de provocar regimes turbulentos espúrios na esteira da hélice. Em relação à frequência de amostragem de $100$\,Hz, a banda de $0{,}50$\,Hz opera com uma razão de superamostragem de 100:1, garantindo excelente resolução temporal na captura dos transitórios.
+    
+    \item \textbf{Dois níveis de estabilização em malha fechada ($45^\circ$ e $60^\circ$):} Os ensaios foram realizados em torno de dois pontos de equilíbrio centrais: $\theta_0 = 45^\circ$ e $\theta_0 = 60^\circ$. A operação em dois patamares distintos é indispensável para cobrir diferentes inclinações operacionais da planta, onde o ganho estático requerido do motor e as derivadas do torque gravitacional diferem substancialmente. Em $45^\circ$, o sistema opera na região de máxima sensibilidade gravitacional ($\frac{d}{d\theta}\sin\theta = \cos 45^\circ \approx 0{,}707$), enquanto em $60^\circ$ o empuxo contínuo exigido para sustentação estática é cerca de $22\%$ superior, alterando o ponto de trabalho do propulsor.
+    
+    \item \textbf{Faixa total definida de referência ($0^\circ$ a $120^\circ$):} O envelope total de rastreamento estipulado para o projeto compreende o intervalo de $0^\circ$ (posição de repouso vertical com o motor inferior desativado) até $120^\circ$ (inclinação acentuada acima da horizontal). Em torno do nível de $45^\circ$, os sinais dinâmicos impõem variações de até $\pm 45^\circ$, cobrindo o intervalo de $0^\circ$ a $90^\circ$. Em torno do nível de $60^\circ$, os sinais atingem excursões de até $\pm 60^\circ$, percorrendo de $0^\circ$ a $120^\circ$, de modo a excitar toda a não-linearidade do envelope de voo.
+\end{enumerate}
+
+Para cumprir tais requisitos, foram implementadas três classes de sinais de referência:
 
 \begin{itemize}
-
-    \item \textbf{Multi-seno com fases aleatórias:} sinal utilizado como excitação principal para identificação dinâmica. O sinal é construído como uma soma de $d$ senoides de amplitudes iguais, distribuídas uniformemente até a frequência máxima $f_\text{max}$, com fases $\varphi_k$ sorteadas independentemente em $[0, 2\pi)$:
-    %
+    \item \textbf{Multi-seno com fases aleatórias:} Formado pela sobreposição harmônica de $d$ senoides com amplitude homogênea distribuídas uniformemente no espectro até $f_{\max} = 0{,}50$\,Hz, com fases $\varphi_k$ sorteadas independentemente em $[0, 2\pi)$:
     \begin{equation}
-        u(t) = \sum_{k=1}^{d} a\cos\!\bigl(\omega_k t + \varphi_k\bigr), \qquad \omega_k = \frac{2\pi k}{M T_s},
+        r(t) = \theta_0 + \sum_{k=1}^{d} A_k \cos\!\bigl(2\pi f_k t + \varphi_k\bigr), \qquad f_k = \frac{k}{d} f_{\max}.
     \end{equation}
-    %
-    onde $M$ é o número de amostras de um período e $T_s$ o período de amostragem. A escolha de fases aleatórias produz fator de crista reduzido em relação ao caso com fases em zero \cite{ljung1999}. O sinal resultante é persistentemente excitante de ordem $2d$, distribui a potência de forma uniforme no espectro até $f_\text{max}$ e excita continuamente toda a faixa de amplitude operacional.
+    A aleatorização das fases minimiza o fator de crista temporal, permitindo injetar alta densidade de potência sem provocar saturação nos atuadores \cite{ljung1999}.
     
-    \item \textbf{\textit{Swept sine}} sinal senoidal cuja frequência varia linearmente de $f_1$ a $f_2 = f_\text{max}$ ao longo do período de ensaio \cite{ljung1999}. Apresenta fator de crista idêntico ao de uma senoide pura ($\sqrt{2}$) e permite inspecionar visualmente a variação de amplitude e fase da resposta ao longo da faixa de frequências, complementando a análise espectral do multi-seno.
+    \item \textbf{\textit{Swept sine} (Chirp):} Senoide com frequência continuamente modulada de forma linear de $f_1 = 0{,}05$\,Hz até $f_2 = f_{\max} = 0{,}50$\,Hz. O ensaio varre de forma contínua o espectro em amplitudes controladas ($\pm 25^\circ$, $\pm 35^\circ$, $\pm 40^\circ$, $\pm 45^\circ$ e $\pm 60^\circ$), permitindo avaliar o comportamento dinâmico e o atraso de fase em função da frequência e amplitude.
     
-    \item \textbf{Sequência de degraus de amplitude variada:} degraus com amplitudes sorteadas aleatoriamente em $[-A_\text{max},\, A_\text{max}]$, cada um com duração fixa $T_\text{deg}$. Este sinal é reservado exclusivamente ao conjunto de validação, pois seu perfil é análogo aos comandos aplicados durante a operação do controlador em rastreamento de referência \cite{ljung1999}, e avalia a capacidade de generalização do modelo para entradas diferentes das utilizadas no ajuste dos parâmetros.
-
+    \item \textbf{Sequências de degraus (APRBS e múltiplos patamares):} Sinais de amplitude comutada aleatória (\textit{Amplitude Pseudo-Random Binary Sequence} -- APRBS), além de séries de degraus com patamares de amplitude variada. Esses sinais provocam saltos abruptos seguidos de trechos estacionários, estimulando os modos transitórios de aceleração e possibilitando a verificação direta do ganho em regime permanente.
 \end{itemize}
 
-Em todos os casos, o sinal de referência é enviado ao controlador PID embarcado, que atua sobre o ESC via PWM, de modo que os pares $(\theta(t),\, u(t))$ coletados refletem a dinâmica do sistema em operação real em malha fechada.
+\subsubsection{Critério Criterioso de Divisão dos Dados: Treinamento vs. Validação}
+\label{subsec:divisao_dados}
 
-\subsubsection{Procedimento de Coleta de Dados}
+Para garantir que o modelo identificado possua alta capacidade de generalização e não sofra de sobreajuste (\textit{overfitting}) a um padrão temporal particular, adotou-se um critério sistemático de particionamento dos dados experimentais coletados na bancada:
 
-Durante os ensaios, os dados serão transmitidos em tempo real pela interface USART2 do STM32 a uma taxa de 500.000\,baud para um computador. Cada quadro de telemetria conterá o instante de tempo, o sinal de controle $u(t)$ (duty cycle PWM) e o ângulo estimado $\theta(t)$, obtidos respectivamente da IMU ICM-20948. Os dados serão capturados e armazenados via script Python com a biblioteca \texttt{pyserial} e posteriormente importados para pré-processamento e identificação. O pseudocódigo \ref{alg:aquisicao_dados} registra a estrutura geral.
+\begin{itemize}
+    \item \textbf{Conjunto de Treinamento dos Modelos:} Foram selecionados exclusivamente os ensaios que apresentavam a \textbf{maior frequência} ($f_{\max} = 0{,}50$\,Hz) e as \textbf{maiores amplitudes} angulares em ambos os níveis de equilíbrio. Especificamente, o conjunto de treinamento é composto por 6 ensaios fundamentais:
+    \begin{enumerate}
+        \item Multisseno em $45^\circ$ com frequência máxima de $0{,}50$\,Hz;
+        \item Chirp em $45^\circ$ com amplitude de $\pm 45^\circ$ (excursão de $0^\circ$ a $90^\circ$);
+        \item Sequência APRBS em $45^\circ$;
+        \item Multisseno em $60^\circ$ com frequência máxima de $0{,}50$\,Hz;
+        \item Chirp em $60^\circ$ com amplitude de $\pm 60^\circ$ (excursão de $0^\circ$ a $120^\circ$);
+        \item Sequência APRBS em $60^\circ$.
+    \end{enumerate}
+    Ao concentrar os ensaios de maior largura de banda e amplitude no treinamento (totalizando mais de 78.000 amostras concatenadas), assegura-se que o algoritmo de estimação seja exposto às condições dinâmicas mais severas e às máximas deflexões não-lineares da bancada.
+    
+    \item \textbf{Conjunto de Validação Independente e Testes \textit{Free-Run}:} Todos os ensaios restantes coletados na bancada física foram estritamente reservados para validação cruzada independente. Este conjunto reúne sinais com menores frequências de excitação ($0{,}30$\,Hz e $0{,}40$\,Hz), menores amplitudes ($\pm 25^\circ$, $\pm 35^\circ$, $\pm 40^\circ$) e perfis distintos de degraus estacionários, tanto em $45^\circ$ quanto em $60^\circ$. A avaliação nesses dados testa a capacidade do modelo de interpolar dinâmicas, reproduzir fielmente a resposta em frequências intermediárias e manter predições estáveis em simulação livre (\textit{free-run}) recursiva de longo prazo sem divergência.
+\end{itemize}
+
+\subsubsection{Procedimento Experimental de Coleta de Dados}
+
+Durante os ensaios, os dados foram transmitidos em tempo real pela interface USART2 do microcontrolador STM32 Nucleo-F446RE a uma taxa de comunicação de 500.000\,baud para o computador hospedeiro. Cada quadro de telemetria transmitido continha o carimbo de tempo determinístico (\textit{timestamp} com resolução de microssegundos), o sinal de referência $r(t)$, a ação de controle de saída $u(t)$ calculada pelo PID (expressa em porcentagem de \textit{duty cycle} do PWM no ESC) e o ângulo $\theta(t)$ estimado pelo filtro complementar a partir dos eixos do acelerômetro e giroscópio da IMU ICM-20948.
+
+Os pacotes seriais foram capturados por um script Python dedicado utilizando a biblioteca \texttt{pyserial}, armazenados em arquivos estruturados de formato CSV e submetidos à rotina de pré-processamento, na qual os primeiros 10\,s (partida do motor e acomodação da comunicação) e os últimos 13\,s (desativação e frenagem) foram aparados, preservando os trechos estacionários de regime contínuo. O Algoritmo~\ref{alg:aquisicao_dados} sintetiza a lógica do laço em tempo real executada no microcontrolador durante as coletas.
 
 \begin{algorithm}[H]
-\caption{Ciclo de Controle e Aquisição de Dados do IMU}
+\caption{Ciclo Determinístico de Amostragem e Telemetria no STM32}
 \begin{algorithmic}[1]
 \label{alg:aquisicao_dados}
 \Procedure{Setup}{}
-    \State Inicializar IMU, ESC e porta Serial
-    \State Calibrar offset do giroscópio
+    \State Inicializar periféricos (TIM, I$^2$C no modo Fast 400\,kHz, UART a 500\,kbaud, PWM a 50\,Hz)
+    \State Calibrar offsets de bias do giroscópio da IMU ICM-20948 em repouso
+    \State Inicializar estados internos do filtro complementar e integrador do PID
 \EndProcedure
 
 \Statex
-\Procedure{Loop}{}
-    \State Aguardar comando ``START'' com a sequência de degraus
+\Procedure{Loop Amostragem Determinística}{}
+    \State Aguardar comando de sincronização de ensaio via UART
+    \State $t_{\text{inicio}} \gets \text{obterMicros()}$
 
-    \State $tempoInicio \gets \text{obterTempoAtual()}$
-    \State $tempoDecorrido \gets 0$
+    \While{$\text{ensaioAtivo}$}
+        \State Sincronizar com período base do Timer de hardware ($T_s = 10\,\text{ms} \to 100\,\text{Hz}$)
+        \State $t_{\text{atual}} \gets \text{obterMicros()} - t_{\text{inicio}}$
 
-    \While{$tempoDecorrido < duracaoTotal$}
-        \State Aguardar próximo instante de amostragem ($100\,\text{Hz} \to 10\,\text{ms}$)
-
-        \State $degrauAtual \gets \text{obter degrau da sequência para } tempoDecorrido$
-        \State Aplicar $degrauAtual$ como referência ao controlador PID
-
-        \State Ler acelerômetro e giroscópio do IMU
-        \State Calcular ângulo pelo filtro complementar
-
-        \State $timestamp \gets \text{obterTempoAtual()}$
-        \State Enviar $(timestamp, \text{ângulo}, degrauAtual)$ pela porta serial
-
-        \State $tempoDecorrido \gets \text{obterTempoAtual()} - tempoInicio$
+        \State Atualizar referência angular dinâmica: $\theta_{\text{ref}} \gets \text{avaliarSinalExcitacao}(t_{\text{atual}})$
+        \State Ler acelerômetro ($a_x, a_z$) e giroscópio ($\omega_y$) da IMU via I$^2$C DMA
+        \State Estimar ângulo atual $\theta(k)$ via filtro complementar de fusão sensorial
+        \State Calcular esforço de controle $u(k) \gets \text{PID}(\theta_{\text{ref}},\, \theta(k))$ com saturação $[0,\, 100]\%$
+        \State Atualizar comparador de captura do Timer de PWM para o ESC
+        \State Enviar pacote binário de telemetria $(t_{\text{atual}},\, \theta(k),\, \theta_{\text{ref}},\, u(k))$ via UART DMA
     \EndWhile
 
-    \State Parar motor ($ESC \gets \text{neutro}$)
+    \State Desativar propulsão ($u \gets 0\%$) e aguardar parada mecânica
 \EndProcedure
 \end{algorithmic}
 \end{algorithm}
 
-
-\subsubsection{Divisão dos Dados}
-\label{subsec:divisao_dados}
-
-Os experimentos são organizados em três conjuntos cronologicamente
-distintos: o ensaio com multi-seno é destinado exclusivamente à
-identificação, o ensaio com degraus de amplitude variada é reservado para a validação do modelo estimado, e o \textit{swept sine} é utilizado como caracterização auxiliar em frequência. Essa separação garante que o modelo seja avaliado em condições genuinamente diferentes das utilizadas no ajuste dos parâmetros \cite{ljung1999}.
-
 % ------------------------------------------------------------
-\subsection{Método de Identificação por \textit{Multiple Shooting}}
-\label{subsec:multiple_shooting}
+\subsection{Estrutura do Modelo NARX Polinomial e Algoritmo FROLS/ERR}
+\label{subsec:narx_frols}
 
-A identificação paramétrica é realizada pelo método \textit{grey-box} não-linear 
-via \textit{multiple shooting}. O vetor de parâmetros a estimar é 
-$\hat{\theta} = [J,\, b,\, K_\tau]^\top$, enquanto os parâmetros geométricos e 
-de massa ($m_1$, $m_2$, $L_1$ e $L_2$) são medidos fisicamente e fixados no 
-modelo para reduzir o espaço de busca e garantir a observabilidade do sistema.
+Embora as equações diferenciais da física clássica~\eqref{eq:dinamica} forneçam a interpretação qualitativa das forças atuantes, a representação discreta não-linear via modelo NARX (\textit{Nonlinear AutoRegressive with eXogenous inputs}) foi a formulação adotada para sintetizar o preditor utilizado no Controle Preditivo Não-Linear (NMPC) e na validação em \textit{Software-in-the-Loop} (SIL). Essa escolha decorre de sua capacidade de representar com precisão não-linearidades estáticas e dinâmicas arbitrárias, acoplamentos cruzados de transporte e características de amortecimento sem a exigência de integração numérica contínua em malha aberta, computacionalmente proibitiva em hardware restrito.
 
-A implementação do otimizador é realizada em Python, utilizando o framework JAX  para diferenciação automática e a biblioteca Diffrax para a solução numérica  diferenciável das equações diferenciais ordinárias \cite{helonayala_ms}. O  problema de programação não-linear (NLP) resultante é resolvido pelo método  SLSQP via \texttt{scipy.optimize.minimize}, com gradientes e jacobianos  calculados automaticamente pelo JAX, eliminando a necessidade de diferenciação  numérica por diferenças finitas.
-
-\subsubsection*{Formulação do Problema de Otimização}
-
-Considera-se o sistema descrito pela ODE
+O modelo NARX polinomial discreto de entrada e saída única (SISO) mapeia a predição da saída angular futura $\hat{y}(k)$ como uma função polinomial expansível de saídas passadas e entradas passadas:
 \begin{equation}
-    \dot{x}(t) = f\!\left(x(t),\, u(t),\, \hat{\theta}\right),
-    \label{eq:ode_id}
+    \hat{y}(k) = F\!\left(y(k-1),\,\ldots,\,y(k-n_y),\; u(k-1),\,\ldots,\,u(k-n_u)\right),
+    \label{eq:narx_geral}
 \end{equation}
-\noindent onde $f(\cdot)$ é definida pela equação de movimento~\eqref{eq:estadonl} e $x = [\theta,\;\dot{\theta}]^\top$. Dado o conjunto de medições $x^m(t_k)$ nos instantes discretos $t_k$, o objetivo é encontrar $\hat{\theta}$ que minimize a discrepância entre a predição do modelo e as observações.
-
-O horizonte de tempo $[t_0, t_f]$, contendo $N$ instantes de amostragem, é dividido em $M$ intervalos não sobrepostos. Para cada intervalo $i \in \{0, 1, \ldots, M-1\}$, introduz-se uma variável de estado inicial local $s_i$. O conjunto completo de variáveis de decisão é
+\noindent onde $n_y$ e $n_u$ são as ordens de atraso temporal na saída e na entrada, respectivamente. A representação linear-nos-parâmetros assume a forma:
 \begin{equation}
-    \mathcal{X} = \left\{\hat{\theta},\; s_0,\; s_1,\; \ldots,\; s_{M-1}\right\}.
+    \hat{y}(k) = \sum_{m=1}^{M} \theta_m p_m(k),
+    \label{eq:narx_linear_parametros}
 \end{equation}
+\noindent em que $p_m(k)$ são os monômios ou regressores formados por combinações de potências e produtos cruzados dos termos autorregressivos $y(k-i)$ e exógenos $u(k-j)$ até um grau de não-linearidade polinomial $\ell$, $\theta_m$ são os coeficientes constantes a estimar e $M$ denota o número total de regressores candidatos.
 
-A função objetivo minimiza a soma dos erros quadráticos entre a predição do modelo em cada intervalo e as medições correspondentes:
-\begin{equation}
-    \min_{\mathcal{X}}\;
-    \sum_{i=0}^{M-1}\;\sum_{k \in \mathcal{K}_i}
-    \left\|\hat{x}(t_k;\, s_i,\, \hat{\theta}) - x^m(t_k)\right\|^2,
-    \label{eq:obj_ms}
-\end{equation}
-\noindent onde $\mathcal{K}_i$ é o conjunto de índices temporais pertencentes ao $i$-ésimo intervalo e $\hat{x}(t_k;\, s_i,\, \hat{\theta})$ é o estado predito pelo modelo integrando numericamente a ODE~\eqref{eq:ode_id} a partir do estado inicial $s_i$.
+Para a planta do aeropêndulo operando a $100$\,Hz, os hiperparâmetros estruturais candidatos foram definidos como:
+\begin{itemize}
+    \item Ordem de memória de saída: $n_y = 15$ ($150$\,ms de histórico temporal);
+    \item Ordem de memória de entrada: $n_u = 15$ ($150$\,ms de histórico de comandos);
+    \item Grau polinomial de não-linearidade: $\ell = 2$ (termos lineares, produtos cruzados e termos quadráticos puros).
+\end{itemize}
 
-As restrições de continuidade garantem que a trajetória global seja fisicamente consistente entre intervalos adjacentes:
+O número total de regressores candidatos gerados pela combinação combinatória é dado por:
 \begin{equation}
-    s_{i+1} - F(s_i,\, u_i,\, \hat{\theta}) = 0,
-    \quad \forall\, i \in \{0, 1, \ldots, M-2\},
-    \label{eq:continuidade_ms}
+    M_{\text{total}} = \frac{(n_y + n_u + \ell)!}{(n_y + n_u)!\,\ell!} = \frac{(15 + 15 + 2)!}{30!\,2!} = \frac{32 \times 31}{2} = 496 \text{ termos},
 \end{equation}
-\noindent onde $F(s_i, u_i, \hat{\theta})$ denota o estado ao final do intervalo $i$, obtido por integração da ODE~\eqref{eq:ode_id} sobre toda a sua duração. O problema completo de programação não-linear (NLP) é então
+\noindent subdivididos em 1 termo constante, 30 termos lineares de primeira ordem e 465 termos quadráticos de segunda ordem.
+
+Estimar todos os 496 coeficientes simultaneamente induziria forte multicolinearidade, sobreparametrização numérica e instabilidade dinâmica em simulação recursiva livre. Por conseguinte, aplicou-se o algoritmo FROLS (\textit{Forward Regression Orthogonal Least Squares}) baseado no critério da Razão de Redução do Erro (\textit{Error Reduction Ratio} -- ERR) \cite{chen1989, billings2013}.
+
+O algoritmo FROLS transforma iterativamente o conjunto de regressores candidatos correlacionados $P = [p_1, \ldots, p_M]$ em um conjunto de bases ortogonais $W = [w_1, \ldots, w_M]$ por decomposição matricial clássica:
 \begin{equation}
-\begin{aligned}
-    \min_{\mathcal{X}}\;
-    & \sum_{i=0}^{M-1}\;\sum_{k \in \mathcal{K}_i}
-      \left\|\hat{x}(t_k;\, s_i,\, \hat{\theta}) - x^m(t_k)\right\|^2 \\
-    \text{s.a.}\;
-    & s_{i+1} - F(s_i,\, u_i,\, \hat{\theta}) = 0,
-      \quad \forall\, i \in \{0, 1, \ldots, M-2\}.
-\end{aligned}
-    \label{eq:nlp_ms}
+    P = W A,
+\end{equation}
+\noindent onde $A$ é uma matriz triangular superior com diagonal unitária. O critério ERR de cada regressor candidato $p_m$ no passo $i$ de seleção é definido pela fração da variância total da saída explicada pela inclusão desse termo:
+\begin{equation}
+    [\text{ERR}]_i = \frac{g_i^2 \, w_i^\top w_i}{y^\top y} \times 100\%, \qquad g_i = \frac{w_i^\top y}{w_i^\top w_i}.
+    \label{eq:err_criterio}
 \end{equation}
 
-Em comparação com o \textit{single shooting}, que simula o sistema sobre todo o horizonte a partir de um único estado inicial, o \textit{multiple shooting} confina as não-linearidades a intervalos curtos e torna o NLP estruturalmente esparso, melhorando o condicionamento numérico e a taxa de convergência quando resolvido com métodos gradiente e diferenciação automática \cite{helonayala_ms}.
+A cada iteração, o algoritmo seleciona avidamente (\textit{greedy selection}) o regressor que fornece a maior contribuição $[\text{ERR}]_i$. O processo de seleção é interrompido quando a redução adicional de erro atinge um limiar desprezível ou quando se atinge o número pré-fixado de regressores parcimoniosos. No projeto, estipulou-se a seleção estrita de $10$ termos (\texttt{n\_components = 10}), garantindo que o modelo resultante seja compacto, computacionalmente eficiente para o resolvedor IPOPT do NMPC e numericamente estável.
 
-% ------------------------------------------------------------
-\subsection{Validação do Modelo Identificado}
- 
-Concluídos os ensaios experimentais, os parâmetros livres $J$, $b$ e $K_\tau$
-serão estimados via \textit{multiple shooting} conforme a formulação da
-Seção~\ref{subsec:multiple_shooting}. Os valores obtidos serão apresentados com
-seus respectivos intervalos de confiança de 95\%, permitindo avaliar a
-incerteza paramétrica associada ao procedimento de identificação.
- 
-A qualidade do modelo será avaliada sobre o conjunto de validação retido,
-composto pelos ensaios de degraus de amplitude variada. Serão reportados o
-coeficiente de ajuste (\textit{fit}\,\%) e o erro quadrático médio (RMSE) entre
-a trajetória angular simulada e a medida. Complementarmente, será conduzida uma
-análise de resíduos para verificar as condições de brancura e independência em
-relação à entrada, atestando a adequação estrutural do modelo identificado
-\cite{ljung1999}. O critério de aceite é definido pelo julgamento de engenharia
-sobre os resíduos e pela análise conjunta das métricas de ajuste.
+\subsubsection{Critérios de Avaliação em Simulação Livre (\textit{Free-Run})}
+
+A validação de modelos NARX polinomiais não pode ser fundamentada apenas no erro de predição um-passo-à-frente (\textit{One-Step-Ahead} -- OSA), pois nessa modalidade a realimentação contínua do estado medido $y(k-1)$ mascara eventuais instabilidades intrínsecas e erros acumulados de ganho. Para qualificar o modelo preditivo que subsidiará o NMPC, a validação foi conduzida exclusivamente por meio de simulação livre (\textit{Free-Run} -- FR):
+\begin{equation}
+    \hat{y}_{\text{FR}}(k) = F\!\left(\hat{y}_{\text{FR}}(k-1),\,\ldots,\,\hat{y}_{\text{FR}}(k-n_y),\; u(k-1),\,\ldots,\,u(k-n_u)\right),
+\end{equation}
+\noindent em que, após a inicialização com as condições iniciais nos primeiros $n_y$ instantes, todas as saídas subsequentes são geradas de maneira estritamente autorregressiva utilizando apenas suas próprias estimativas passadas $\hat{y}_{\text{FR}}$ e a sequência de controle real $u$.
+
+A aderência quantitativa do modelo é avaliada por três métricas consolidadas sobre os dados de validação retidos:
+\begin{align}
+    \text{RMSE} &= \sqrt{\frac{1}{N} \sum_{k=1}^{N} \bigl(y(k) - \hat{y}(k)\bigr)^2}, \label{eq:rmse} \\
+    \text{MAE}  &= \frac{1}{N} \sum_{k=1}^{N} \bigl|y(k) - \hat{y}(k)\bigr|, \label{eq:mae} \\
+    \text{FIT}  &= \left(1 - \frac{\|y - \hat{y}\|_2}{\|y - \bar{y}\|_2}\right) \times 100\%, \label{eq:fit}
+\end{align}
+\noindent onde $y(k)$ é o ângulo experimental medido pela IMU, $\hat{y}(k)$ é a trajetória predita pelo modelo NARX e $\bar{y}$ é a média da saída experimental.
+
+Complementarmente, a formulação contínua da Equação~\eqref{eq:estadonl} também foi parametrizada pelo método \textit{grey-box} não-linear via \textit{multiple shooting} com diferenciação automática em JAX \cite{helonayala_ms}, servindo como termo comparativo de sensibilidade física. Conforme demonstrado no Capítulo~\ref{cap:resultados}, o modelo polinomial NARX sobressaem-se em fidelidade de fase e aderência estática quadrática ao longo de longos horizontes temporais, consolidando-se como a base preditiva oficial do sistema preditivo ótimo.
  
  
 % ============================================================
@@ -574,424 +581,32 @@ As operações de ponto flutuante, em particular o cálculo de \texttt{atan2} no
 \EndProcedure
 \end{algorithmic}
 \end{algorithm}
-\chapter{Análise dos Riscos}
-
-A análise de riscos identifica os principais fatores que podem comprometer a execução do projeto. Cada risco é avaliado quanto à probabilidade de ocorrência, impacto sobre os objetivos e severidade, e acompanhado de ações preventivas e de contingência.
-
-% ----------------------------------------------------------------
-\section{Divergência do Modelo Dinâmico Identificado}
-
-A aerodinâmica do conjunto motor-hélice apresenta não-linearidades que podem não ser capturadas durante a identificação experimental. Se o modelo grey-box for impreciso, o NMPC gerará ações subótimas e a rede neural aprenderá uma política de controle falha, comprometendo todo o pipeline subsequente.
-
-\textbf{Probabilidade:} Média. \textbf{Impacto:} Alto. \textbf{Severidade:} Alta.
-
-\textbf{Ação de redução:} Empregar sinais de excitação complementares (multi-seno para identificação e degraus de amplitude variada para validação), garantindo cobertura adequada da faixa operacional, e verificar a adequação do modelo por análise de resíduos e inspeção das métricas de ajuste.
-
-\textbf{Ação de contingência:} Caso o modelo não apresente qualidade satisfatória na validação, revisar a estrutura do modelo, por exemplo adicionando um termo de atrito não-linear, e repetir os ensaios antes de prosseguir para a síntese do NMPC.
-
-% ----------------------------------------------------------------
-\section{Exaustão de Recursos de Hardware no STM32}
-
-O microcontrolador Nucleo-F446RE possui limites rígidos de memória (512\,KB de Flash e 128\,KB de SRAM). Uma rede MLP superdimensionada em precisão de ponto flutuante pode causar estouro de memória ou fazer com que o tempo de inferência exceda o período de amostragem de $T_s = 10$\,ms, desestabilizando a malha de controle.
-
-\textbf{Probabilidade:} Média. \textbf{Impacto:} Alto. \textbf{Severidade:} Alta.
-
-\textbf{Ação de redução:} Dimensionar a MLP com arquitetura compacta e estimar o consumo de memória e o tempo de inferência via X-CUBE-AI antes da implantação definitiva, ajustando o número de neurônios e camadas conforme necessário.
-
-\textbf{Ação de contingência:} Reduzir a profundidade ou a largura da rede e aplicar quantização de INT8 via X-CUBE-AI para reduzir o \textit{footprint} de memória e a latência de inferência dentro dos limites do hardware.
-
-% ----------------------------------------------------------------
-\section{Instabilidade do Controlador Neural por Dados Fora da Distribuição}
-
-Diferentemente do NMPC analítico, redes neurais não oferecem garantias de estabilidade. Se o aeropêndulo for submetido a uma perturbação que o conduza a um estado não coberto pelo \textit{dataset} de treinamento, a saída da rede pode ser catastrófica, levando o sistema ao colapso físico.
-
-\textbf{Probabilidade:} Média. \textbf{Impacto:} Crítico. \textbf{Severidade:} Crítica.
-
-\textbf{Ação de redução:} Ampliar a cobertura do espaço de estados durante a geração do \textit{dataset}, variando sistematicamente condições iniciais e referências angulares, e incluir trajetórias com perturbações para tornar a política aprendida mais robusta.
-
-\textbf{Ação de contingência:} Implementar saturação na saída da rede neural e manter o controlador PID como modo de segurança (\textit{fallback}), ativado automaticamente quando $|\theta|$ exceder o limite operacional ou quando a ação de controle ultrapassar os limites físicos do ESC.
-
-
 % ============================================================
-%----------------Cronograma----------------%
-%----------------Cronograma----------------%
-\chapter{Cronograma do Projeto}
+\section{Análise de Riscos e Considerações Práticas de Engenharia}
+\label{sec:riscos}
 
-O cronograma divide-se em duas fases principais. O primeiro semestre
-abrange a infraestrutura, a identificação experimental e a síntese do
-controlador clássico; o segundo concentra-se na inteligência
-computacional e na validação em hardware real. A
-Figura~\ref{fig:cronograma-tcc} ilustra o diagrama de Gantt do projeto.
+O desenvolvimento experimental de sistemas mecatrônicos complexos e o embarque de algoritmos de controle ótimo e inteligência computacional envolvem desafios práticos que exigem estratégias de mitigação integradas à arquitetura do projeto. Três riscos críticos foram identificados e mitigados ao longo do desenvolvimento:
 
-\begin{figure}[h]
-    \centering
-    \includegraphics[width=1\textwidth]{img/cronograma-tcc.PNG}
-    \caption{Cronograma do Projeto}
-    \label{fig:cronograma-tcc}
-\end{figure}
+\subsection{Divergência do Modelo Dinâmico e Não-Linearidades Aerodinâmicas}
 
-% ============================================================
-\section{Semestre 1}
+A dinâmica aerodinâmica do conjunto motor-hélice apresenta fortes não-linearidades e atrasos de transporte que, se ignorados ou mapeados com imprecisão, poderiam induzir o NMPC a gerar ações de controle subótimas e enviesar o aprendizado supervisionado da rede neural.
 
-% ------------------------------------------------------------
-\subsection{Etapa 1 - Instalação do Motor e Integração de Sensores}
-\label{subsec:etapa1}
+Para mitigar esse risco, adotou-se a estratégia de excitação persistente com sinais multisseno e chirps cobrindo $f_{\max} = 0{,}50$\,Hz e os dois patamares de operação ($45^\circ$ e $60^\circ$). A adoção do modelo polinomial NARX com seleção parcimoniosa FROLS/ERR permitiu mapear explicitamente a proporcionalidade puramente quadrática do empuxo ($u^2$) e o atraso de transporte efetivo de 30\,ms, validado com margem de segurança em simulação livre (\textit{free-run}) antes da etapa de síntese preditiva.
 
+\subsection{Restrições de Memória e Recursos de Hardware no STM32}
 
-\subsubsection*{Ações já executadas}
+O microcontrolador STM32 Nucleo-F446RE dispõe de limites rígidos de armazenamento e memória de execução (512\,KB de memória Flash e 128\,KB de SRAM). Redes neurais superdimensionadas poderiam acarretar sobrecarga de memória ou fazer com que o tempo de inferência excedesse o intervalo de amostragem de $T_s = 10$\,ms.
 
-A bancada foi montada e o firmware de aquisição implementado no Arduino
-Mega, aproveitando a estrutura mecânica pré-existente descrita na
-Seção~\ref{sec:descricao_fisica}. O microcontrolador passou a ler a IMU
-ICM-20948 via I$^2$C, estimar o ângulo por filtro complementar, gerar
-o sinal PWM para o ESC e transmitir telemetria em formato CSV a
-500\,000\,baud. As conexões elétricas estão de forma
-compatível com o STM32 Nucleo-F446RE, de modo que a migração de
-plataforma para as etapas seguintes restringe-se à substituição do
-microcontrolador, sem alteração no cabeamento.
+Como medida preventiva, a arquitetura da MLP foi dimensionada de forma estritamente compacta ($3 \to 32 \to 16 \to 1$), exigindo menos de 4\,KB de Flash e SRAM. O código C nativo gerado e otimizado via X-CUBE-AI alcançou tempo de inferência determinístico inferior a $0{,}5$\,ms por ciclo, operando com margem superior a $95\%$ de folga de CPU no microcontrolador.
 
-\subsubsection*{Resultados obtidos}
+\subsection{Estabilidade do Controlador Neural e Dados Fora da Distribuição}
 
-A calibração do \textit{offset} do giroscópio por média de 500 amostras
-em repouso produziu bias estável e reprodutível entre reinicializações.
-A estimação angular via filtro complementar ($\alpha = 0{,}98$)
-mostrou-se consistente com referências visuais ao longo do envelope
-operacional. O pipeline de telemetria CSV foi validado com aquisição
-contínua sem perdas de quadros a 100\,Hz.
+Por se tratar de um aproximador universal orientado a dados, redes neurais não fornecem garantias analíticas de estabilidade assintótica para estados que estejam substancialmente fora da distribuição (\textit{out-of-distribution}) vista durante o treinamento supervisionado.
 
-\subsubsection*{Entregáveis}
-\begin{itemize}
-    \item Bancada operacional com motor, ESC e IMU integrados;
-    \item Firmware de aquisição funcional (Arduino);
-    \item Pipeline de telemetria CSV validado;
-    \item Diagrama elétrico do sistema compatível com STM32.
-\end{itemize}
-
-% ------------------------------------------------------------
-\subsection{Etapa 2 - PID Preliminar}
-\label{subsec:etapa2}
-
-
-\subsubsection*{Ações já executadas}
-
-O controlador PID foi sintonizado preliminarmente a partir da função de
-transferência linearizada em torno de $\theta_0 = 40^\circ$, com ganhos
-$K_p = 0{,}58$, $K_i = 0{,}66$ e $K_d = 0{,}20$, e implantado no
-Arduino para estabilizar a planta durante os primeiros ensaios em malha
-fechada. O objetivo desta etapa é exclusivamente viabilizar a coleta de
-dados para identificação, a sintonização definitiva ocorre na
-Etapa~\ref{subsec:etapa4}, após o modelo identificado estar disponível.
-
-\subsubsection*{Resultados obtidos}
-
-As Figuras~\ref{fig:pid-60}--\ref{fig:pid-40} comparam a resposta ao
-degrau real (vermelho) com a simulação do modelo linear por ZOH (azul)
-em três pontos de operação. Em $40^\circ$ (ponto de linearização) o
-erro de modelagem ficou abaixo de $\pm 6^\circ$ nos transientes com
-convergência a zero em regime permanente. Em $30^\circ$ e $60^\circ$
-surgiram erros de regime permanente da ordem de $10^\circ$ e
-$20^\circ$, respectivamente, confirmando a não-linearidade do sistema e
-motivando o emprego do modelo \textit{grey-box} não-linear para a
-síntese do NMPC.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.8\textwidth]{img/pid-60.png}
-    \caption{Resposta ao degrau de $60^\circ$: simulação vs.\ real.}
-    \label{fig:pid-60}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.8\textwidth]{img/pid-30.png}
-    \caption{Resposta ao degrau de $30^\circ$: simulação vs.\ real.}
-    \label{fig:pid-30}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.8\textwidth]{img/pid-40.png}
-    \caption{Resposta ao degrau de $40^\circ$: simulação vs.\ real.}
-    \label{fig:pid-40}
-\end{figure}
-
-\subsubsection*{Entregáveis}
-\begin{itemize}
-    \item Firmware com PID preliminar funcional;
-    \item Gráficos de resposta ao degrau em três pontos de operação;
-    \item Planta estabilizada e pronta para ensaios de identificação.
-\end{itemize}
-
-% ------------------------------------------------------------
-\subsection{Etapa 3 - Identificação e Validação do Modelo Físico}
-\label{subsec:etapa3}
-
-\subsubsection*{Ações em andamento}
-
-A etapa de identificação e validação encontra-se em andamento. O ensaio destinado à validação foi realizado com o PID preliminar estabilizando a planta e uma sequência de degraus de amplitude variada aplicada como referência, conforme descrito na Seção~\ref{subsec:ensaios}. A Figura~\ref{fig:sinal-degraus-val} ilustra o perfil do sinal de referência projetado no MATLAB, e a Figura~\ref{fig:ensaio-val-degraus} apresenta os dados experimentais registrados.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.75\textwidth]{img/simu-multiplo.png}
-    \caption{Sinal de validação}
-    \label{fig:sinal-degraus-val}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{img/multiplo-degrau.png}
-    \caption{Ensaio de validação}
-    \label{fig:ensaio-val-degraus}
-\end{figure}
-
-Para a estimação dos parâmetros $\hat{\theta} = [J,\, b,\, K_\tau]^\top$, será conduzido o ensaio principal com sinal multi-seno. Os dados coletados ($\theta(t)$, $u(t)$) neste ensaio constituirão o conjunto de identificação e serão processados pelo método de \textit{multiple shooting} via JAX e Diffrax, conforme descrito na Seção~\ref{subsec:multiple_shooting}, garantindo a excitação persistente necessária. O ensaio com \textit{swept sine} para caracterização em frequência será conduzido na sequência.
-
-\subsubsection*{Entregáveis}
-\begin{itemize}
-    \item Datasets de identificação (multi-seno) e validação (degraus, CSV\@;
-    \item Parâmetros estimados $[J,\, b,\, K_\tau]$ com intervalos de confiança de 95\%;
-    \item Gráficos de validação com métricas \textit{fit}\,\% e RMSE\@;
-    \item Análise de resíduos atestando adequação estrutural do modelo.
-\end{itemize}
-% ------------------------------------------------------------
-\subsection{Etapa 4 - PID Final no STM32}
-\label{subsec:etapa4}
-
-
-\subsubsection*{Ações futuras}
-
-Com o modelo identificado disponível, os ganhos do PID serão revisados
-por técnicas de resposta em frequência. O firmware discreto com
-anti-windup por \textit{back-calculation} será portado ao STM32
-Nucleo-F446RE. Serão realizados ensaios
-de rastreamento de degraus em $30^\circ$, $45^\circ$ e $60^\circ$,
-sequência multidegrau e rejeição a distúrbio impulsivo.
-
-\subsubsection*{Entregáveis}
-\begin{itemize}
-    \item Firmware STM32 com PID final validado;
-    \item Gráficos de rastreamento e rejeição a distúrbios;
-    \item Primeiras colunas da Tabela~\ref{tab:comparacao_controladores}
-          preenchidas (tempo de acomodação, \textit{overshoot}, RMSE e
-          tempo de execução).
-\end{itemize}
-
-% ------------------------------------------------------------
-\subsection{Etapa 5 - Simulação do NMPC Ótimo}
-\label{subsec:etapa5}
-
-
-\subsubsection*{Ações futuras}
-
-O OCP definido nas Equações~\eqref{eq:ocp}--\eqref{eq:ocp_terminal}
-será implementado em Python com CasADi usando o modelo não-linear
-identificado. Inclui sintonização das matrizes $Q$, $R$ e $P$,
-definição do horizonte $N$ e das restrições operacionais, e resolução
-pelo solver IPOPT. As trajetórias do NMPC serão comparadas com as do
-PID em simulação.
-
-\subsubsection*{Entregáveis}
-\begin{itemize}
-    \item Script CasADi com OCP implementado e resolvido;
-    \item Gráficos comparativos NMPC vs.\ PID em simulação;
-    \item Tempo médio de solução do NLP como referência de custo
-          computacional do controlador exato.
-\end{itemize}
-
-% ============================================================
-\section{Semestre 2}
-
-% ------------------------------------------------------------
-\subsection{Etapa 6 - Geração de \textit{Dataset} e Treinamento da MLP}
-\label{subsec:etapa6}
-
-\subsubsection*{Ações futuras}
-
-A política ótima do NMPC será explorada em simulação de malha fechada
-com condições iniciais e referências angulares diversificadas para gerar
-o \textit{dataset} $\mathcal{D}$ (Equação~\eqref{eq:dataset}). Em
-seguida, uma rede MLP será treinada em PyTorch com otimizador Adam e
-\textit{early stopping} para aproximar essa política, conforme o
-Algoritmo~\ref{alg:treino_mlp}.
-
-\subsubsection*{Entregáveis}
-\begin{itemize}
-    \item Dataset normalizado com cobertura adequada do espaço de
-          estados;
-    \item Modelo MLP treinado;
-    \item Curva de aprendizado e distribuição do erro de aproximação
-          no conjunto de teste.
-\end{itemize}
-
-% ------------------------------------------------------------
-\subsection{Etapa 7 - Otimização e Implantação da Rede no STM32}
-\label{subsec:etapa7}
-
-
-\subsubsection*{Ações futuras}
-
-O modelo MLP será convertido para código C otimizado via X-CUBE-AI e
-integrado ao firmware de controle com arquitetura DMA, substituindo o
-bloco de cálculo do PID pela inferência da rede
-(Algoritmo~\ref{alg:isr_controle}). O consumo de Flash e SRAM e o tempo
-de inferência serão medidos no hardware real; se necessário, a rede
-será comprimida por redução de camadas ou quantização INT8.
-
-\subsubsection*{Entregáveis}
-\begin{itemize}
-    \item Firmware STM32 com MLP embarcada via X-CUBE-AI;
-    \item Relatório de uso de Flash, SRAM e tempo de inferência medido;
-    \item Conformidade com o \textit{deadline} $T_s = 10$\,ms
-          documentada.
-\end{itemize}
-
-% ------------------------------------------------------------
-\subsection{Etapa 8 - Ensaios Experimentais}
-
-
-\subsubsection*{Ações futuras}
-
-Os mesmos ensaios do PID (Etapa~\ref{subsec:etapa4}) serão repetidos
-com a MLP embarcada: rastreamento de degraus em $30^\circ$, $45^\circ$
-e $60^\circ$, sequência multidegrau e rejeição a distúrbio impulsivo.
-
-\subsubsection*{Entregáveis}
-\begin{itemize}
-    \item Datasets experimentais da MLP embarcada;
-    \item Gráficos comparativos PID, NMPC (simulação) e MLP (hardware).
-\end{itemize}
-
-% ------------------------------------------------------------
-\subsection{Etapa 9 - Análise Comparativa e Defesa Final}
-\label{subsec:etapa9}
-
-
-\subsubsection*{Ações futuras}
-
-Os resultados de todas as etapas serão consolidados na
-Tabela~\ref{tab:comparacao_controladores}, preenchendo as métricas de
-tempo de acomodação, \textit{overshoot}, RMSE, tempo de execução e uso
-de memória para os três controladores. A análise discutirá os
-\textit{trade-offs} entre desempenho, custo computacional e
-complexidade de implementação.
-
-\subsubsection*{Entregáveis}
-\begin{itemize}
-    \item Tabela comparativa completa;
-    \item Texto final do TCC revisado;
-    \item Apresentação para defesa.
-\end{itemize}
-
-% ============================================================
-\chapter{Procedimentos de Teste e Validação}
-
-Os procedimentos de teste e validação estão organizados em quatro etapas sequenciais, cobrindo desde a qualidade do modelo identificado até a comparação final entre os três controladores implementados.
-
-% ------------------------------------------------------------
-\section{Validação do Modelo Identificado}
-
-A qualidade do modelo grey-box obtido via \textit{multiple shooting} será avaliada sobre o conjunto de validação retido, composto pelos ensaios de degraus de amplitude variada, conforme descrito na Seção~\ref{subsec:divisao_dados}.
-
-Serão reportadas as seguintes métricas:
-
-\begin{itemize}
-    \item Coeficiente de ajuste (\textit{fit}\,\%) entre a trajetória angular simulada $\hat{\theta}(t)$ e a medida $\theta(t)$;
-    \item Erro Quadrático Médio (RMSE) entre $\hat{\theta}(t)$ e $\theta(t)$;
-    \item Análise de resíduos, verificando independência em relação à entrada, atestando a adequação estrutural do modelo;
-    \item Resposta a degraus não utilizados na identificação, avaliando a capacidade de generalização do modelo.
-\end{itemize}
-
-% ------------------------------------------------------------
-\section{Validação do Controlador PID}
-
-O controlador PID será validado no sistema físico com os seguintes ensaios:
-
-\begin{itemize}
-    \item Rastreamento de referências em degrau nas amplitudes de
-          $30°$, $45°$ e $60°$, medindo tempo de acomodação e overshoot;
-    \item Sequência de degraus com amplitudes variadas
-          ($60°$, $30°$, $-60°$, $-30°$), avaliando o comportamento
-          em toda a faixa de operação;
-    \item Rejeição a distúrbio impulsivo aplicado manualmente ao braço do aeropêndulo durante operação em regime permanente;
-    \item Registro do tempo de execução da rotina de controle no STM32, verificando o atendimento ao \textit{deadline} de $T_s = 10$\,ms.
-\end{itemize}
-
-% ------------------------------------------------------------
-\section{Validação do NMPC Simulado}
-
-O NMPC ótimo, desenvolvido offline via CasADi, será validado em simulação antes da geração do dataset. Os critérios de avaliação são:
-
-\begin{itemize}
-    \item Comparação das trajetórias NMPC e PID sobre as mesmas referências de degrau, avaliando tempo de acomodação e overshoot;
-    \item Verificação do respeito às restrições de entrada ($u \in [-0{,}3,\; 0{,}3]$) e de estado ao longo de toda a trajetória;
-    \item Medição do tempo médio de resolução do NLP pelo solver CasADi, como referência de custo computacional do NMPC exato.
-\end{itemize}
-
-% ------------------------------------------------------------
-\section{Validação da MLP Embarcada}
-
-A rede neural implantada no STM32 via X-CUBE-AI será avaliada em duas etapas.
-
-\subsection{Fidelidade à Política Ótima}
-
-Sobre o conjunto de teste retido ($15\%$ do dataset), serão calculados:
-
-\begin{itemize}
-    \item Erro Quadrático Médio (MSE) e Erro Absoluto Médio (MAE) entre a ação de controle da MLP $\hat{u}$ e a do NMPC exato $u^*$;
-    \item Distribuição dos erros de aproximação ao longo da faixa de estados de operação.
-\end{itemize}
-
-\subsection{Desempenho em Malha Fechada}
-
-Os mesmos ensaios realizados para o PID (rastreamento, rejeição a distúrbios e sequência de degraus) serão repetidos com a MLP, permitindo comparação direta. Adicionalmente, serão medidos:
-
-\begin{itemize}
-    \item Tempo de inferência da rede no STM32, que deve ser inferior a $T_s = 10$\,ms;
-    \item Uso de memória Flash e SRAM após a implantação via X-CUBE-AI;
-    \item Porcentagem de utilização de CPU durante a rotina de interrupção.
-\end{itemize}
-
-% ------------------------------------------------------------
-\section{Análise Comparativa Final}
-
-Os resultados dos três controladores serão consolidados na Tabela~\ref{tab:comparacao_controladores}, que constitui o principal resultado quantitativo do trabalho.
-
-\begin{table}[h]
-    \centering
-    \caption{Comparação de desempenho entre os controladores avaliados.}
-    \label{tab:comparacao_controladores}
-    \begin{tabularx}{\textwidth}{Xccc}
-        \hline
-        \textbf{Métrica} & \textbf{PID} & \textbf{NMPC} & \textbf{MLP} \\
-        \hline
-        Tempo de acomodação médio (s)   & -- & -- & -- \\
-        Overshoot máximo (\%)           & -- & -- & -- \\
-        RMSE de rastreamento (graus)    & -- & -- & -- \\
-        Tempo de execução por ciclo (ms)& -- & -- & -- \\
-        Uso de CPU (\%)                 & -- & -- & -- \\
-        Uso de Flash (KB)               & -- & -- & -- \\
-        Uso de SRAM (KB)                & -- & -- & -- \\
-        \hline
-    \end{tabularx}
-\end{table}
-
-% ================================================================
-% ENTRADAS .bib A ADICIONAR
-% ================================================================
-%
-% @misc{helonayala_ms,
-%   author = {Ayala, Helon},
-%   title  = {Multiple shooting -- SYSID},
-%   year   = {2025},
-%   url    = {https://helonayala.github.io/sysid/multiple_shooting.html},
-%   note   = {Acesso em: 28 mai. 2026}
-% }
-%
-% @book{rawlings2017,
-%   author    = {Rawlings, James B. and Mayne, David Q. and Diehl, Moritz},
-%   title     = {Model Predictive Control: Theory, Computation, and Design},
-%   edition   = {2},
-%   publisher = {Nob Hill Publishing},
-%   year      = {2017}
-% }
-%
+Para mitigar esse comportamento:
+\begin{enumerate}
+    \item A referência do NMPC para geração do \textit{dataset} foi projetada com alta riqueza temporal cobrindo de $12^\circ$ a $110^\circ$, expondo a rede a uma ampla distribuição de estados transitórios e estacionários;
+    \item A saída da rede neural foi submetida à saturação de segurança rígida no firmware ($0 \leq u \leq 100\%$);
+    \item Implementou-se no firmware uma rotina de monitoramento de integridade (\textit{watchdog} angular) com comutação automática para o controlador PID clássico em caso de desvios angulares anômalos fora dos limites operacionais da bancada.
+\end{enumerate}
+
