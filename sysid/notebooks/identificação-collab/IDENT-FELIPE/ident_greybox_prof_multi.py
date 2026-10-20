@@ -31,22 +31,35 @@ from ident_greybox_prof import extract_static_gain, C_g
 # =============================================================================
 # Configuração dos ensaios (somente RODADA-7, DC 45 e DC 60, malha fechada)
 # (arquivo, corte_inicial [s], corte_final [s])
-# Fora: MIX_DC_*.csv (concatenação dos mesmos ensaios) e degraus_0905 (buraco de 10 s no tempo)
+# Idêntico ao particionamento do modelo NARX (narx.py):
+#   - Treino: 6 ensaios (0.50 Hz e maior amplitude em 45° e 60°)
+#   - Validação e Teste Free-Run: 6 ensaios (0.30 Hz e amplitude reduzida em 45° e 60°)
 # =============================================================================
 R7 = "data/experimentos/coleta_dados/RODADA-7/"
 TR = (10.0, 13.0)
 
-# Treino: 1 ensaio de cada tipo por DC
-TRAIN = [(R7 + f, *TR) for f in [
-    "aprbs-45-3_0904_20-01.csv",
-    "chirp-45-amp45_0904_20-15.csv",
+# Treino (6 ensaios idênticos ao narx.py)
+TRAIN_FILES = [
     "multi-seno-45-050Hz_0904_20-29.csv",
-    "seq-degraus-45-3_0904_20-48.csv",
-    "aprbs-60-3_0904_20-10.csv",
-    "chirp-60-amp60_0904_20-20.csv",
+    "chirp-45-amp45_0904_20-15.csv",
+    "aprbs-45-1_0904_19-54.csv",
     "multi-seno-60-050Hz_0904_20-38.csv",
-    "seq-degraus-60-3_0904_20-57.csv",
-]]
+    "chirp-60-amp60_0904_20-20.csv",
+    "aprbs-60-1_0904_20-04.csv",
+]
+TRAIN = [(R7 + f, *TR) for f in TRAIN_FILES]
+
+# Validação e Teste Free-Run (6 ensaios idênticos ao narx.py)
+VAL_FILES = [
+    "multi-seno-45-030Hz_0904_20-23.csv",
+    "chirp-45-amp35_0904_20-13.csv",
+    "seq-degraus-45-2_0904_20-45.csv",
+    "multi-seno-60-030Hz_0904_20-32.csv",
+    "chirp-60-amp40_0904_20-16.csv",
+    "seq-degraus-60-2_0904_20-54.csv",
+]
+VAL = [(R7 + f, *TR) for f in VAL_FILES]
+TEST = VAL  # No NARX, validação e teste referem-se aos mesmos 6 ensaios em simulação livre
 
 # Todos os ensaios da RODADA-7 elegíveis
 ALL_R7_FILES = [
@@ -77,9 +90,9 @@ ALL_R7_FILES = [
     "seq-degraus-60-3_0904_20-57.csv",
 ]
 
-# Validação free-run: todo o resto da RODADA-7 que não está no treino
-train_paths = {e[0] for e in TRAIN}
-VAL = [(R7 + f, *TR) for f in ALL_R7_FILES if (R7 + f) not in train_paths]
+# Demais ensaios da RODADA-7 não utilizados no NARX (disponíveis para teste estendido opcional)
+train_val_set = set(TRAIN_FILES) | set(VAL_FILES)
+TEST_EXTRA = [(R7 + f, *TR) for f in ALL_R7_FILES if f not in train_val_set]
 
 DECIM = 1        # 2 = 50 Hz (1 = 100 Hz)
 LAMBDA_C3 = 0.0    # peso da regularização de c3 livre em torno de k estático (0 = totalmente livre)
@@ -430,11 +443,13 @@ def plot_training_data(train_exps):
         plt.close(fig)
         print(f"Gráfico de treino salvo em: {fname}")
 
-    # Gráfico consolidado com todos os ensaios (layout 4x2 com eixo duplo)
-    fig, axes = plt.subplots(4, 2, figsize=(16, 11), sharex='col')
+    # Gráfico consolidado com todos os ensaios (layout Nx2 com eixo duplo)
+    n_rows = max(len([e for e in train_exps if "-45-" in e['name']]),
+                 len([e for e in train_exps if "-60-" in e['name']]))
+    fig, axes = plt.subplots(n_rows, 2, figsize=(16, 2.8 * n_rows), sharex='col', squeeze=False)
     for col_idx, dc in enumerate(["45", "60"]):
         exps_dc = [e for e in train_exps if f"-{dc}-" in e['name']]
-        for row_idx, exp in enumerate(exps_dc[:4]):
+        for row_idx, exp in enumerate(exps_dc):
             ax = axes[row_idx, col_idx]
             t = exp['t']
             y_deg = np.rad2deg(exp['y'])

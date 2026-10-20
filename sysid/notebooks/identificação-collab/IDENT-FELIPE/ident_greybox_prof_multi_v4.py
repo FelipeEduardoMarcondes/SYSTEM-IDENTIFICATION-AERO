@@ -104,21 +104,16 @@ REPOUSO_FILES_SELECIONADOS = [
     "20261016_201817_repouso.csv",  # Queda livre a partir de ~121.5 deg (ampla amplitude)
 ]
 
-# Ensaios de Treinamento Excitado (RODADA-7, DC 45 e DC 60, malha fechada)
+# Ensaios de Treinamento Excitado (Idênticos ao particionamento do NARX narx.py: 6 ensaios de 0.50 Hz e maior amplitude)
 TRAIN_NAMES = [
-    "aprbs-45-3_0904_20-01.csv",
-    "chirp-45-amp45_0904_20-15.csv",
     "multi-seno-45-050Hz_0904_20-29.csv",
-    "seq-degraus-45-3_0904_20-48.csv",
-    "aprbs-60-3_0904_20-10.csv",
-    "chirp-60-amp60_0904_20-20.csv",
+    "chirp-45-amp45_0904_20-15.csv",
+    "aprbs-45-1_0904_19-54.csv",
     "multi-seno-60-050Hz_0904_20-38.csv",
-    "seq-degraus-60-3_0904_20-57.csv",
-    "aprbs-60-2_0904_20-07.csv",
-    "seq-degraus-60-2_0904_20-54.csv",
-    "multi-seno-60-030Hz_0904_20-32.csv",
+    "chirp-60-amp60_0904_20-20.csv",
+    "aprbs-60-1_0904_20-04.csv",
 ]
-TRAIN = [(R7 + f, *TR) for f in list(dict.fromkeys(TRAIN_NAMES))]
+TRAIN = [(R7 + f, *TR) for f in TRAIN_NAMES]
 
 ALL_R7_FILES = [
     "aprbs-45-1_0904_19-54.csv",
@@ -148,19 +143,33 @@ ALL_R7_FILES = [
     "seq-degraus-60-3_0904_20-57.csv",
 ]
 
-train_paths = {e[0] for e in TRAIN}
-VAL = [(R7 + f, *TR) for f in ALL_R7_FILES if (R7 + f) not in train_paths]
+# Ensaios de Validação e Teste Free-Run (Idênticos ao narx.py: 6 ensaios de 0.30 Hz e amplitude reduzida)
+VAL_NAMES = [
+    "multi-seno-45-030Hz_0904_20-23.csv",
+    "chirp-45-amp35_0904_20-13.csv",
+    "seq-degraus-45-2_0904_20-45.csv",
+    "multi-seno-60-030Hz_0904_20-32.csv",
+    "chirp-60-amp40_0904_20-16.csv",
+    "seq-degraus-60-2_0904_20-54.csv",
+]
+VAL = [(R7 + f, *TR) for f in VAL_NAMES]
+TEST = VAL  # No NARX, validação e teste referem-se aos mesmos 6 ensaios em simulação livre
+
+# Demais ensaios da RODADA-7 não utilizados no NARX (disponíveis para teste estendido opcional)
+train_val_names = set(TRAIN_NAMES) | set(VAL_NAMES)
+TEST_EXTRA = [(R7 + f, *TR) for f in ALL_R7_FILES if f not in train_val_names]
 
 # Hiperparâmetros padrão da identificação
 DECIM = 1
-LAMBDA_C3 = 50.0       # peso da regularização de c3 em torno de k_static*|c1|
-LAMBDA_MECH = 60.0     # peso da regularização mecânica com os priors de oscilação livre
-SEG_LEN = 15.0         # comprimento da janela de multiple shooting [s]
+LAMBDA_C3 = 10.0       # peso da regularização de c3 em torno de k_static*|c1|
+LAMBDA_MECH = 15.0     # peso da regularização mecânica com os priors de oscilação livre
+SEG_LEN = 5.0          # comprimento da janela de multiple shooting [s]
 L_OBS = 0.5            # ganho do observador de estados na validação
 TAU_M_DEFAULT = 0.08   # constante de tempo típica do motor/hélice [s] (80 ms)
+U0_DEFAULT = 20.0      # zona morta nominal real medida na bancada (20%)
 
 # Escalas das variáveis de decisão para condicionamento do IPOPT (~ 1.0)
-S_C1, S_C2, S_F, S_C3 = 8.0, 0.4, 0.15, 4.0e-3
+S_C1, S_C2, S_F, S_C3 = 8.0, 0.4, 0.15, 8.0e-3
 
 
 # =============================================================================
@@ -380,13 +389,39 @@ def identify_mechanics_free_oscillation(repouso_dir=REPOUSO_DIR, plot=True):
 # =============================================================================
 # Fase 2: Identificação Semiestática com Zona Morta (k e u0)
 # =============================================================================
-def extract_static_gain(method="escada", plot=True):
+def extract_static_gain(method="malha_aberta", u0_override=None, plot=True):
     """
     Identifica o ganho estático k e a zona morta u0 do empuxo:
         sin(theta) = k * (max(u - u0, 0))^2
+    Métodos:
+      - "malha_aberta": Degraus reais em malha aberta coletados na bancada (09/17)
+      - "escada": Patamares de escada em malha fechada
+      - "rampa": Rampa semiestática contínua
     """
     print(f"\n--- Fase 2: Identificação Semiestática com Zona Morta ({method.upper()}) ---")
-    if method == "escada":
+    if method == "malha_aberta":
+        ma_dir = os.path.join(root_dir, "data", "experimentos", "coleta_dados", "MALHA-ABERTA")
+        files = sorted(glob.glob(os.path.join(ma_dir, "malha_aberta_*.csv")))
+        points = []
+        for f in files:
+            fname = os.path.basename(f)
+            if fname.startswith("malha_aberta_-") or "16-23" in fname:
+                continue
+            df = pd.read_csv(f)
+            t = df.iloc[:, 0].values / 1000.0 if df.iloc[:, 0].max() > 1000 else df.iloc[:, 0].values
+            y = df.iloc[:, 1].values
+            u_sig = df.iloc[:, 2].values
+            t_end = t[-1]
+            mask = t >= (t_end - 5.0)
+            u_mean = float(np.mean(u_sig[mask]))
+            y_mean = float(np.mean(y[mask]))
+            points.append((u_mean, y_mean))
+        points = sorted(points, key=lambda x: x[0])
+        u_avg = np.array([p[0] for p in points])
+        Torque_g = np.sin(np.deg2rad([p[1] for p in points]))
+        title_tag = "Degraus de Malha Aberta (09/17)"
+        fname = "v4_curva_semiestatica_malha_aberta.png"
+    elif method == "escada":
         file_path = "data/experimentos/coleta_dados/RODADA-4/escada-atrito-1_0819_19-08.csv"
         res = readData(dataset_name=file_path, return_ref=True)
         y_deg, u, t, ref = res[0], res[1], res[2], res[3]
@@ -452,16 +487,24 @@ def extract_static_gain(method="escada", plot=True):
         fname = "v4_curva_semiestatica_rampa.png"
 
     # Ajuste com zona morta: k * (max(u - u0, 0))^2
-    def model_u0(p):
-        return p[0] * np.maximum(u_avg - p[1], 0)**2
+    if u0_override is not None:
+        u0_opt = float(u0_override)
+        delta_u = np.maximum(u_avg - u0_opt, 0.0)**2
+        denom = float(np.dot(delta_u, delta_u))
+        k_opt = float(np.dot(delta_u, Torque_g) / denom) if denom > 1e-12 else 1e-3
+        pred_opt = k_opt * delta_u
+        r2_opt = float(1 - np.sum((Torque_g - pred_opt)**2) / np.sum((Torque_g - Torque_g.mean())**2))
+    else:
+        def model_u0(p):
+            return p[0] * np.maximum(u_avg - p[1], 0.0)**2
 
-    def res_u0(p):
-        return Torque_g - model_u0(p)
+        def res_u0(p):
+            return Torque_g - model_u0(p)
 
-    fit_res = opt.least_squares(res_u0, [5e-4, 10.0], bounds=([1e-6, 0.0], [1e-2, 35.0]))
-    k_opt, u0_opt = float(fit_res.x[0]), float(fit_res.x[1])
-    pred_opt = model_u0(fit_res.x)
-    r2_opt = float(1 - np.sum((Torque_g - pred_opt)**2) / np.sum((Torque_g - Torque_g.mean())**2))
+        fit_res = opt.least_squares(res_u0, [1e-3, 20.0], bounds=([1e-6, 0.0], [1e-2, 35.0]))
+        k_opt, u0_opt = float(fit_res.x[0]), float(fit_res.x[1])
+        pred_opt = model_u0(fit_res.x)
+        r2_opt = float(1 - np.sum((Torque_g - pred_opt)**2) / np.sum((Torque_g - Torque_g.mean())**2))
 
     print(f"  Modelo v4 Semiestático: k = {k_opt:.4e} 1/%^2 | u0 = {u0_opt:.2f}% | R^2 = {r2_opt:.4f}")
 
@@ -500,7 +543,7 @@ def build_rk4_v4(u0_fixed=None, tau_m_fixed=None):
     h = cs.SX.sym('h')
     th = cs.SX.sym('th', 4)
 
-    u0_val = cs.SX(u0_fixed if u0_fixed is not None else 11.42)
+    u0_val = cs.SX(u0_fixed if u0_fixed is not None else U0_DEFAULT)
     tau_m_val = cs.SX(tau_m_fixed if tau_m_fixed is not None else 0.08)
 
     def f(x_, u_):
@@ -1004,6 +1047,9 @@ def main():
     parser.add_argument("--eval", action="store_true", help="Avalia modelo salvo sem reotimizar")
     parser.add_argument("--plot", action="store_true", help="Gera gráficos a partir do modelo salvo")
     parser.add_argument("--all", action="store_true", help="Força reotimização completa de todos os modos")
+    parser.add_argument("--u0", type=float, default=20.0, help="Valor de zona morta u0 [%%] (padrão: 20.0%%)")
+    parser.add_argument("--static-method", type=str, default="malha_aberta", choices=["malha_aberta", "escada", "rampa"],
+                        help="Método de calibração da curva semiestática (padrão: malha_aberta)")
     parser.add_argument("--tau-m", type=float, default=TAU_M_DEFAULT, help="Valor fixado de tau_m [s]")
     parser.add_argument("--decim", type=int, default=DECIM, help="Fator de decimação dos ensaios")
     parser.add_argument("--max-iter", type=int, default=400, help="Teto de iterações do IPOPT (padrão: 400)")
@@ -1026,11 +1072,12 @@ def main():
     mech_dict = identify_mechanics_free_oscillation(plot=True)
 
     # Passo 2: Curva Semiestática do Empuxo
-    k_static, u0_static = extract_static_gain(method="escada", plot=True)
-    try:
-        extract_static_gain(method="rampa", plot=True)
-    except Exception as e:
-        print(f"  ! Aviso na validação por rampa: {e}")
+    k_static, u0_static = extract_static_gain(method=args.static_method, u0_override=args.u0, plot=True)
+    if args.static_method != "escada":
+        try:
+            extract_static_gain(method="escada", u0_override=args.u0, plot=True)
+        except Exception as e:
+            print(f"  ! Aviso na validação por escada: {e}")
 
     tau_m_fixed = float(args.tau_m)
 

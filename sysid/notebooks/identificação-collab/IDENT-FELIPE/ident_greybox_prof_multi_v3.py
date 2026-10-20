@@ -95,21 +95,17 @@ def casadi_name(*parts):
 R7 = "data/experimentos/coleta_dados/RODADA-7/"
 TR = (10.0, 13.0)
 
-# Ensaios de Treinamento (RODADA-7, DC 45 e DC 60, malha fechada)
+# Ensaios de Treinamento Excitado (Idênticos ao particionamento do NARX narx.py: 6 ensaios de 0.50 Hz e maior amplitude)
 TRAIN_NAMES = [
-    "aprbs-45-3_0904_20-01.csv",
-    "chirp-45-amp45_0904_20-15.csv",
     "multi-seno-45-050Hz_0904_20-29.csv",
-    "seq-degraus-45-3_0904_20-48.csv",
-    "aprbs-60-3_0904_20-10.csv",
-    "chirp-60-amp60_0904_20-20.csv",
+    "chirp-45-amp45_0904_20-15.csv",
+    "aprbs-45-1_0904_19-54.csv",
     "multi-seno-60-050Hz_0904_20-38.csv",
-    "seq-degraus-60-3_0904_20-57.csv",
-    "aprbs-60-2_0904_20-07.csv",
-    "seq-degraus-60-2_0904_20-54.csv",
-    "multi-seno-60-030Hz_0904_20-32.csv",
+    "chirp-60-amp60_0904_20-20.csv",
+    "aprbs-60-1_0904_20-04.csv",
 ]
-TRAIN = [(R7 + f, *TR) for f in list(dict.fromkeys(TRAIN_NAMES))]
+TRAIN_FILES = TRAIN_NAMES
+TRAIN = [(R7 + f, *TR) for f in TRAIN_NAMES]
 
 ALL_R7_FILES = [
     "aprbs-45-1_0904_19-54.csv",
@@ -139,14 +135,27 @@ ALL_R7_FILES = [
     "seq-degraus-60-3_0904_20-57.csv",
 ]
 
-# Ensaios de Validação (todos os demais ensaios da RODADA-7)
-train_paths = {e[0] for e in TRAIN}
-VAL = [(R7 + f, *TR) for f in ALL_R7_FILES if (R7 + f) not in train_paths]
+# Ensaios de Validação e Teste Free-Run (Idênticos ao narx.py: 6 ensaios de 0.30 Hz e amplitude reduzida)
+VAL_NAMES = [
+    "multi-seno-45-030Hz_0904_20-23.csv",
+    "chirp-45-amp35_0904_20-13.csv",
+    "seq-degraus-45-2_0904_20-45.csv",
+    "multi-seno-60-030Hz_0904_20-32.csv",
+    "chirp-60-amp40_0904_20-16.csv",
+    "seq-degraus-60-2_0904_20-54.csv",
+]
+VAL_FILES = VAL_NAMES
+VAL = [(R7 + f, *TR) for f in VAL_NAMES]
+TEST = VAL  # No NARX, validação e teste referem-se aos mesmos 6 ensaios em simulação livre
+
+# Demais ensaios da RODADA-7 não utilizados no NARX (disponíveis para teste estendido opcional)
+train_val_names = set(TRAIN_NAMES) | set(VAL_NAMES)
+TEST_EXTRA = [(R7 + f, *TR) for f in ALL_R7_FILES if f not in train_val_names]
 
 # Hiperparâmetros padrão da identificação
 DECIM = 1
 LAMBDA_C3 = 50.0       # peso da regularização de c3 em torno de k_static*|c1|
-SEG_LEN = 15.0         # comprimento da janela de multiple shooting [s]
+SEG_LEN = 15.0          # comprimento da janela de multiple shooting [s] (alinhado a v1 e v4)
 L_OBS = 0.5            # ganho do observador de estados na validação
 TAU_M_DEFAULT = 0.08   # constante de tempo típica do motor/hélice [s] (80 ms)
 
