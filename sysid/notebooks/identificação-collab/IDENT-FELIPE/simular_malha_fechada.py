@@ -259,17 +259,18 @@ def plotar_comparacao(res, out_png=None):
 # =============================================================================
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Simulação em Malha Fechada com PID do STM32")
-    parser.add_argument("--version", "--v", type=str, default="v3", choices=["v1", "v2", "v3"],
-                        help="Versão do modelo grey-box: 'v1' (2ª ordem), 'v2' (3ª ordem com arrasto) ou 'v3' (3ª ordem mínimo com u0)")
-    parser.add_argument("--model", type=str, default="c3 livre", choices=["c3 livre", "c3 fixo"],
-                        help="Modo a usar: 'c3 livre' ou 'c3 fixo' (padrão: c3 livre)")
+    parser.add_argument("--version", "--v", type=str, default="v3", choices=["v1", "v2", "v3", "v4", "v5"],
+                        help="Versão do modelo grey-box: 'v1' (2ª ordem), 'v2' (3ª ordem com arrasto), 'v3' (3ª ordem mínimo), 'v4' (desacoplado) ou 'v5' (arrasto + zona morta)")
+    parser.add_argument("--model", type=str, default="c3 livre",
+                        choices=["c3 livre", "c3 fixo", "mecanica fixada", "mecanica regularizada"],
+                        help="Modo a usar: 'c3 livre', 'c3 fixo', 'mecanica fixada' ou 'mecanica regularizada' (padrão: c3 livre)")
     parser.add_argument("--file", type=str, default=None,
                         help="Arquivo específico de experimento da RODADA-7 para simular")
     parser.add_argument("--all", action="store_true",
                         help="Simular todos os 24 ensaios da RODADA-7 e exibir tabela consolidada")
     args = parser.parse_args()
 
-    # 1. Carrega modelo identificado (v1, v2 ou v3)
+    # 1. Carrega modelo identificado (v1, v2, v3, v4 ou v5)
     json_filename = f"modelo_greybox_{args.version}.json"
     json_path = os.path.join(current_dir, json_filename)
     if not os.path.exists(json_path):
@@ -280,6 +281,10 @@ if __name__ == '__main__':
             print("  -> Execute primeiro: python ident_greybox_prof_multi_v2.py para identificar e gerar o modelo v2.")
         elif args.version == "v3":
             print("  -> Execute primeiro: python ident_greybox_prof_multi_v3.py para identificar e gerar o modelo v3.")
+        elif args.version == "v4":
+            print("  -> Execute primeiro: python ident_greybox_prof_multi_v4.py para identificar e gerar o modelo v4.")
+        elif args.version == "v5":
+            print("  -> Execute primeiro: python ident_greybox_prof_multi_v5.py para identificar e gerar o modelo v5.")
         sys.exit(1)
 
     with open(json_path, "r", encoding="utf-8") as f:
@@ -297,7 +302,7 @@ if __name__ == '__main__':
     print(f"Parâmetros Identificados:")
     print(f"  c1 = {params['c1']:.4f} | c2 = {params['c2']:.4f} | c3 = {params['c3']:.6e}")
     print(f"  Fc = {params.get('Fc', 0.0):.4f} | Fs = {params.get('Fs', 0.0):.4f} | vs = {params.get('vs', 0.0):.4f} rad/s")
-    if args.version in ("v2", "v3"):
+    if args.version in ("v2", "v3", "v4", "v5"):
         print(f"  tau_m = {params.get('tau_m', 0.0):.4f} s | c_aero = {params.get('c_aero', 0.0):.4f} | u0 = {params.get('u0', 0.0):.2f}%")
     else:
         print(f"  tau_m = 0.0000 s (Atuador instantâneo) | c_aero = 0.0000")

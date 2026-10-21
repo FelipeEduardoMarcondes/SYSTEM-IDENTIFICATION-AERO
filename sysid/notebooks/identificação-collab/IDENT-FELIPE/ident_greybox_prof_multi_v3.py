@@ -155,7 +155,7 @@ TEST_EXTRA = [(R7 + f, *TR) for f in ALL_R7_FILES if f not in train_val_names]
 # Hiperparâmetros padrão da identificação
 DECIM = 1
 LAMBDA_C3 = 50.0       # peso da regularização de c3 em torno de k_static*|c1|
-SEG_LEN = 15.0          # comprimento da janela de multiple shooting [s] (alinhado a v1 e v4)
+SEG_LEN = 5.0          # comprimento da janela de multiple shooting [s] (alinhado a v1 e v4)
 L_OBS = 0.5            # ganho do observador de estados na validação
 TAU_M_DEFAULT = 0.08   # constante de tempo típica do motor/hélice [s] (80 ms)
 

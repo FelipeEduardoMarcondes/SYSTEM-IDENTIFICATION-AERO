@@ -163,10 +163,10 @@ TEST_EXTRA = [(R7 + f, *TR) for f in ALL_R7_FILES if f not in train_val_names]
 DECIM = 1
 LAMBDA_C3 = 10.0       # peso da regularização de c3 em torno de k_static*|c1|
 LAMBDA_MECH = 15.0     # peso da regularização mecânica com os priors de oscilação livre
-SEG_LEN = 5.0          # comprimento da janela de multiple shooting [s]
+SEG_LEN = 10.0          # comprimento da janela de multiple shooting [s]
 L_OBS = 0.5            # ganho do observador de estados na validação
 TAU_M_DEFAULT = 0.08   # constante de tempo típica do motor/hélice [s] (80 ms)
-U0_DEFAULT = 20.0      # zona morta nominal real medida na bancada (20%)
+U0_DEFAULT = 11.42     # zona morta nominal calibrada da bancada (~11.4%)
 
 # Escalas das variáveis de decisão para condicionamento do IPOPT (~ 1.0)
 S_C1, S_C2, S_F, S_C3 = 8.0, 0.4, 0.15, 8.0e-3
@@ -501,7 +501,7 @@ def extract_static_gain(method="malha_aberta", u0_override=None, plot=True):
         def res_u0(p):
             return Torque_g - model_u0(p)
 
-        fit_res = opt.least_squares(res_u0, [1e-3, 20.0], bounds=([1e-6, 0.0], [1e-2, 35.0]))
+        fit_res = opt.least_squares(res_u0, [1e-3, 10.0], bounds=([1e-6, 0.0], [1e-2, 35.0]))
         k_opt, u0_opt = float(fit_res.x[0]), float(fit_res.x[1])
         pred_opt = model_u0(fit_res.x)
         r2_opt = float(1 - np.sum((Torque_g - pred_opt)**2) / np.sum((Torque_g - Torque_g.mean())**2))
@@ -1047,7 +1047,8 @@ def main():
     parser.add_argument("--eval", action="store_true", help="Avalia modelo salvo sem reotimizar")
     parser.add_argument("--plot", action="store_true", help="Gera gráficos a partir do modelo salvo")
     parser.add_argument("--all", action="store_true", help="Força reotimização completa de todos os modos")
-    parser.add_argument("--u0", type=float, default=20.0, help="Valor de zona morta u0 [%%] (padrão: 20.0%%)")
+    parser.add_argument("--u0", type=float, default=None,
+                        help="Valor fixo de zona morta u0 [%%] (se omitido/None, identifica automaticamente por mínimos quadrados)")
     parser.add_argument("--static-method", type=str, default="malha_aberta", choices=["malha_aberta", "escada", "rampa"],
                         help="Método de calibração da curva semiestática (padrão: malha_aberta)")
     parser.add_argument("--tau-m", type=float, default=TAU_M_DEFAULT, help="Valor fixado de tau_m [s]")
