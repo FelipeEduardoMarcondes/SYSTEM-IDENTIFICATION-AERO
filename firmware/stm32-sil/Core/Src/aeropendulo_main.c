@@ -130,6 +130,7 @@ static float u_i_res = 0.0f;
 static uint8_t was_ann_mode = 0;
 static float y_1 = 0.0f;
 static float r   = 45.0f;   /* referencia corrente (graus) */
+static float u_anterior = 0.0f;
 
 /* --- SEQ ----------------------------------------------------------------- */
 static Degrau_t degraus[MAX_STEPS];
@@ -499,6 +500,7 @@ static void resetar_controlador(void)
     u_i_res = 0.0f;
     was_ann_mode = 0;
     y_1 = y_atual;
+    u_anterior = 0.0f;
 }
 
 /* ======================================================================== */
@@ -812,7 +814,7 @@ static void ciclo_controle(void)
                 // Bumpless transfer: RNA -> PID
                 float u_p_tr = KP * e;
                 float u_d_tr = -(KD / TS) * (y_med - y_1);
-                u_i = u - u_p_tr - u_d_tr;
+                u_i = u_anterior - u_p_tr - u_d_tr;
                 was_ann_mode = 0;
             }
 
@@ -920,7 +922,7 @@ static void ciclo_controle(void)
                 // Bumpless transfer: RNA -> PID
                 float u_p_tr = KP * e;
                 float u_d_tr = -(KD / TS) * (y_med - y_1);
-                u_i = u - u_p_tr - u_d_tr;
+                u_i = u_anterior - u_p_tr - u_d_tr;
                 was_ann_mode = 0;
             }
 
@@ -1007,10 +1009,12 @@ static void ciclo_controle(void)
 
     e_1 = e;
     y_1 = y_med;
+    u_anterior = u;
 #endif
 #ifndef SIL_MODE
     e_1 = e;
     y_1 = y_med;
+    u_anterior = u;
 #endif
 
     /* --- Telemetria CSV --------------------------------------------------- */
