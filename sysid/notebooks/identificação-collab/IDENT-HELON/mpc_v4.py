@@ -34,7 +34,7 @@ if root_dir not in sys.path:
     sys.path.append(root_dir)
 
 # ── Experimento ativo — EDITAR AQUI para cada novo experimento ──────
-EXP_ID = os.environ.get("EXP_ID", "EXP002_legado_narx-mpc")
+EXP_ID = os.environ.get("EXP_ID", "EXP003_legado_narx-mpc")
 EXP_OUTPUT_DIR = os.path.join(root_dir, "data", "experimentos_novos", EXP_ID)
 IDENT_DIR   = os.path.join(EXP_OUTPUT_DIR, "1_identificacao")
 MPC_DIR     = os.path.join(EXP_OUTPUT_DIR, "2_mpc_python")
@@ -82,7 +82,7 @@ Ts = 0.01  # Sampling time in seconds (DECIMATION=5 -> 5 * 10ms = 50ms)
 # CONTROLE DE EXECUÇÃO / CACHE:
 # - Se False: carrega o dataset de 32.547 amostras já calculado (.npz) em < 1s
 # - Se True: reexecuta a otimização CasADi IPOPT por ~23 minutos e regrava o cache
-RECOMPUTE_MPC = False
+RECOMPUTE_MPC = True
 # =============================================================================
 
 import json
@@ -215,7 +215,7 @@ plt.pause(0.1)
 
 # %%
 # 3. MPC Setup
-N = 300
+N = 150
 data = {
     'Ts': Ts,
     'x0': np.zeros(nx),
@@ -263,7 +263,7 @@ for k in range(N):
         du = uk - u_prev
     u_prev = uk
 
-    J = J + 1e3 * (yk - Pref[k])**2 + 0.1 * uk**2 + 10000.0 * du**2
+    J = J + 1e3 * (yk - Pref[k])**2 + 0.1 * uk**2 + 50000.0 * du**2
 
     xk = MX.sym(f'x_{k+1}', nx)
     w.append(xk)

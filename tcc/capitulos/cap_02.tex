@@ -176,7 +176,7 @@ A identificação precisa da planta exige sinais de excitação com elevada riqu
 Para assegurar a identificabilidade desses efeitos em todo o envelope físico, estabeleceram-se as seguintes premissas metodológicas de projeto dos sinais:
 
 \begin{enumerate}
-    \item \textbf{Frequência máxima de excitação ($f_{\max} = 0{,}50$\,Hz):} A largura de banda mecânica do aeropêndulo é dominada por polos lentos associados à inércia da haste e aos tempos de subida do empuxo aerodinâmico. Fixou-se, portanto, a frequência máxima de excitação em $f_{\max} = 0{,}50$\,Hz. Frequências superiores a esse patamar não acrescentam informação dinâmica relevante sobre o movimento de corpo rígido do aeropêndulo e induziriam vibrações estruturais parasitas nas torres de sustentação em MDF e nos suportes poliméricos em PLA, além de provocar regimes turbulentos espúrios na esteira da hélice. Em relação à frequência de amostragem de $100$\,Hz, a banda de $0{,}50$\,Hz opera com uma razão de superamostragem de 100:1, garantindo excelente resolução temporal na captura dos transitórios.
+    \item \textbf{Frequência máxima de excitação ($f_{\max} = 0{,}50$\,Hz):} A largura de banda mecânica do aeropêndulo é dominada por polos lentos associados à inércia da haste e aos tempos de subida do empuxo aerodinâmico. Fixou-se, portanto, a frequência máxima de excitação em $f_{\max} = 0{,}50$\,Hz. Frequências superiores a esse patamar não acrescentam informação dinâmica relevante sobre o movimento de corpo rígido do aeropêndulo. Em relação à frequência de amostragem de $100$\,Hz, a banda de $0{,}50$\,Hz opera com uma razão de superamostragem de 100:1, garantindo excelente resolução temporal na captura dos transitórios.
     
     \item \textbf{Dois níveis de estabilização em malha fechada ($45^\circ$ e $60^\circ$):} Os ensaios foram realizados em torno de dois pontos de equilíbrio centrais: $\theta_0 = 45^\circ$ e $\theta_0 = 60^\circ$. A operação em dois patamares distintos é indispensável para cobrir diferentes inclinações operacionais da planta, onde o ganho estático requerido do motor e as derivadas do torque gravitacional diferem substancialmente. Em $45^\circ$, o sistema opera na região de máxima sensibilidade gravitacional ($\frac{d}{d\theta}\sin\theta = \cos 45^\circ \approx 0{,}707$), enquanto em $60^\circ$ o empuxo contínuo exigido para sustentação estática é cerca de $22\%$ superior, alterando o ponto de trabalho do propulsor.
     
@@ -212,10 +212,26 @@ Para garantir que o modelo identificado possua alta capacidade de generalizaçã
         \item Chirp em $60^\circ$ com amplitude de $\pm 60^\circ$ (excursão de $0^\circ$ a $120^\circ$);
         \item Sequência APRBS em $60^\circ$.
     \end{enumerate}
-    Ao concentrar os ensaios de maior largura de banda e amplitude no treinamento (totalizando mais de 78.000 amostras concatenadas), assegura-se que o algoritmo de estimação seja exposto às condições dinâmicas mais severas e às máximas deflexões não-lineares da bancada.
+    Ao concentrar os ensaios de maior largura de banda e amplitude no treinamento (totalizando mais de 78.000 amostras concatenadas), assegura-se que o algoritmo de estimação seja exposto às condições dinâmicas mais severas e às máximas deflexões não-lineares da bancada. A evolução temporal das trajetórias de referência angular $r(t)$ utilizadas nos 6 ensaios de treinamento é apresentada na Figura~\ref{fig:sinais_treinamento}.
     
-    \item \textbf{Conjunto de Validação Independente e Testes \textit{Free-Run}:} Todos os ensaios restantes coletados na bancada física foram estritamente reservados para validação cruzada independente. Este conjunto reúne sinais com menores frequências de excitação ($0{,}30$\,Hz e $0{,}40$\,Hz), menores amplitudes ($\pm 25^\circ$, $\pm 35^\circ$, $\pm 40^\circ$) e perfis distintos de degraus estacionários, tanto em $45^\circ$ quanto em $60^\circ$. A avaliação nesses dados testa a capacidade do modelo de interpolar dinâmicas, reproduzir fielmente a resposta em frequências intermediárias e manter predições estáveis em simulação livre (\textit{free-run}) recursiva de longo prazo sem divergência.
+    \item \textbf{Conjunto de Validação Independente e Testes \textit{Free-Run}:} Todos os ensaios restantes coletados na bancada física foram estritamente reservados para validação cruzada independente. Este conjunto reúne sinais com menores frequências de excitação ($0{,}30$\,Hz e $0{,}40$\,Hz), menores amplitudes ($\pm 25^\circ$, $\pm 35^\circ$, $\pm 40^\circ$) e perfis distintos de degraus estacionários, tanto em $45^\circ$ quanto em $60^\circ$. A avaliação nesses dados testa a capacidade do modelo de interpolar dinâmicas, reproduzir fielmente a resposta em frequências intermediárias e manter predições estáveis em simulação livre (\textit{free-run}) recursiva de longo prazo sem divergência. A Figura~\ref{fig:sinais_validacao} ilustra os sinais de referência angular $r(t)$ correspondentes aos ensaios de validação independente.
 \end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \caption{Sinais de referência angular $r(t)$ aplicados nos ensaios de treinamento do modelo NARX.}
+    \label{fig:sinais_treinamento}
+    \includegraphics[width=0.95\textwidth]{img/resultados/narx_train_datasets.png}
+    \sourceFig{o autor, 2026.}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \caption{Sinais de referência angular $r(t)$ correspondentes aos ensaios de validação independente do modelo NARX.}
+    \label{fig:sinais_validacao}
+    \includegraphics[width=0.95\textwidth]{img/resultados/narx_val_datasets.png}
+    \sourceFig{o autor, 2026.}
+\end{figure}
 
 \subsubsection{Procedimento Experimental de Coleta de Dados}
 
@@ -286,7 +302,7 @@ O número total de regressores candidatos gerados pela combinação combinatóri
 \end{equation}
 \noindent subdivididos em 1 termo constante, 30 termos lineares de primeira ordem e 465 termos quadráticos de segunda ordem.
 
-Estimar todos os 496 coeficientes simultaneamente induziria forte multicolinearidade, sobreparametrização numérica e instabilidade dinâmica em simulação recursiva livre. Por conseguinte, aplicou-se o algoritmo FROLS (\textit{Forward Regression Orthogonal Least Squares}) baseado no critério da Razão de Redução do Erro (\textit{Error Reduction Ratio} -- ERR) \cite{chen1989, billings2013}.
+Estimar todos os 496 coeficientes simultaneamente induziria forte multicolinearidade, sobreparametrização numérica e instabilidade dinâmica em simulação recursiva livre. Por conseguinte, aplicou-se o algoritmo FROLS (\textit{Forward Regression Orthogonal Least Squares}) baseado no critério da Razão de Redução do Erro (\textit{Error Reduction Ratio} -- ERR) \cite{chen1989}.
 
 O algoritmo FROLS transforma iterativamente o conjunto de regressores candidatos correlacionados $P = [p_1, \ldots, p_M]$ em um conjunto de bases ortogonais $W = [w_1, \ldots, w_M]$ por decomposição matricial clássica:
 \begin{equation}
@@ -377,8 +393,7 @@ assim que o erro de rastreamento mudar de sinal \cite{astrom1995}.
 \subsection{NMPC: Formulação do Problema de Controle Ótimo}
 \label{subsec:nmpc_ocp}
 
-O NMPC fundamenta-se na resolução repetida, a cada período de amostragem $T_s$, de um Problema de Controle Ótimo (OCP) em horizonte finito \cite{rawlings2017}. A síntese offline desse controlador exige ferramentas capazes de (i)~expressar simbolicamente o modelo dinâmico não-linear, (ii)~transcrever o OCP em um Problema de Programação Não-Linear (NLP) e (iii)~calcular automaticamente as derivadas de primeira e segunda ordem
-exigidas pelo resolvedor numérico. O framework CasADi atende a esses três requisitos de forma integrada \cite{andersson2019}.
+O NMPC fundamenta-se na resolução repetida, a cada período de amostragem $T_s$, de um Problema de Controle Ótimo (OCP) em horizonte finito \cite{rawlings2017}. A síntese offline desse controlador exige ferramentas capazes de (i)~expressar simbolicamente o modelo dinâmico não-linear, (ii)~transcrever o OCP em um Problema de Programação Não-Linear (NLP) e (iii)~calcular automaticamente as derivadas de primeira e segunda ordem exigidas pelo resolvedor numérico. O framework CasADi atende a esses três requisitos de forma integrada \cite{andersson2019}.
 
 \subsubsection*{Problema de Controle Ótimo em Horizonte Finito}
 
@@ -609,4 +624,4 @@ Para mitigar esse comportamento:
     \item A saída da rede neural foi submetida à saturação de segurança rígida no firmware ($0 \leq u \leq 100\%$);
     \item Implementou-se no firmware uma rotina de monitoramento de integridade (\textit{watchdog} angular) com comutação automática para o controlador PID clássico em caso de desvios angulares anômalos fora dos limites operacionais da bancada.
 \end{enumerate}
-
+

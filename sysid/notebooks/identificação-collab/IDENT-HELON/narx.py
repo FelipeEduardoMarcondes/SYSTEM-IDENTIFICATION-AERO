@@ -220,41 +220,60 @@ val_datasets = {
 
 # %%
 def plot_training_datasets_grid(train_ds, meta_dict):
-    """Gera um painel com os 6 conjuntos de treino (Ângulo em cima, Controle em baixo)."""
-    fig, axes = plt.subplots(3, 2, figsize=(11.5, 7.5), sharex=False)
+    """Gera um painel com os sinais de referência dos 6 conjuntos de treino."""
+    fig, axes = plt.subplots(3, 2, figsize=(11.0, 7.0), sharex=False)
     axes_flat = axes.flatten()
     
     for i, (key, meta) in enumerate(meta_dict.items()):
         ax = axes_flat[i]
         u, y, t, ref = train_ds[key]
         
-        # Subplot duplo via twinx ou dois eixos
-        ax.plot(t, y, color='#1f77b4', lw=1.1, label=r'Ângulo $\theta$')
-        if not np.all(np.isnan(ref)):
-            ax.plot(t, ref, color='#d62728', ls='--', lw=1.0, alpha=0.8, label=r'Ref $r$')
-        ax.set_ylabel(r'$\theta$ [$^\circ$]', color='#1f77b4')
-        ax.tick_params(axis='y', labelcolor='#1f77b4')
+        ax.plot(t, ref, color='#1f77b4', lw=1.2, label=r'Referência $r(t)$')
+        ax.set_ylabel(r'Referência $r$ [$^\circ$]')
+        ax.set_xlabel('Tempo [s]')
         ax.set_title(meta['label'], fontsize=9.5, fontweight='bold', pad=4)
         ax.grid(True)
+        ax.set_xlim(0, t[-1])
         
-        ax_u = ax.twinx()
-        ax_u.plot(t, u, color='#2ca02c', lw=0.9, alpha=0.75, label=r'Controle $u$')
-        ax_u.set_ylabel(r'$u$ [\%]', color='#2ca02c')
-        ax_u.tick_params(axis='y', labelcolor='#2ca02c')
-        ax.set_xlabel('Tempo [s]')
-        
-        if i == 0:
-            lines_1, labels_1 = ax.get_legend_handles_labels()
-            lines_2, labels_2 = ax_u.get_legend_handles_labels()
-            ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper right', fontsize=8)
+        y_min = np.floor(np.nanmin(ref) / 10) * 10 - 5
+        y_max = np.ceil(np.nanmax(ref) / 10) * 10 + 5
+        ax.set_ylim(y_min, y_max)
 
-    plt.suptitle("Conjunto de Ensaios Experimentais para Treinamento do Modelo NARX (0.50 Hz / Máx. Amplitude)", fontsize=11, fontweight='bold', y=0.995)
+    plt.suptitle("Sinais de Referência ($r$) dos Ensaios de Treinamento do Modelo NARX (0.50 Hz / Máx. Amplitude)", fontsize=11, fontweight='bold', y=0.995)
     plt.tight_layout()
     save_academic_plot(fig, "narx_train_datasets")
     plt.close(fig)
 
+def plot_validation_datasets_grid(val_ds, meta_dict):
+    """Gera um painel com os sinais de referência dos 6 conjuntos de validação."""
+    fig, axes = plt.subplots(3, 2, figsize=(11.0, 7.0), sharex=False)
+    axes_flat = axes.flatten()
+    
+    for i, (key, meta) in enumerate(meta_dict.items()):
+        ax = axes_flat[i]
+        u, y, t, ref = val_ds[key]
+        
+        ax.plot(t, ref, color='#1f77b4', lw=1.2, label=r'Referência $r(t)$')
+        ax.set_ylabel(r'Referência $r$ [$^\circ$]')
+        ax.set_xlabel('Tempo [s]')
+        ax.set_title(meta['label'], fontsize=9.5, fontweight='bold', pad=4)
+        ax.grid(True)
+        ax.set_xlim(0, t[-1])
+        
+        y_min = np.floor(np.nanmin(ref) / 10) * 10 - 5
+        y_max = np.ceil(np.nanmax(ref) / 10) * 10 + 5
+        ax.set_ylim(y_min, y_max)
+
+    plt.suptitle("Sinais de Referência ($r$) dos Ensaios de Validação Independente do Modelo NARX", fontsize=11, fontweight='bold', y=0.995)
+    plt.tight_layout()
+    save_academic_plot(fig, "narx_val_datasets")
+    plt.close(fig)
+
 print("Gerando gráfico dos sinais de treinamento...")
 plot_training_datasets_grid(train_datasets, train_files)
+
+print("Gerando gráfico dos sinais de validação...")
+plot_validation_datasets_grid(val_datasets, val_files)
 
 # %% [markdown]
 # ## Treinamento do Modelo NARX (FROLS / ERR)
