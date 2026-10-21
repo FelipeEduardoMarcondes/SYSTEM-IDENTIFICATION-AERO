@@ -1,9 +1,5 @@
-../Core/Src/aeropendulo_main.c:391:16:icm_read_ag.constprop.isra	2
-../Core/Src/aeropendulo_main.c:350:14:angulo_acelerometro	6
-../Core/Src/aeropendulo_main.c:330:50:icm_iniciar	2
-../Core/Src/aeropendulo_main.c:412:13:calibrar_giroscopio	12
-../Core/Src/aeropendulo_main.c:696:13:ciclo_controle	61
-../Core/Src/aeropendulo_main.c:975:6:HAL_UART_RxCpltCallback	6
-../Core/Src/aeropendulo_main.c:999:6:HAL_TIM_PeriodElapsedCallback	2
-../Core/Src/aeropendulo_main.c:1010:6:aeropendulo_init	11
-../Core/Src/aeropendulo_main.c:1070:6:aeropendulo_loop	81
+../Core/Src/aeropendulo_main.c:721:13:ciclo_controle	85
+../Core/Src/aeropendulo_main.c:1058:6:HAL_UART_RxCpltCallback	6
+../Core/Src/aeropendulo_main.c:1082:6:HAL_TIM_PeriodElapsedCallback	2
+../Core/Src/aeropendulo_main.c:1093:6:aeropendulo_init	9
+../Core/Src/aeropendulo_main.c:1153:6:aeropendulo_loop	93

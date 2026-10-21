@@ -37,10 +37,12 @@ class Aquisicao:
     """
 
     MAX_TIMEOUTS = 3
+    ultimo_profile = []
 
     def __init__(self, mgr, live):
         self._mgr  = mgr
         self._live = live
+        self.linhas_profile = []
 
     # ── Ponto de entrada público ──────────────────────────────────────────────
 
@@ -119,6 +121,8 @@ class Aquisicao:
                 continue
             if linha.startswith("#"):
                 print(f"  [STM32] {linha}")
+                if linha.startswith("# PROFILE"):
+                    self.linhas_profile.append(linha)
                 if "PARADO" in linha or "FIM" in linha:
                     break
                 continue
@@ -132,6 +136,7 @@ class Aquisicao:
                 ang  = float(partes[1])
                 u    = float(partes[2])
                 ref  = float(partes[3]) if len(partes) >= 4 else float("nan")
+                t_inf = float(partes[4]) if len(partes) >= 5 else None
             except ValueError:
                 continue
 
@@ -146,9 +151,10 @@ class Aquisicao:
             ref_list.append(ref)
             linhas_dados.append(linha)
 
+            inf_str = f"  inf={t_inf:.3f}ms" if t_inf is not None else ""
             print(
                 f"\r  t={t_s:7.2f}s  ang={ang:6.1f} deg  ref={ref:5.1f} deg  "
-                f"err={ang - ref:+6.1f} deg  u={u:5.1f}%  n={len(t_list)}",
+                f"err={ang - ref:+6.1f} deg  u={u:5.1f}%{inf_str}  n={len(t_list)}",
                 end="", flush=True,
             )
             if len(t_list) % 5 == 0:
@@ -156,6 +162,7 @@ class Aquisicao:
 
         # Encerramento
         self._parar.set()
+        Aquisicao.ultimo_profile = list(self.linhas_profile)
         self._mgr.parar()
         print(f"\n\n  Total de amostras: {len(linhas_dados)}")
         return linhas_dados

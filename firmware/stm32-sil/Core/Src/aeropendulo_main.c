@@ -32,7 +32,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-//#define SIL_MODE 1 // <-- Comentado para rodar na bancada real com IMU
+#define SIL_MODE 1 // <-- Comentado para rodar na bancada real com IMU
 #include "ann_weights.h" // Incluido incondicionalmente para ter acesso ao MPC na bancada real
 
 /* ── Handles HAL (declarados em main.c pelo CubeMX) ─────────────────────── */
@@ -248,6 +248,18 @@ static int fmt_float(char *dst, float val)
     if (neg && (inteiro > 0 || frac > 0))
         return sprintf(dst, "-%d.%02d", inteiro, frac);
     return sprintf(dst, "%d.%02d", inteiro, frac);
+}
+
+static int fmt_float3(char *dst, float val)
+{
+    int neg = (val < 0.0f);
+    if (neg) val = -val;
+    int mils = (int)(val * 1000.0f + 0.5f);
+    int inteiro = mils / 1000;
+    int frac = mils % 1000;
+    if (neg && (inteiro > 0 || frac > 0))
+        return sprintf(dst, "-%d.%03d", inteiro, frac);
+    return sprintf(dst, "%d.%03d", inteiro, frac);
 }
 
 /* ======================================================================== */
@@ -721,7 +733,7 @@ static void ciclo_controle(void)
         char buf[96];
         char s_ang[16];
         fmt_float(s_ang, angulo_filtrado + 90.0f);
-        snprintf(buf, sizeof(buf), "%lu,%s,0.00,0.00\r\n",
+        snprintf(buf, sizeof(buf), "%lu,%s,0.00,0.00,0.000\r\n",
                  (unsigned long)t_exp, s_ang);
         uart_print(buf);
         return;
@@ -770,11 +782,12 @@ static void ciclo_controle(void)
     }
 
     /* --- Controlador ------------------------------------------------------ */
+    float t_ann_ms = 0.0f;
+
 #ifndef SIL_MODE
     float y_med = angulo_filtrado + 90.0f;
     float e     = r - y_med;
     float u;
-    float t_ann_ms = 0.0f;
 
     /* --- Atualiza historico (y) com leitura real --- */
     for (int i = NY_MODEL - 1; i > 0; i--) sil_y_hist[i] = sil_y_hist[i-1];
@@ -887,7 +900,6 @@ static void ciclo_controle(void)
     float y_med = sil_y_hist[0];
     float e     = r - y_med;
     float u;
-    float t_ann_ms = 0.0f;
     
     if (openloop_ativo) {
         if (t_exp < 5000) {
@@ -1003,12 +1015,13 @@ static void ciclo_controle(void)
 
     /* --- Telemetria CSV --------------------------------------------------- */
     char buf[96];
-    char s_y[16], s_u[16], s_r[16];
+    char s_y[16], s_u[16], s_r[16], s_dt[16];
     fmt_float(s_y, y_med);
     fmt_float(s_u, u);
     fmt_float(s_r, openloop_ativo ? 0.0f : r);
-    snprintf(buf, sizeof(buf), "%lu,%s,%s,%s\r\n",
-             (unsigned long)t_exp, s_y, s_u, s_r);
+    fmt_float3(s_dt, t_ann_ms);
+    snprintf(buf, sizeof(buf), "%lu,%s,%s,%s,%s\r\n",
+             (unsigned long)t_exp, s_y, s_u, s_r, s_dt);
     uart_print(buf);
 
 #ifdef SIL_MODE

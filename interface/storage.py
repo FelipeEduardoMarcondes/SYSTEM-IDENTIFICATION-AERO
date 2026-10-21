@@ -28,7 +28,7 @@ plt.rcParams.update(MPL_RC)
 
 # ── Persistência ──────────────────────────────────────────────────────────────
 
-def salvar_csv(linhas_dados: list, prefixo: str = "ensaio") -> str:
+def salvar_csv(linhas_dados: list, prefixo: str = "ensaio", linhas_profile: list | None = None) -> str:
     """
     Salva linhas CSV brutas (vindas do STM32) em arquivo com cabeçalho.
 
@@ -59,11 +59,42 @@ def salvar_csv(linhas_dados: list, prefixo: str = "ensaio") -> str:
     nome_arquivo = f"{hoje}_{ts}_{prefixo}.csv"
     caminho = os.path.join(pasta_rodada, nome_arquivo)
     
+    # Detecta automaticamente se há 5 colunas (com tempo de inferência real)
+    primeira_valida = next((l for l in linhas_dados if l.strip()), "")
+    num_cols = len(primeira_valida.split(",")) if primeira_valida else 4
+
     with open(caminho, "w") as f:
-        f.write("tempo_ms,angulo_deg,u_pct,referencia\n")
+        if num_cols >= 5:
+            f.write("tempo_ms,angulo_deg,u_pct,referencia,tempo_inf_ms\n")
+        else:
+            f.write("tempo_ms,angulo_deg,u_pct,referencia\n")
         for linha in linhas_dados:
             f.write(linha + "\n")
     print(f"  CSV salvo em: {caminho}")
+
+    # Salva também o perfil de execução (PROFILE) se houver dados capturados
+    if linhas_profile is None:
+        try:
+            from acquisition import Aquisicao
+            linhas_profile = getattr(Aquisicao, "ultimo_profile", None)
+        except Exception:
+            linhas_profile = None
+
+    if linhas_profile:
+        import re
+        caminho_profile = os.path.join(pasta_rodada, f"{hoje}_{ts}_{prefixo}_profile.csv")
+        registros = []
+        for lp in linhas_profile:
+            m = re.search(r"ANN=([^\s]+)\s+NARX=([^\s]+)\s+TOTAL=([^\s]+)", lp)
+            if m:
+                registros.append(f"{m.group(1)},{m.group(2)},{m.group(3)}")
+        if registros:
+            with open(caminho_profile, "w") as f:
+                f.write("t_ann_ms,t_narx_ms,t_total_ms\n")
+                for reg in registros:
+                    f.write(reg + "\n")
+            print(f"  Perfil de tempo salvo em: {caminho_profile}")
+
     return caminho
 
 
@@ -83,6 +114,8 @@ def carregar_csv(caminho: str) -> pd.DataFrame:
             df["referencia"] = df["referencia"].astype(float)
         else:
             df["referencia"] = np.nan
+        if "tempo_inf_ms" in df.columns:
+            df["tempo_inf_ms"] = df["tempo_inf_ms"].astype(float)
         df = df[(df["tempo_s"] >= 0) & (df["tempo_s"].diff().fillna(0) < 20) & (df["tempo_s"] < 7200)]
         return df
 

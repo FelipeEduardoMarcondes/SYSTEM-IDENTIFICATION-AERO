@@ -893,6 +893,7 @@ xs = np.zeros((nx, 1))
 y_atual = 0.0
 y_sim = []
 u_sim = []
+t_inf_sim = []
 
 # Ganhos PID nominal para as fases de decolagem e pouso
 Kp, Ki, Kd = 0.5793, 0.6647, 0.2
@@ -916,6 +917,7 @@ import pandas as pd
 for k in tqdm(range(steps_val), desc="Python SIL Simulation"):
     t = k * Ts
     r_curr = x2ref_val[k]
+    t_inf_step = 0.0
     
     if t < T_PID_START or t >= t_total_val - T_PID_END:
         # --- Controle PID Nominal ---
@@ -948,8 +950,10 @@ for k in tqdm(range(steps_val), desc="Python SIL Simulation"):
         ref_window = x2ref_full_val[k : k + N]
         pval = np.concatenate([xs[:, -1], ref_window])
         pval_scaled = scaler.transform(pval.reshape(1, -1))
+        t_start_inf = time.perf_counter()
         with torch.no_grad():
             u_ann = float(model(torch.tensor(pval_scaled, dtype=torch.float32)).item())
+        t_inf_step = (time.perf_counter() - t_start_inf) * 1000.0
         
         erro = r_curr - y_atual
         if ENABLE_RESIDUAL_INTEGRATOR:
@@ -974,12 +978,14 @@ for k in tqdm(range(steps_val), desc="Python SIL Simulation"):
         remaining = steps_val - k
         y_sim.extend([np.nan] * remaining)
         u_sim.extend([np.nan] * remaining)
+        t_inf_sim.extend([np.nan] * remaining)
         break
 
     xs = np.c_[xs, xf_new]
     y_atual = float(res["yk"])
     y_sim.append(y_atual)
     u_sim.append(u_opt)
+    t_inf_sim.append(t_inf_step)
 
 # --- Plotagem Padronizada Acadêmica (IEEE / ABNT) ---
 fig_sil, (ax_s1, ax_s2) = plt.subplots(2, 1, figsize=(7.2, 4.6), sharex=True,
@@ -1022,8 +1028,13 @@ plt.pause(0.1)
 
 # %%
 # 12. Export to CSV for STM comparison
-# Salvando na nova estrutura de experimentos
-df_export = pd.DataFrame({"tempo_ms": (tvec_val * 1000).astype(int), "angulo_deg": y_sim, "u_pct": u_sim, "referencia": x2ref_val})
+df_export = pd.DataFrame({
+    "tempo_ms": (tvec_val * 1000).astype(int),
+    "angulo_deg": y_sim,
+    "u_pct": u_sim,
+    "referencia": x2ref_val,
+    "tempo_inf_ms": t_inf_sim
+})
 csv_filename = os.path.join(MPC_DIR, "simulacao_python.csv")
 df_export.to_csv(csv_filename, index=False)
 print(f"\nSimulation data exported to {csv_filename}!")
@@ -1061,6 +1072,7 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
     y_atual_val = 0.0
     y_sim_val = []
     u_sim_val = []
+    t_inf_sim_val = []
     u_i_pid_val = 0.0
     u_i_res_val = 0.0
     e_1_val = 0.0
@@ -1076,6 +1088,7 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
     for k in tqdm(range(steps_custom), desc=f"SIL {name}"):
         t = k * Ts
         r_curr = x2ref_custom[k]
+        t_inf_step_val = 0.0
         
         if t < T_PID_START or t >= (steps_custom * Ts) - T_PID_END:
             # PID Nominal
@@ -1106,8 +1119,10 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
             ref_window = x2ref_full_custom[k : k + N]
             pval = np.concatenate([xs_val[:, -1], ref_window])
             pval_scaled = scaler.transform(pval.reshape(1, -1))
+            t_start_inf = time.perf_counter()
             with torch.no_grad():
                 u_ann = float(model(torch.tensor(pval_scaled, dtype=torch.float32)).item())
+            t_inf_step_val = (time.perf_counter() - t_start_inf) * 1000.0
             erro = r_curr - y_atual_val
             if ENABLE_RESIDUAL_INTEGRATOR:
                 u_i_res_val += Ki_res * (Ts / 2.0) * (erro + e_1_val)
@@ -1134,6 +1149,7 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
         y_atual_val = float(res["yk"])
         y_sim_val.append(y_atual_val)
         u_sim_val.append(u_opt)
+        t_inf_sim_val.append(t_inf_step_val)
         
     tvec_plot = tvec_custom[:len(y_sim_val)]
     fig_v, (ax_v1, ax_v2) = plt.subplots(2, 1, figsize=(7.2, 4.4), sharex=True,
@@ -1169,7 +1185,8 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
 
     df_export = pd.DataFrame({"tempo_ms": (tvec_custom[:len(y_sim_val)] * 1000).astype(int), 
                               "angulo_deg": y_sim_val, "u_pct": u_sim_val, 
-                              "referencia": x2ref_custom[:len(y_sim_val)]})
+                              "referencia": x2ref_custom[:len(y_sim_val)],
+                              "tempo_inf_ms": t_inf_sim_val})
     df_export.to_csv(os.path.join(MPC_DIR, f"simulacao_python_{filename_prefix}.csv"), index=False)
     
     df_ref = pd.DataFrame({'tempo_s': df_export['tempo_ms'] / 1000.0, 'referencia_deg': x2ref_custom[:len(y_sim_val)]})
