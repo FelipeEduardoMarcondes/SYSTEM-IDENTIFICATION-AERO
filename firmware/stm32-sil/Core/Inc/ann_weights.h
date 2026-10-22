@@ -89,6 +89,7 @@ static float sil_th_rad = 0.0f;
 static float sil_v_rad  = 0.0f;
 static float sil_a_pct  = 0.0f;
 static float sil_y_hist[1] = {0.0f};
+static float sil_u_hist[1] = {0.0f};
 
 static float simulate_narx(float u_cmd) {
     const float dt = 0.01f;
