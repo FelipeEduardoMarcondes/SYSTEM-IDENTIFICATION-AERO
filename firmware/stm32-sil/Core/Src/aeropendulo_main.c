@@ -35,6 +35,10 @@
 #define SIL_MODE 1 // <-- Comentado para rodar na bancada real com IMU
 #include "ann_weights.h" // Incluido incondicionalmente para ter acesso ao MPC na bancada real
 
+#ifndef MPC_HORIZON
+#define MPC_HORIZON 100
+#endif
+
 /* ── Handles HAL (declarados em main.c pelo CubeMX) ─────────────────────── */
 extern I2C_HandleTypeDef  hi2c1;
 extern TIM_HandleTypeDef  htim1;   /* PWM ESC                                */
@@ -114,6 +118,12 @@ typedef enum {
     ESTADO_FREE_RUN
 } Estado_t;
 
+typedef enum {
+    CTRL_MODE_HYBRID = 0,  /* PID (0-5s) -> RNA (5-70s) -> PID (>70s) [Padrao] */
+    CTRL_MODE_PID    = 1,  /* 100% PID do inicio ao fim */
+    CTRL_MODE_ANN    = 2   /* 100% RNA / MPC do inicio ao fim */
+} CtrlMode_t;
+
 /* ======================================================================== */
 /* Variaveis globais do modulo                                                */
 /* ======================================================================== */
@@ -131,6 +141,7 @@ static uint8_t was_ann_mode = 0;
 static float y_1 = 0.0f;
 static float r   = 45.0f;   /* referencia corrente (graus) */
 static float u_anterior = 0.0f;
+static CtrlMode_t ctrl_mode = CTRL_MODE_HYBRID;
 
 /* --- SEQ ----------------------------------------------------------------- */
 static Degrau_t degraus[MAX_STEPS];
@@ -494,13 +505,27 @@ static uint16_t __attribute__((unused)) pct_para_us(float pct)
 
 static void resetar_controlador(void)
 {
+#ifdef SIL_MODE
+    float y_atual = 0.0f;
+#else
     float y_atual = angulo_filtrado + 90.0f;
+#endif
     e_1 = r - y_atual;
     u_i = 0.0f;
     u_i_res = 0.0f;
-    was_ann_mode = 0;
+    was_ann_mode = (ctrl_mode == CTRL_MODE_ANN) ? 1 : 0;
     y_1 = y_atual;
     u_anterior = 0.0f;
+#if defined(MODEL_TYPE_GREYBOX_V5) || defined(MODEL_TYPE_GREYBOX_V3)
+    sil_th_rad = 0.0f;
+    sil_v_rad  = 0.0f;
+    sil_a_pct  = 0.0f;
+    sil_y_hist[0] = y_atual;
+    sil_u_hist[0] = 0.0f;
+#else
+    for (int i = 0; i < NY_MODEL; i++) sil_y_hist[i] = y_atual;
+    for (int i = 0; i < NU_MODEL; i++) sil_u_hist[i] = 0.0f;
+#endif
 }
 
 /* ======================================================================== */
@@ -691,6 +716,23 @@ static void processar_comando(const char *cmd)
         return;
     }
 
+    if (strncmp(cmd, "MODE=", 5) == 0 && estado == ESTADO_IDLE) {
+        const char *p = cmd + 5;
+        if (strcmp(p, "PID") == 0) {
+            ctrl_mode = CTRL_MODE_PID;
+            uart_println("# MODE_OK PID");
+        } else if (strcmp(p, "ANN") == 0 || strcmp(p, "RNA") == 0 || strcmp(p, "MPC") == 0) {
+            ctrl_mode = CTRL_MODE_ANN;
+            uart_println("# MODE_OK ANN");
+        } else if (strcmp(p, "HYBRID") == 0 || strcmp(p, "HIBRIDO") == 0) {
+            ctrl_mode = CTRL_MODE_HYBRID;
+            uart_println("# MODE_OK HYBRID");
+        } else {
+            uart_println("# MODE_ERR");
+        }
+        return;
+    }
+
     if (strcmp(cmd, "START") == 0 && estado == ESTADO_IDLE) {
         esc_set_us(ESC_NEUTRO_US);
         estado = ESTADO_ARMING_ESC;
@@ -802,13 +844,25 @@ static void ciclo_controle(void)
             u = openloop_u;
         }
     } else {
-        // Logica de chaveamento PID -> ANN -> PID na bancada real
-        uint32_t t_switch_end = T_PID_END_MS;
-        if (wave_ativo && wave_len > 1000) {
-            t_switch_end = (wave_len * 10U) - T_PID_START_MS;
+        // Logica de decisao: PID vs ANN na bancada real
+        uint8_t use_pid = 0;
+        if (ctrl_mode == CTRL_MODE_PID) {
+            use_pid = 1;
+        } else if (ctrl_mode == CTRL_MODE_ANN) {
+            use_pid = 0;
+        } else { // CTRL_MODE_HYBRID
+            uint32_t t_switch_end = T_PID_END_MS;
+            if (wave_ativo && wave_len > 1000) {
+                t_switch_end = (wave_len * 10U) - T_PID_START_MS;
+            }
+            if (t_exp < T_PID_START_MS || t_exp >= t_switch_end) {
+                use_pid = 1;
+            } else {
+                use_pid = 0;
+            }
         }
 
-        if (t_exp < T_PID_START_MS || t_exp >= t_switch_end) {
+        if (use_pid) {
             // PID
             if (was_ann_mode) {
                 // Bumpless transfer: RNA -> PID
@@ -836,12 +890,46 @@ static void ciclo_controle(void)
                 was_ann_mode = 1;
             }
 
-            float nn_in[NY_MODEL + NU_MODEL + 100];
+#if defined(MODEL_TYPE_GREYBOX_V5) || defined(MODEL_TYPE_GREYBOX_V3)
+            float nn_in[NN_INPUT_DIM];
+            nn_in[0] = y_med;
+            nn_in[1] = (y_med - y_1) / TS;
+            nn_in[2] = u_anterior;
+            for(int i=0; i<MPC_HORIZON; i++) {
+                float r_futuro = r;
+                uint32_t t_futuro = t_exp + (i * 10);
+                
+                if (wave_ativo) {
+                    int f_idx = wave_idx - 1 + i;
+                    if (f_idx >= 0 && f_idx < wave_len) {
+                        r_futuro = wave_buf[f_idx];
+                    } else if (wave_len > 0) {
+                        r_futuro = wave_buf[wave_len - 1];
+                    }
+                } else if (chirp_ativo) {
+                    float t_sec = (float)t_futuro / 1000.0f;
+                    if (t_sec >= chirp_pad_s) {
+                        float t_loc = t_sec - chirp_pad_s;
+                        r_futuro = chirp_amp * sinf((chirp_a * t_loc + chirp_b) * t_loc) + chirp_dc;
+                    } else {
+                        r_futuro = chirp_dc;
+                    }
+                } else {
+                    int temp_idx = idx_degrau;
+                    while (temp_idx + 1 < n_degraus && t_futuro >= degraus[temp_idx + 1].t_ms) {
+                        temp_idx++;
+                        r_futuro = degraus[temp_idx].ref;
+                    }
+                }
+                nn_in[3 + i] = r_futuro;
+            }
+#else
+            float nn_in[NY_MODEL + NU_MODEL + MPC_HORIZON];
             for(int i=0; i<NY_MODEL; i++) nn_in[i] = sil_y_hist[i];
             for(int i=0; i<NU_MODEL; i++) nn_in[NY_MODEL+i] = sil_u_hist[i];
             
-            // Preenche o horizonte futuro preditivo de 100 passos
-            for(int i=0; i<100; i++) {
+            // Preenche o horizonte futuro preditivo de MPC_HORIZON passos
+            for(int i=0; i<MPC_HORIZON; i++) {
                 float r_futuro = r;
                 uint32_t t_futuro = t_exp + (i * 10);
                 
@@ -869,6 +957,7 @@ static void ciclo_controle(void)
                 }
                 nn_in[NY_MODEL + NU_MODEL + i] = r_futuro;
             }
+#endif
 
             uint32_t c_ann1 = DWT->CYCCNT;
             u = ann_predict(nn_in);
@@ -893,9 +982,11 @@ static void ciclo_controle(void)
         }
     }
 
+#if !defined(MODEL_TYPE_GREYBOX_V5) && !defined(MODEL_TYPE_GREYBOX_V3)
     /* --- Atualiza historico (u) com controle aplicado --- */
     for (int i = NU_MODEL - 1; i > 0; i--) sil_u_hist[i] = sil_u_hist[i-1];
     sil_u_hist[0] = u;
+#endif
 
     esc_set_us(pct_para_us(u));
 #else
@@ -910,13 +1001,25 @@ static void ciclo_controle(void)
             u = openloop_u;
         }
     } else {
-        // Logica de chaveamento PID -> ANN -> PID no SIL Virtual
-        uint32_t t_switch_end = T_PID_END_MS;
-        if (wave_ativo && wave_len > 1000) {
-            t_switch_end = (wave_len * 10U) - T_PID_START_MS;
+        // Logica de decisao: PID vs ANN no SIL Virtual
+        uint8_t use_pid = 0;
+        if (ctrl_mode == CTRL_MODE_PID) {
+            use_pid = 1;
+        } else if (ctrl_mode == CTRL_MODE_ANN) {
+            use_pid = 0;
+        } else { // CTRL_MODE_HYBRID
+            uint32_t t_switch_end = T_PID_END_MS;
+            if (wave_ativo && wave_len > 1000) {
+                t_switch_end = (wave_len * 10U) - T_PID_START_MS;
+            }
+            if (t_exp < T_PID_START_MS || t_exp >= t_switch_end) {
+                use_pid = 1;
+            } else {
+                use_pid = 0;
+            }
         }
 
-        if (t_exp < T_PID_START_MS || t_exp >= t_switch_end) {
+        if (use_pid) {
             // PID
             if (was_ann_mode) {
                 // Bumpless transfer: RNA -> PID
@@ -943,12 +1046,46 @@ static void ciclo_controle(void)
                 was_ann_mode = 1;
             }
 
-            float nn_in[NY_MODEL + NU_MODEL + 100];
+#if defined(MODEL_TYPE_GREYBOX_V5) || defined(MODEL_TYPE_GREYBOX_V3)
+            float nn_in[NN_INPUT_DIM];
+            nn_in[0] = y_med;
+            nn_in[1] = (y_med - y_1) / TS;
+            nn_in[2] = sil_a_pct;
+            for(int i=0; i<MPC_HORIZON; i++) {
+                float r_futuro = r;
+                uint32_t t_futuro = t_exp + (i * 10);
+                
+                if (wave_ativo) {
+                    int f_idx = wave_idx - 1 + i;
+                    if (f_idx >= 0 && f_idx < wave_len) {
+                        r_futuro = wave_buf[f_idx];
+                    } else if (wave_len > 0) {
+                        r_futuro = wave_buf[wave_len - 1];
+                    }
+                } else if (chirp_ativo) {
+                    float t_sec = (float)t_futuro / 1000.0f;
+                    if (t_sec >= chirp_pad_s) {
+                        float t_loc = t_sec - chirp_pad_s;
+                        r_futuro = chirp_amp * sinf((chirp_a * t_loc + chirp_b) * t_loc) + chirp_dc;
+                    } else {
+                        r_futuro = chirp_dc;
+                    }
+                } else {
+                    int temp_idx = idx_degrau;
+                    while (temp_idx + 1 < n_degraus && t_futuro >= degraus[temp_idx + 1].t_ms) {
+                        temp_idx++;
+                        r_futuro = degraus[temp_idx].ref;
+                    }
+                }
+                nn_in[3 + i] = r_futuro;
+            }
+#else
+            float nn_in[NY_MODEL + NU_MODEL + MPC_HORIZON];
             for(int i=0; i<NY_MODEL; i++) nn_in[i] = sil_y_hist[i];
             for(int i=0; i<NU_MODEL; i++) nn_in[NY_MODEL+i] = sil_u_hist[i];
             
-            // Preenche o horizonte futuro preditivo de 100 passos
-            for(int i=0; i<100; i++) {
+            // Preenche o horizonte futuro preditivo de MPC_HORIZON passos
+            for(int i=0; i<MPC_HORIZON; i++) {
                 float r_futuro = r;
                 uint32_t t_futuro = t_exp + (i * 10);
                 
@@ -976,6 +1113,7 @@ static void ciclo_controle(void)
                 }
                 nn_in[NY_MODEL + NU_MODEL + i] = r_futuro;
             }
+#endif
 
             uint32_t c_ann1 = DWT->CYCCNT;
             u = ann_predict(nn_in);
@@ -1149,6 +1287,7 @@ void aeropendulo_init(void)
 
     uart_println("# PRONTO");
     uart_println("# Comandos: START | STOP | RECAL | FREE");
+    uart_println("# MODE=HYBRID | PID | ANN");
     uart_println("# SEQ=t1:r1,...  |  R=<graus>");
     uart_println("# WAVE=<n> | DATA=v0,... | DATA_END");
     uart_println("# CHIRP=Amp,Fmax,T0,DC,PadS");
@@ -1184,7 +1323,10 @@ void aeropendulo_loop(void)
 
             estado = ESTADO_RUNNING;
             uart_println("# EXP_START");
-            uart_println("tempo_ms,angulo_deg,u_pct,referencia");
+            if (ctrl_mode == CTRL_MODE_PID)         uart_println("# MODO ATIVO: PID");
+            else if (ctrl_mode == CTRL_MODE_ANN)    uart_println("# MODO ATIVO: ANN");
+            else                                    uart_println("# MODO ATIVO: HYBRID");
+            uart_println("tempo_ms,angulo_deg,u_pct,referencia,tempo_inf_ms");
         }
         return;
     }

@@ -158,10 +158,25 @@ def _pedir_recal(mgr: "SerialManager"):
     if input("  Recalibrar giroscopio? (s/N): ").strip().lower() == "s":
         mgr.recalibrar()
 
+def _pedir_modo_controle(mgr: "SerialManager") -> str:
+    print("\n  Selecione o Modo de Controle:")
+    print("  [1] Híbrido (PID subida -> RNA -> PID descida) [Padrão]")
+    print("  [2] Apenas PID (100% clássico, sem RNA)")
+    print("  [3] Apenas RNA (100% Neural MPC)")
+    escolha = input("  Escolha [1-3, Enter=1]: ").strip()
+    mapa = {"1": "HYBRID", "2": "PID", "3": "ANN", "": "HYBRID"}
+    modo = mapa.get(escolha, "HYBRID")
+    if mgr.definir_modo_controle(modo):
+        print(f"  Modo de controle no STM32: {modo}\n")
+    else:
+        print(f"  [AVISO] Falha ao configurar modo {modo}, mantendo padrão.\n")
+    return modo
+
 def rodar_degraus(porta: str) -> str | None:
     mgr = _conectar_e_aguardar(porta)
     if not mgr: return None
     duracao_s, degraus = _definir_sequencia_degraus()
+    modo_ctrl = _pedir_modo_controle(mgr)
     _pedir_recal(mgr)
 
     if not mgr.enviar_seq(degraus):
@@ -169,7 +184,7 @@ def rodar_degraus(porta: str) -> str | None:
         return None
 
     transicoes = [t for t, _ in degraus[1:]]
-    nome = "SEQ  " + "  ".join(f"{t:.0f}s->{r:.0f}deg" for t, r in degraus)
+    nome = f"[{modo_ctrl}] SEQ  " + "  ".join(f"{t:.0f}s->{r:.0f}deg" for t, r in degraus)
     live = LivePlot(nome=nome, transicoes=transicoes)
 
     print("  Aguardando 2 segundos antes de começar (teste ESC)...")
@@ -189,7 +204,7 @@ def rodar_degraus(porta: str) -> str | None:
     if len(linhas) < 2:
         print("  Dados insuficientes.")
         return None
-    return salvar_csv(linhas, prefixo="degraus")
+    return salvar_csv(linhas, prefixo=f"degraus_{modo_ctrl.lower()}")
 
 
 def rodar_sinal_arbitrario(porta: str) -> str | None:
@@ -202,6 +217,7 @@ def rodar_sinal_arbitrario(porta: str) -> str | None:
         return None
         
     duracao_total, t_sig, u_sig, prefixo = resultado
+    modo_ctrl = _pedir_modo_controle(mgr)
     _pedir_recal(mgr)
 
     print(f"\n  Pré-carregando {len(u_sig)} amostras no STM32...")
@@ -210,7 +226,7 @@ def rodar_sinal_arbitrario(porta: str) -> str | None:
         mgr.fechar()
         return None
 
-    live = LivePlot(nome=prefixo.upper(), janela_s=min(30.0, duracao_total / 2))
+    live = LivePlot(nome=f"[{modo_ctrl}] {prefixo.upper()}", janela_s=min(30.0, duracao_total / 2))
     
     print("  Aguardando 2 segundos antes de começar (teste ESC)...")
     import time
@@ -228,7 +244,7 @@ def rodar_sinal_arbitrario(porta: str) -> str | None:
 
     if len(linhas) < 2:
         return None
-    return salvar_csv(linhas, prefixo=prefixo)
+    return salvar_csv(linhas, prefixo=f"{prefixo}_{modo_ctrl.lower()}")
 
 def rodar_repouso(porta: str) -> str | None:
     mgr = _conectar_e_aguardar(porta)
@@ -322,6 +338,7 @@ def rodar_sim_to_real(porta: str) -> str | None:
     mgr = _conectar_e_aguardar(porta)
     if not mgr: return None
     
+    modo_ctrl = _pedir_modo_controle(mgr)
     _pedir_recal(mgr)
 
     print(f"\n  Pré-carregando {len(u)} amostras no STM32...")
@@ -330,7 +347,7 @@ def rodar_sim_to_real(porta: str) -> str | None:
         mgr.fechar()
         return None
 
-    live = LivePlot(nome="AUTO SIM-TO-REAL", janela_s=min(30.0, duracao_total / 2))
+    live = LivePlot(nome=f"[{modo_ctrl}] AUTO SIM-TO-REAL", janela_s=min(30.0, duracao_total / 2))
     
     print("  Aguardando 2 segundos antes de começar (teste ESC)...")
     time.sleep(2.0)
@@ -348,7 +365,7 @@ def rodar_sim_to_real(porta: str) -> str | None:
     if len(linhas) < 2:
         return None
         
-    caminho_stm = salvar_csv(linhas, prefixo=prefixo)
+    caminho_stm = salvar_csv(linhas, prefixo=f"stm_validacao_{modo_ctrl.lower()}")
     
     print("\n  [AUTO SIM-TO-REAL] Abrindo comparacao automatica...")
     import comparar_csvs

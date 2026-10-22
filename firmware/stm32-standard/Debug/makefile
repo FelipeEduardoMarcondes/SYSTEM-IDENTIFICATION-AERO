@@ -34,34 +34,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := stm-firmware
+BUILD_ARTIFACT_NAME := aeropendulo-1
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-stm-firmware.elf \
+aeropendulo-1.elf \
 
 MAP_FILES += \
-stm-firmware.map \
+aeropendulo-1.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-stm-firmware.list \
+aeropendulo-1.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: stm-firmware.elf secondary-outputs
+main-build: aeropendulo-1.elf secondary-outputs
 
 # Tool invocations
-stm-firmware.elf stm-firmware.map: $(OBJS) $(USER_OBJS) C:\Users\vicio\Documents\AEROPENDULO\stm-firmware\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "stm-firmware.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\vicio\Documents\AEROPENDULO\stm-firmware\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="stm-firmware.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+aeropendulo-1.elf aeropendulo-1.map: $(OBJS) $(USER_OBJS) C:\Users\vicio\Documents\AEROPENDULO\firmware\stm32-standard\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "aeropendulo-1.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\vicio\Documents\AEROPENDULO\firmware\stm32-standard\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="aeropendulo-1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -70,14 +70,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-stm-firmware.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "stm-firmware.list"
+aeropendulo-1.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "aeropendulo-1.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) default.size.stdout stm-firmware.elf stm-firmware.list stm-firmware.map
+	-$(RM) aeropendulo-1.elf aeropendulo-1.list aeropendulo-1.map default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)

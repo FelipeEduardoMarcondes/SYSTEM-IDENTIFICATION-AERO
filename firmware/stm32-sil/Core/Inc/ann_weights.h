@@ -21,6 +21,8 @@ const float b2[1] = {0.27735090255737305f};
 
 #define NY_MODEL 15
 #define NU_MODEL 15
+#define MPC_HORIZON 150
+#define NN_INPUT_DIM (NY_MODEL + NU_MODEL + MPC_HORIZON)
 static float sil_y_hist[NY_MODEL] = {0};
 static float sil_u_hist[NU_MODEL] = {0};
 

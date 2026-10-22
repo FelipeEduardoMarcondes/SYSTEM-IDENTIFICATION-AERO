@@ -752,8 +752,12 @@ def export_ann_to_c(model, scaler, filename="ann_weights.h", narx_terms=None, na
 
         # 3. Dynamic SIL C generation
         if narx_terms is not None and narx_theta is not None:
+            input_dim = model.net[0].in_features
+            horizon = input_dim - (ny + nu)
             f.write(f"#define NY_MODEL {ny}\n")
             f.write(f"#define NU_MODEL {nu}\n")
+            f.write(f"#define MPC_HORIZON {horizon}\n")
+            f.write(f"#define NN_INPUT_DIM (NY_MODEL + NU_MODEL + MPC_HORIZON)\n")
             f.write(f"static float sil_y_hist[NY_MODEL] = {{0}};\n")
             f.write(f"static float sil_u_hist[NU_MODEL] = {{0}};\n\n")
             

@@ -144,6 +144,17 @@ class SerialManager:
         self.enviar("RECAL")
         return self.aguardar_token("PRONTO", timeout_s=30.0)
 
+    def definir_modo_controle(self, modo: str) -> bool:
+        """
+        Define o modo de controle no STM32:
+          - 'HYBRID': PID nos primeiros 5s -> RNA -> PID no final (padrao)
+          - 'PID':    100% PID do inicio ao fim (desliga RNA)
+          - 'ANN':    100% RNA / MPC do inicio ao fim
+        """
+        modo = modo.upper().strip()
+        self.enviar(f"MODE={modo}")
+        return self.aguardar_token("MODE_OK", timeout_s=5.0)
+
     def iniciar_experimento(self, timeout_s: float = 10.0) -> bool:
         self.ser.reset_input_buffer()
         self.enviar("START")
