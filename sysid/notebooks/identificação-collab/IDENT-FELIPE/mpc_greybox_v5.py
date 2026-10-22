@@ -219,7 +219,7 @@ if os.path.exists(full_ms_path):
 # =============================================================================
 # 3. Setup do NMPC Ótimo (CasADi + IPOPT)
 # =============================================================================
-N = 100  # Horizonte preditivo (N * Ts = 100 * 0.01 s = 1.0 s à frente)
+N = 150# Horizonte preditivo (N * Ts = 100 * 0.01 s = 1.0 s à frente)
 
 data = {
     'Ts': Ts,
@@ -457,9 +457,18 @@ plt.show(block=False); plt.pause(0.1)
 # 6. Simulação do MPC sobre o Sinal Rico e Coleta do Dataset
 # =============================================================================
 cache_dataset = os.path.join(MPC_DIR, "dataset_mpc_greybox_v5.npz")
-RECOMPUTE_DATASET = globals().get('RECOMPUTE_DATASET', True)
+RECOMPUTE_DATASET = globals().get('RECOMPUTE_DATASET', False)
 
-if os.path.exists(cache_dataset) and not RECOMPUTE_DATASET:
+cache_valid = False
+if os.path.exists(cache_dataset):
+    try:
+        loaded_chk = np.load(cache_dataset)
+        if loaded_chk['P_data'].shape[1] == nx + N:
+            cache_valid = True
+    except Exception:
+        cache_valid = False
+
+if cache_valid and not RECOMPUTE_DATASET:
     print(f"\n[CACHE] Carregando dataset NMPC salvo em '{cache_dataset}'...")
     loaded = np.load(cache_dataset)
     P_data = loaded['P_data']
@@ -468,7 +477,7 @@ if os.path.exists(cache_dataset) and not RECOMPUTE_DATASET:
     usim_train = list(loaded['usim_train'])
     xsim_train = loaded['xsim_train']
     sim_steps_train = len(ysim_train)
-    print(f"[CACHE] Dataset carregado com sucesso ({len(P_data)} amostras)!")
+    print(f"[CACHE] Dataset carregado com sucesso ({len(P_data)} amostras com horizonte N={N})!")
 else:
     xsim_train = np.zeros((nx, 1))
     xsim_train[:, 0] = [0.0, 0.0, 0.0]  # Parte de repouso em 0.0 rad
@@ -800,6 +809,12 @@ x2ref_full_val = np.concatenate([x2ref_val, np.full(N, 45.0)])
 # 10. Simulação Python SIL da Validação 1 (PID -> ANN -> PID)
 # =============================================================================
 Kp, Ki, Kd = 0.5793, 0.6647, 0.2
+
+# Integrador Residual RNA (Rejeição de Offset em Malha Fechada, idêntico ao firmware STM32)
+ENABLE_RESIDUAL_INTEGRATOR = True
+KI_RES = 0.20
+UI_RES_MAX = 10.0
+
 xs_val = np.zeros((nx, 1))
 xs_val[:, 0] = [np.radians(45.0), 0.0, u_equilibrium(45.0)]
 
@@ -807,17 +822,30 @@ y_sim_val = []
 u_sim_val = []
 e_1 = 0.0
 u_i = u_equilibrium(45.0)
+u_i_res = 0.0
+was_ann_mode = False
 y_1 = 45.0
 y_atual = 45.0
+u_cmd = u_equilibrium(45.0)
+
+ann_end_idx_val1 = int(round((t_total_val - T_PID_END) / Ts))
 
 model.eval()
-print(f"\nExecutando Simulação Python SIL v5 (Validação 1: PID -> ANN -> PID)...")
+print(f"\nExecutando Simulação Python SIL v5 (Validação 1: PID -> ANN -> PID [Integrador Residual: {ENABLE_RESIDUAL_INTEGRATOR}])...")
 
 for k in tqdm(range(steps_val), desc="Python SIL Val 1 v5"):
     t_curr = tvec_val[k]
     r_curr = x2ref_val[k]
 
     if t_curr < T_PID_START or t_curr >= (t_total_val - T_PID_END):
+        # Transição suave: RNA -> PID (BUMPLESS TRANSFER)
+        if was_ann_mode:
+            erro_tr = r_curr - y_atual
+            u_p_tr = Kp * erro_tr
+            u_d_tr = -(Kd / Ts) * (y_atual - y_1)
+            u_i = u_cmd - u_p_tr - u_d_tr
+            was_ann_mode = False
+
         erro = r_curr - y_atual
         u_p = Kp * erro
         u_i = u_i + Ki * (Ts / 2.0) * (erro + e_1)
@@ -829,18 +857,44 @@ for k in tqdm(range(steps_val), desc="Python SIL Val 1 v5"):
         e_1 = erro
         y_1 = y_atual
     else:
+        # Transição suave: PID -> RNA
+        if not was_ann_mode:
+            u_i_res = 0.0
+            was_ann_mode = True
+
         st_deg = [xs_val[0, -1] * 180.0 / np.pi, xs_val[1, -1] * 180.0 / np.pi, xs_val[2, -1]]
-        feat = np.concatenate([st_deg, x2ref_full_val[k : k + N]])
+
+        # Horizonte preditivo seguro: antes do handover, não antecipa a descontinuidade do pouso
+        ref_horizon = np.zeros(N)
+        for j in range(N):
+            idx_fut = k + j
+            if idx_fut < ann_end_idx_val1:
+                ref_horizon[j] = x2ref_val[idx_fut]
+            else:
+                ref_horizon[j] = x2ref_val[ann_end_idx_val1 - 1]
+
+        feat = np.concatenate([st_deg, ref_horizon])
         feat_scaled = scaler.transform(feat.reshape(1, -1))
 
         with torch.no_grad():
             u_nn = float(model(torch.tensor(feat_scaled, dtype=torch.float32)).item())
-        u_cmd = float(np.clip(u_nn, data['u_min'][0], data['u_max'][0]))
 
         erro = r_curr - y_atual
+        if ENABLE_RESIDUAL_INTEGRATOR:
+            u_i_res += KI_RES * (Ts / 2.0) * (erro + e_1)
+            u_i_res = float(np.clip(u_i_res, -UI_RES_MAX, UI_RES_MAX))
+            u_calc = u_nn + u_i_res
+        else:
+            u_calc = u_nn
+
+        u_cmd = float(np.clip(u_calc, data['u_min'][0], data['u_max'][0]))
+
+        # Sincroniza integrador PID em background para transição suave de retorno aos 70s
+        u_p_tr = Kp * erro
+        u_d_tr = -(Kd / Ts) * (y_atual - y_1)
+        u_i = u_cmd - u_p_tr - u_d_tr
         e_1 = erro
         y_1 = y_atual
-        u_i = u_cmd - (Kp * erro) - (-(Kd / Ts) * (y_atual - y_1))
 
     sim_step = F_plant(x0=xs_val[:, -1], p=u_cmd)
     xk1 = sim_step['xf'].full().flatten()
@@ -852,17 +906,19 @@ for k in tqdm(range(steps_val), desc="Python SIL Val 1 v5"):
 
 y_sim_val = np.array(y_sim_val)
 u_sim_val = np.array(u_sim_val)
+mask_val1 = (tvec_val >= T_PID_START) & (tvec_val < t_total_val - T_PID_END)
+rmse_rna1 = np.sqrt(np.mean((y_sim_val[mask_val1] - x2ref_val[mask_val1])**2))
 rmse_sil1 = np.sqrt(np.mean((y_sim_val - x2ref_val)**2))
-print(f"Validação 1 SIL Concluída! RMSE = {rmse_sil1:.2f}°")
+print(f"Validação 1 SIL Concluída! RMSE Total = {rmse_sil1:.2f}° | RMSE Janela RNA = {rmse_rna1:.2f}°")
 
 plt.figure(figsize=(14, 5))
 plt.plot(tvec_val, x2ref_val, 'k--', label='Referência r(t)')
-plt.plot(tvec_val, y_sim_val, 'b-', label=f'Saída Grey-Box v5 y(t) (RMSE = {rmse_sil1:.2f}°)')
+plt.plot(tvec_val, y_sim_val, 'b-', label=f'Saída Grey-Box v5 y(t) (RMSE RNA = {rmse_rna1:.2f}°, Total = {rmse_sil1:.2f}°)')
 plt.axvspan(0, T_PID_START, color='gray', alpha=0.15, label='Controle PID')
 plt.axvspan(t_total_val - T_PID_END, t_total_val, color='gray', alpha=0.15)
 plt.ylabel('Ângulo [°]')
 plt.xlabel('Tempo [s]')
-plt.title('Python SIL Validation 1 - Modelo Grey-Box v5 (PID -> ANN MPC -> PID)')
+plt.title('Python SIL Validation 1 - Modelo Grey-Box v5 (PID -> ANN MPC -> PID [Com Integrador Residual])')
 plt.grid(True)
 plt.legend()
 plt.tight_layout()
@@ -903,7 +959,7 @@ print("CSVs de simulação e interface Sim-to-Real exportados com sucesso!")
 def run_sil_validation(x2ref_custom, name, filename_prefix):
     steps_c = len(x2ref_custom)
     tvec_c = np.arange(steps_c) * Ts
-    x2ref_full_c = np.concatenate([x2ref_custom, np.full(N, x2ref_custom[-1])])
+    ann_end_idx_c = int(round((steps_c * Ts - T_PID_END) / Ts))
 
     xs_c = np.zeros((nx, 1))
     xs_c[:, 0] = [np.radians(x2ref_custom[0]), 0.0, u_equilibrium(x2ref_custom[0])]
@@ -911,15 +967,26 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
     u_sim_c = []
 
     u_i_c = u_equilibrium(x2ref_custom[0])
+    u_i_res_c = 0.0
+    was_ann_c = False
     e_1_c = 0.0
     y_1_c = x2ref_custom[0]
     y_at_c = x2ref_custom[0]
+    u_cmd = u_equilibrium(x2ref_custom[0])
 
     for k in tqdm(range(steps_c), desc=f"SIL {name}"):
         t_c = k * Ts
         r_c = x2ref_custom[k]
 
         if t_c < T_PID_START or t_c >= (steps_c * Ts - T_PID_END):
+            if was_ann_c:
+                # Bumpless transfer: RNA -> PID
+                erro_tr = r_c - y_at_c
+                u_p_tr = Kp * erro_tr
+                u_d_tr = -(Kd / Ts) * (y_at_c - y_1_c)
+                u_i_c = u_cmd - u_p_tr - u_d_tr
+                was_ann_c = False
+
             erro = r_c - y_at_c
             u_p = Kp * erro
             u_i_c = u_i_c + Ki * (Ts / 2.0) * (erro + e_1_c)
@@ -931,17 +998,42 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
             e_1_c = erro
             y_1_c = y_at_c
         else:
+            if not was_ann_c:
+                u_i_res_c = 0.0
+                was_ann_c = True
+
             st_deg = [xs_c[0, -1] * 180.0 / np.pi, xs_c[1, -1] * 180.0 / np.pi, xs_c[2, -1]]
-            feat = np.concatenate([st_deg, x2ref_full_c[k : k + N]])
+
+            # Horizonte preditivo seguro: antes de 70s, mantém o patamar atual até o handover
+            ref_horizon = np.zeros(N)
+            for j in range(N):
+                idx_fut = k + j
+                if idx_fut < ann_end_idx_c:
+                    ref_horizon[j] = x2ref_custom[idx_fut]
+                else:
+                    ref_horizon[j] = x2ref_custom[ann_end_idx_c - 1]
+
+            feat = np.concatenate([st_deg, ref_horizon])
             feat_sc = scaler.transform(feat.reshape(1, -1))
             with torch.no_grad():
                 u_nn = float(model(torch.tensor(feat_sc, dtype=torch.float32)).item())
-            u_cmd = float(np.clip(u_nn, data['u_min'][0], data['u_max'][0]))
 
             erro = r_c - y_at_c
+            if ENABLE_RESIDUAL_INTEGRATOR:
+                u_i_res_c += KI_RES * (Ts / 2.0) * (erro + e_1_c)
+                u_i_res_c = float(np.clip(u_i_res_c, -UI_RES_MAX, UI_RES_MAX))
+                u_calc = u_nn + u_i_res_c
+            else:
+                u_calc = u_nn
+
+            u_cmd = float(np.clip(u_calc, data['u_min'][0], data['u_max'][0]))
+
+            # Tracking background do integrador PID
+            u_p_tr = Kp * erro
+            u_d_tr = -(Kd / Ts) * (y_at_c - y_1_c)
+            u_i_c = u_cmd - u_p_tr - u_d_tr
             e_1_c = erro
             y_1_c = y_at_c
-            u_i_c = u_cmd - (Kp * erro) - (-(Kd / Ts) * (y_at_c - y_1_c))
 
         sim_step = F_plant(x0=xs_c[:, -1], p=u_cmd)
         xk1 = sim_step['xf'].full().flatten()
@@ -952,17 +1044,19 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
         u_sim_c.append(u_cmd)
 
     y_sim_c = np.array(y_sim_c)
+    mask_c = (tvec_c >= T_PID_START) & (tvec_c < steps_c * Ts - T_PID_END)
+    rmse_rna_c = np.sqrt(np.mean((y_sim_c[mask_c] - x2ref_custom[mask_c])**2))
     rmse_c = np.sqrt(np.mean((y_sim_c - x2ref_custom)**2))
-    print(f"Validação '{name}' concluída! RMSE = {rmse_c:.2f}°")
+    print(f"Validação '{name}' concluída! RMSE Total = {rmse_c:.2f}° | RMSE Janela RNA = {rmse_rna_c:.2f}°")
 
     plt.figure(figsize=(14, 5))
     plt.plot(tvec_c, x2ref_custom, 'k--', label='Referência')
-    plt.plot(tvec_c, y_sim_c, 'b-', label=f'Saída y(t) (RMSE = {rmse_c:.2f}°)')
+    plt.plot(tvec_c, y_sim_c, 'b-', label=f'Saída y(t) (RMSE RNA = {rmse_rna_c:.2f}°, Total = {rmse_c:.2f}°)')
     plt.axvspan(0, T_PID_START, color='gray', alpha=0.15, label='PID')
     plt.axvspan(steps_c * Ts - T_PID_END, steps_c * Ts, color='gray', alpha=0.15)
     plt.xlabel('Tempo [s]')
     plt.ylabel('Ângulo [°]')
-    plt.title(f'Python SIL Validation v5 - {name}')
+    plt.title(f'Python SIL Validation v5 - {name} (Com Integrador Residual e Bumpless Transfer)')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
