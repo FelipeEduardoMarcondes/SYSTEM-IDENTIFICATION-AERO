@@ -707,45 +707,20 @@ def export_ann_to_c(mod, sc, filename):
         f.write("    return out;\n")
         f.write("}\n\n")
 
-        # Função de simulação do modelo físico v5 (para substituição do simulate_narx no SIL)
+        # Função de simulação do modelo físico v5 (RK4 a 100 Hz com 2 subpassos de 5 ms)
         f.write("/* Simulador de Planta Fisica Grey-Box v5 no STM32 SIL (RK4 100 Hz) */\n")
-        f.write("static float sil_th_rad = 0.0f;\n")
-        f.write("static float sil_v_rad  = 0.0f;\n")
-        f.write("static float sil_a_pct  = 0.0f;\n")
-        f.write("static float sil_y_hist[1] = {0.0f};\n")
-        f.write("static float sil_u_hist[1] = {0.0f};\n\n")
-        f.write("static float simulate_narx(float u_cmd) {\n")
-        f.write("    const float dt = 0.01f;\n")
-        f.write("    float th = sil_th_rad;\n")
-        f.write("    float v  = sil_v_rad;\n")
-        f.write("    float a  = sil_a_pct;\n")
-        f.write("    for (int step = 0; step < 4; step++) {\n")
-        f.write("        float z = a - GB_U0;\n")
-        f.write("        float thrust = (z > 0.0f) ? z * z : 0.0f;\n")
-        f.write("        float fric = -GB_FC * tanhf(50.0f * v);\n")
-        f.write("        float aero = -GB_C_AERO * v * fabsf(v);\n")
-        f.write("        float acc = GB_C1 * sinf(th) + GB_C2 * v + aero + fric + GB_C3 * thrust;\n")
-        f.write("        float adot = (u_cmd - a) / GB_TAU_M;\n")
-        f.write("        th += (dt / 4.0f) * v;\n")
-        f.write("        v  += (dt / 4.0f) * acc;\n")
-        f.write("        a  += (dt / 4.0f) * adot;\n")
-        f.write("    }\n")
-        f.write("    sil_th_rad = th;\n")
-        f.write("    sil_v_rad  = v;\n")
-        f.write("    sil_a_pct  = a;\n")
-        f.write("    float ang_deg = th * 180.0f / (float)M_PI;\n")
-        f.write("    sil_y_hist[0] = ang_deg;\n")
-        f.write("    return ang_deg;\n")
-        f.write("}\n\n#endif // ANN_WEIGHTS_H\n")
+        f.write("#include \"model_physical.h\"\n\n")
+        f.write("#endif // ANN_WEIGHTS_H\n")
 
 ann_c_file = os.path.join(SIL_DIR, "ann_weights.h")
 export_ann_to_c(model, scaler, ann_c_file)
 print(f"Arquivo C de pesos e física v5 gerado em: {ann_c_file}")
 
-stm32_inc = os.path.join(root_dir, "firmware", "stm32-sil", "Core", "Inc")
-if os.path.exists(stm32_inc):
-    export_ann_to_c(model, scaler, os.path.join(stm32_inc, "ann_weights.h"))
-    print(f"Exportado automaticamente para firmware STM32: {stm32_inc}/ann_weights.h")
+for fw_dir in ["stm32-fisico", "stm32-sil"]:
+    stm32_inc = os.path.join(root_dir, "firmware", fw_dir, "Core", "Inc")
+    if os.path.exists(stm32_inc):
+        export_ann_to_c(model, scaler, os.path.join(stm32_inc, "ann_weights.h"))
+        print(f"Exportado automaticamente para firmware STM32: {stm32_inc}/ann_weights.h")
 
 # %%
 # =============================================================================

@@ -85,7 +85,7 @@ def salvar_csv(linhas_dados: list, prefixo: str = "ensaio", linhas_profile: list
         caminho_profile = os.path.join(pasta_rodada, f"{hoje}_{ts}_{prefixo}_profile.csv")
         registros = []
         for lp in linhas_profile:
-            m = re.search(r"ANN=([^\s]+)\s+NARX=([^\s]+)\s+TOTAL=([^\s]+)", lp)
+            m = re.search(r"ANN=([^\s]+)\s+(?:NARX|PHYS)=([^\s]+)\s+TOTAL=([^\s]+)", lp)
             if m:
                 registros.append(f"{m.group(1)},{m.group(2)},{m.group(3)}")
         if registros:
