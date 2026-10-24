@@ -85,10 +85,10 @@ if os.path.exists(json_path):
     with open(json_path, "r", encoding="utf-8") as f:
         mod_data = json.load(f)
     
-    # Seleção do melhor modelo: "mecanica regularizada" ou "c3 livre"
-    m_key = "mecanica regularizada"
+    # Seleção do melhor modelo: "mecanica fixada"
+    m_key = "mecanica fixada"
     if m_key not in mod_data.get("models", {}):
-        m_key = "c3 livre" if "c3 livre" in mod_data.get("models", {}) else list(mod_data["models"].keys())[0]
+        m_key = "mecanica regularizada" if "mecanica regularizada" in mod_data.get("models", {}) else list(mod_data["models"].keys())[0]
     
     p = mod_data["models"][m_key]["params"]
     c1 = float(p["c1"])

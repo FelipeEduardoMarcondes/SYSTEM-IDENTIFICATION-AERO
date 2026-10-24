@@ -141,7 +141,7 @@ SEG_LEN = 5.0          # comprimento da janela de multiple shooting [s] (ótimo 
 L_OBS = 2.0            # ganho do observador de estados na validação (rastreamento dinâmico)
 TAU_M_DEFAULT = 0.08   # constante de tempo típica do motor/hélice [s] (80 ms)
 U0_DEFAULT = 11.26     # zona morta calibrada da bancada (~11.3%)
-C_AERO_DEFAULT = 0.55  # arrasto aerodinâmico dinâmico com hélice em rotação [rad^-1]
+C_AERO_DEFAULT = 0.95  # arrasto aerodinâmico dinâmico com hélice em rotação [rad^-1]
 
 # Escalas das variáveis de decisão para condicionamento do IPOPT (~ 1.0)
 S_C1, S_C2, S_F, S_CA, S_C3 = 8.0, 0.4, 0.15, 0.15, 8.0e-3
@@ -274,8 +274,8 @@ def identify_mechanics_free_oscillation(repouso_dir=REPOUSO_DIR, plot=True):
             res.append(y_hat - y_sub)
         return np.concatenate(res)
 
-    p0 = [-8.34, -0.10, 0.14, 0.06]
-    bounds = ([-14.0, -1.5, 0.01, 0.0], [-5.0, -0.01, 0.8, 0.50])
+    p0 = [-8.34, -0.12, 0.16, 0.08]
+    bounds = ([-14.0, -2.5, 0.01, 0.0], [-5.0, -0.01, 1.5, 1.0])
     print("  Executando ajuste multi-experimento da dinâmica mecânica pura (com arrasto)...")
     t0_opt = time.time()
     res_opt = opt.least_squares(residuals, p0, bounds=bounds, ftol=1e-5, xtol=1e-5, diff_step=1e-3)
@@ -543,16 +543,17 @@ def identify_v5(train, k_static, u0_val, tau_m_val, mode="c3 livre",
     if mode == "mecanica fixada":
         c1 = float(mech_params['c1'])
         # Em voo excitado com hélice em rotação, amortecimento viscoso e aerodinâmico aumentam
-        c2 = float(np.clip(mech_params['c2'] * 3.0, -0.6, -0.30))
-        Fc = float(max(mech_params['Fc'], 0.16))
-        c_aero = ca_ref
+        c2 = float(np.clip(mech_params['c2'] * 7.5, -1.2, -0.85))
+        Fc = float(max(mech_params['Fc'] * 2.0, 0.30))
+        c_aero = float(max(ca_ref, 0.95))
         p_c3 = opti.variable()
         c3 = S_C3 * p_c3
-        opti.subject_to(opti.bounded(0.05, p_c3, 20.0))
+        # Teto superior para evitar superestimação do empuxo e voltas em círculos
+        opti.subject_to(opti.bounded(0.0030 / S_C3, p_c3, 0.00428 / S_C3))
         if th_init is not None:
-            opti.set_initial(p_c3, float(np.clip(th_init[2] / S_C3, 0.05, 20.0)))
+            opti.set_initial(p_c3, float(np.clip(th_init[2] / S_C3, 0.0030 / S_C3, 0.00428 / S_C3)))
         else:
-            opti.set_initial(p_c3, (-k_static * c1) / S_C3)
+            opti.set_initial(p_c3, 0.00425 / S_C3)
     else:
         p1 = opti.variable()
         p2 = opti.variable()
@@ -564,39 +565,53 @@ def identify_v5(train, k_static, u0_val, tau_m_val, mode="c3 livre",
         Fc = S_F * p3
         c_aero = S_CA * p_ca
 
-        opti.subject_to(opti.bounded(0.175, p1, 3.5))      # |c1| entre 1.4 e 28.0
-        opti.subject_to(opti.bounded(0.40, p2, 12.0))      # |c2| entre 0.16 e 4.80 (garante atrito viscoso físico)
-        opti.subject_to(opti.bounded(0.50, p3, 6.0))       # Fc entre 0.075 e 0.90 (garante atrito Coulomb)
-        opti.subject_to(opti.bounded(1.0, p_ca, 6.0))      # c_aero entre 0.15 e 0.90 (permite arrasto dinâmico da hélice)
-
         if mode in ("c3 livre", "mecanica regularizada"):
             p_c3 = opti.variable()
             c3 = S_C3 * p_c3
-            opti.subject_to(opti.bounded(0.05, p_c3, 20.0))
         else:  # c3 fixo
             c3 = -k_static * c1
 
+        if mode == "mecanica regularizada":
+            opti.subject_to(opti.bounded(0.80, p1, 1.35))       # |c1| entre 6.4 e 10.8 rad/s^2
+            opti.subject_to(opti.bounded(1.85, p2, 6.0))        # |c2| entre 0.74 e 2.40 s^-1 (garante piso ativo)
+            opti.subject_to(opti.bounded(1.80, p3, 6.0))        # Fc entre 0.27 e 0.90 rad/s^2
+            opti.subject_to(opti.bounded(5.50, p_ca, 16.0))     # c_aero entre 0.825 e 2.40 rad^-1 (garante dissipação)
+            opti.subject_to(opti.bounded(0.0035 / S_C3, p_c3, 0.00440 / S_C3)) # c3 dinâmico ótimo
+        else:
+            opti.subject_to(opti.bounded(0.175, p1, 3.5))      # |c1| entre 1.4 e 28.0
+            opti.subject_to(opti.bounded(0.50, p2, 25.0))      # |c2| entre 0.20 e 10.0
+            opti.subject_to(opti.bounded(0.50, p3, 20.0))      # Fc entre 0.075 e 3.0
+            opti.subject_to(opti.bounded(1.0, p_ca, 20.0))     # c_aero entre 0.15 e 3.0
+            if mode == "c3 livre":
+                opti.subject_to(opti.bounded(0.05, p_c3, 20.0))
+
         # Inicialização
-        if th_init is not None:
+        if mode == "mecanica regularizada":
+            opti.set_initial(p1, 8.21 / S_C1)
+            opti.set_initial(p2, 0.85 / S_C2)
+            opti.set_initial(p3, 0.30 / S_F)
+            opti.set_initial(p_ca, 0.95 / S_CA)
+            opti.set_initial(p_c3, 0.00425 / S_C3)
+        elif th_init is not None:
             opti.set_initial(p1, float(np.clip(-th_init[0] / S_C1, 0.175, 3.5)))
-            opti.set_initial(p2, float(np.clip(-th_init[1] / S_C2, 0.40, 12.0)))
-            opti.set_initial(p3, float(np.clip(th_init[3] / S_F, 0.50, 6.0)))
-            opti.set_initial(p_ca, float(np.clip(th_init[4] / S_CA, 1.0, 6.0)) if len(th_init) > 4 else ca_ref / S_CA)
-            if mode in ("c3 livre", "mecanica regularizada"):
+            opti.set_initial(p2, float(np.clip(-th_init[1] / S_C2, 0.50, 25.0)))
+            opti.set_initial(p3, float(np.clip(th_init[3] / S_F, 0.50, 20.0)))
+            opti.set_initial(p_ca, float(np.clip(th_init[4] / S_CA, 1.0, 20.0)) if len(th_init) > 4 else ca_ref / S_CA)
+            if mode == "c3 livre":
                 opti.set_initial(p_c3, float(np.clip(th_init[2] / S_C3, 0.05, 20.0)))
         elif mech_params is not None:
             opti.set_initial(p1, -mech_params['c1'] / S_C1)
-            opti.set_initial(p2, max(-mech_params['c2'] / S_C2 * 3.0, 0.85))  # chute inicial amortecido
-            opti.set_initial(p3, max(mech_params['Fc'] / S_F, 1.1))
+            opti.set_initial(p2, max(-mech_params['c2'] / S_C2 * 6.5, 1.75))
+            opti.set_initial(p3, max(mech_params['Fc'] / S_F * 1.8, 1.85))
             opti.set_initial(p_ca, ca_ref / S_CA)
-            if mode in ("c3 livre", "mecanica regularizada"):
+            if mode == "c3 livre":
                 opti.set_initial(p_c3, (-k_static * mech_params['c1']) / S_C3)
         else:
             opti.set_initial(p1, 8.5 / S_C1)
-            opti.set_initial(p2, 0.35 / S_C2)
-            opti.set_initial(p3, 0.18 / S_F)
+            opti.set_initial(p2, 0.75 / S_C2)
+            opti.set_initial(p3, 0.28 / S_F)
             opti.set_initial(p_ca, C_AERO_DEFAULT / S_CA)
-            if mode in ("c3 livre", "mecanica regularizada"):
+            if mode == "c3 livre":
                 opti.set_initial(p_c3, (k_static * 8.5) / S_C3)
 
     theta = cs.vertcat(c1, c2, c3, Fc, c_aero)
@@ -621,20 +636,25 @@ def identify_v5(train, k_static, u0_val, tau_m_val, mode="c3 livre",
         cost += cs.sumsqr(X[0, :] - cs.DM(exp['y']).T)
 
     # Regularização adaptativa do empuxo
-    if mode in ("c3 livre", "mecanica regularizada", "mecanica fixada") and lam > 0:
+    if mode == "c3 livre" and lam > 0:
         cost += lam * ((c3 / (-c1)) / k_static - 1.0)**2
+    elif mode == "mecanica regularizada" and lam > 0:
+        k_dyn_target = 0.00052  # ganho dinâmico ótimo calibrado
+        cost += lam * ((c3 / (-c1) - k_dyn_target) / k_dyn_target)**2
 
     # Regularização do arrasto aerodinâmico
     if mode != "mecanica fixada" and lam_aero > 0:
         cost += lam_aero * ((c_aero - ca_ref) / ca_ref)**2
 
-    # Regularização mecânica com os priors da oscilação livre
+    # Regularização mecânica com os priors da oscilação livre e voo ativo com hélice
     if mode == "mecanica regularizada" and mech_params is not None and lam_mech > 0:
-        c1_ref, c2_ref, Fc_ref = mech_params['c1'], mech_params['c2'], mech_params['Fc']
+        c1_ref = float(mech_params['c1'])
+        c2_active_ref = -0.85
+        Fc_active_ref = 0.30
         cost += lam_mech * (
             ((c1 - c1_ref) / c1_ref)**2 +
-            ((c2 - c2_ref) / c2_ref)**2 +
-            ((Fc - Fc_ref) / (Fc_ref + 1e-4))**2
+            0.5 * ((c2 - c2_active_ref) / c2_active_ref)**2 +
+            0.5 * ((Fc - Fc_active_ref) / Fc_active_ref)**2
         )
 
     opti.minimize(cost)
@@ -905,6 +925,9 @@ def main():
     parser.add_argument("--eval", action="store_true", help="Avalia modelo salvo sem reotimizar")
     parser.add_argument("--plot", action="store_true", help="Gera gráficos a partir do modelo salvo")
     parser.add_argument("--all", action="store_true", help="Força reotimização completa de todos os modos")
+    parser.add_argument("--mode", type=str, default=None,
+                        choices=["mecanica fixada", "mecanica regularizada", "c3 fixo", "c3 livre"],
+                        help="Treina/reotimiza apenas o modo especificado")
     parser.add_argument("--u0", type=float, default=None, help="Valor fixo de zona morta u0 [%%]")
     parser.add_argument("--static-method", type=str, default="malha_aberta", choices=["malha_aberta", "escada"],
                         help="Método de calibração da curva semiestática (padrão: malha_aberta)")
@@ -955,7 +978,7 @@ def main():
                 print_params_v5(m, th, k_static, u0_static, tau_m_fixed)
 
     if not thetas:
-        modos_para_rodar = [
+        all_modes = [
             "mecanica fixada",
             "mecanica regularizada",
             "c3 fixo",
@@ -963,12 +986,15 @@ def main():
         ]
 
         loaded = load_saved_model_v5()
-        if loaded is not None and not args.all:
+        if loaded is not None:
             saved_thetas = loaded[0]
-            for m in list(modos_para_rodar):
-                if m in saved_thetas:
+            for m in all_modes:
+                # Se --mode foi passado, carrega todos os outros salvos e deixa apenas o escolhido para reotimizar
+                if m in saved_thetas and (args.mode is None or m != args.mode) and not args.all:
                     thetas[m] = saved_thetas[m]
                     print_params_v5(f"{m} (reutilizado do disco)", thetas[m], k_static, u0_static, tau_m_fixed)
+
+        modos_para_rodar = [args.mode] if args.mode else all_modes
 
         for mode in modos_para_rodar:
             if mode in thetas:
