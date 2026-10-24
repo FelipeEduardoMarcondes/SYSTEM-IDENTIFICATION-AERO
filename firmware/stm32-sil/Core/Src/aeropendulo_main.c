@@ -35,6 +35,66 @@
 #define SIL_MODE 1 // <-- Comentado para rodar na bancada real com IMU
 #include "ann_weights.h" // Incluido incondicionalmente para ter acesso ao MPC na bancada real
 
+/* ── Chaveador de Motor de Inferência Neural ────────────────────────────── */
+#define USE_XCUBE_AI 0 /* 1: X-CUBE-AI (CMSIS-NN otimizado), 0: C puro handwritten */
+
+#if USE_XCUBE_AI
+#include "app_x-cube-ai.h"
+#include "network.h"
+#include "network_data.h"
+
+static ai_handle s_xcube_net = AI_HANDLE_NULL;
+
+static void xcube_ai_sil_init(void) {
+    if (s_xcube_net != AI_HANDLE_NULL) return;
+    ai_error err = ai_mnetwork_create("network", &s_xcube_net, NULL);
+    if (err.type != AI_ERROR_NONE || s_xcube_net == AI_HANDLE_NULL) {
+        return;
+    }
+    if (!ai_mnetwork_init(s_xcube_net)) {
+        s_xcube_net = AI_HANDLE_NULL;
+    }
+}
+
+static float ann_predict_xcube(float *raw_input) {
+    if (s_xcube_net == AI_HANDLE_NULL) {
+        xcube_ai_sil_init();
+        if (s_xcube_net == AI_HANDLE_NULL) {
+            return ann_predict(raw_input);
+        }
+    }
+
+    float norm_input[130];
+    for (int i = 0; i < 130; i++) {
+        norm_input[i] = (raw_input[i] - scaler_mean[i]) / scaler_scale[i];
+    }
+
+    float out_val = 0.0f;
+    ai_buffer in_buf = ai_network_inputs_get(AI_HANDLE_NULL, NULL)[0];
+    in_buf.data = AI_HANDLE_PTR(norm_input);
+
+    ai_buffer out_buf = ai_network_outputs_get(AI_HANDLE_NULL, NULL)[0];
+    out_buf.data = AI_HANDLE_PTR(&out_val);
+
+    ai_i32 res = ai_mnetwork_run(s_xcube_net, &in_buf, &out_buf);
+    if (res != 1) {
+        return ann_predict(raw_input);
+    }
+
+    if (out_val > 80.0f) out_val = 80.0f;
+    if (out_val < -10.0f) out_val = -10.0f;
+    return out_val;
+}
+
+static inline float predict_mpc(float *raw_input) {
+    return ann_predict_xcube(raw_input);
+}
+#else
+static inline float predict_mpc(float *raw_input) {
+    return ann_predict(raw_input);
+}
+#endif
+
 #ifndef MPC_HORIZON
 #define MPC_HORIZON 100
 #endif
@@ -993,7 +1053,7 @@ static void ciclo_controle(void)
 #endif
 
             uint32_t c_ann1 = DWT->CYCCNT;
-            u = ann_predict(nn_in);
+            u = predict_mpc(nn_in);
             uint32_t c_ann2 = DWT->CYCCNT;
             t_ann_ms  = (float)(c_ann2  - c_ann1)  / (float)(hclk_mhz * 1000.0f);
 
@@ -1149,7 +1209,7 @@ static void ciclo_controle(void)
 #endif
 
             uint32_t c_ann1 = DWT->CYCCNT;
-            u = ann_predict(nn_in);
+            u = predict_mpc(nn_in);
             uint32_t c_ann2 = DWT->CYCCNT;
             t_ann_ms  = (float)(c_ann2  - c_ann1)  / (float)(hclk_mhz * 1000.0f);
 
@@ -1288,6 +1348,15 @@ void aeropendulo_init(void)
 {
     /* Inicia contador de microssegundos (DWT) */
     dwt_init();
+
+#if USE_XCUBE_AI
+    xcube_ai_sil_init();
+    if (s_xcube_net != AI_HANDLE_NULL) {
+        uart_println("# X-CUBE-AI: Modelo inicializado com sucesso!");
+    } else {
+        uart_println("# X-CUBE-AI: Falha ao inicializar!");
+    }
+#endif
 
     /* Inicia recepcao UART o mais cedo possivel */
     HAL_UART_Receive_IT(&huart2, &rx_byte, 1);

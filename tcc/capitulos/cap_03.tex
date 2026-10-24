@@ -246,6 +246,109 @@ A análise comparativa entre as simulações em Python e os registros de SIL evi
     \item \textbf{Isolamento das causas de erro:} Os pequenos desvios estacionários observados nos degraus de $95^\circ$ (onde a resposta atinge $93^\circ$) repetiram-se de modo idêntico no SIL. Isso comprova que esses desvios decorrem exclusivamente da topologia da rede e das características do modelo, eliminando qualquer suspeita de instabilidade numérica ou imperfeição no firmware do microcontrolador.
 \end{enumerate}
 
+\subsection{Estudo Comparativo de Otimização: Flags GCC versus Framework X-CUBE-AI com Compressão}
+\label{sec:res_otimizacao_xcube}
+
+A implantação de redes neurais profundas em microcontroladores de baixo custo impõe um compromisso crítico entre latência de processamento e restrição de memória de programa (\textit{Flash}). Para quantificar o impacto de diferentes níveis de otimização de código e de ferramentas especializadas em \textit{TinyML}, realizou-se uma campanha experimental no microcontrolador STM32F446RE (ARM Cortex-M4 a 180\,MHz com FPU). Foram confrontadas duas abordagens principais:
+\begin{enumerate}
+    \item \textbf{Código C Nativo (\textit{Handwritten}):} A rotina matricial da MLP (duas camadas ocultas de 128 neurônios com ativações ReLU e camada de saída linear) foi compilada diretamente pelo GCC ARM (\texttt{arm-none-eabi-gcc} 14.3.rel1) sob quatro níveis de otimização: \texttt{-O0} (sem otimização), \texttt{-O1} (otimização básica), \texttt{-Os} (otimização para tamanho de binário) e \texttt{-O3} (otimização agressiva de velocidade com desenrolamento de laços e vetorização).
+    \item \textbf{Framework ST X-CUBE-AI (CMSIS-NN):} O modelo ONNX exportado do PyTorch foi processado pelo gerador ST Edge AI (versão 2.2.0), que sintetiza operadores otimizados explorando instruções SIMD intrínsecas da arquitetura ARM Cortex-M. Foram avaliadas duas configurações: (i)~ponto flutuante puro em precisão simples (\texttt{float32}) sem compressão; e (ii)~compressão alta (\textit{High Compression}), na qual os tensores de pesos passam por quantização não-linear com tabela de dispersão, reduzindo drasticamente a pegada em memória \textit{Flash}.
+\end{enumerate}
+
+O perfil temporal de cada configuração foi medido no microcontrolador através do registrador de ciclos DWT da CPU a 180\,MHz ao longo de 8.365 ciclos de amostragem na trajetória de validação ($T_s = 10$\,ms). A Tabela~\ref{tab:benchmark_compilador_xcube} consolida as métricas de tempo de inferência, ocupação percentual da janela de tempo real, pegada de memória e ganho relativo frente à compilação base \texttt{-O0}.
+
+\begin{table}[H]
+    \centering
+    \caption{Comparativo de desempenho computacional e pegada de memória no STM32F446RE (180\,MHz).}
+    \label{tab:benchmark_compilador_xcube}
+    \small
+    \resizebox{\textwidth}{!}{
+    \begin{tabular}{lcccccc}
+        \toprule
+        \textbf{Implementação / Flag} & \textbf{Tempo ($t_{\text{ann}}$)} & \textbf{Ocupação} & \textbf{Ganho vs. \texttt{-O0}} & \textbf{Flash Pesos} & \textbf{Redução Flash} & \textbf{RAM Ativ.} \\
+        \midrule
+        C Nativo (\texttt{-O0}) & 4,96\,ms & 49,6\% & --- & 130,50\,KiB & --- & 1,01\,KiB \\
+        C Nativo (\texttt{-O1}) & 2,46\,ms & 24,6\% & 2,02$\times$ & 130,50\,KiB & 0,0\% & 1,01\,KiB \\
+        C Nativo (\texttt{-Os}) & 2,08\,ms & 20,8\% & 2,38$\times$ & 130,50\,KiB & 0,0\% & 1,01\,KiB \\
+        C Nativo (\texttt{-O3}) & 1,98\,ms & 19,8\% & 2,51$\times$ & 130,50\,KiB & 0,0\% & 1,01\,KiB \\
+        \midrule
+        X-CUBE-AI (Sem Compressão) & \textbf{1,69\,ms} & \textbf{16,9\%} & \textbf{2,93$\times$} & 130,50\,KiB & 0,0\% & 1,01\,KiB \\
+        X-CUBE-AI (\textit{High Compression}) & \textbf{1,82\,ms} & \textbf{18,2\%} & \textbf{2,73$\times$} & \textbf{17,75\,KiB} & \textbf{-86,4\%} & 1,01\,KiB \\
+        \bottomrule
+    \end{tabular}
+    }
+    \par\vspace{1ex}
+    {\footnotesize \textit{Nota:} Período de controle $T_s = 10$\,ms (100\,Hz). Memória Flash dos pesos calculada para 33.409 parâmetros. A RAM de ativações (1.032 bytes) é alocada estaticamente para os \textit{buffers} intermediários das camadas.}
+    \par\vspace{1.5ex}
+    \sourceTab{o autor, 2026.}
+\end{table}
+
+A Figura~\ref{fig:benchmark_inferencia_flash} ilustra a relação direta entre o tempo de inferência e a economia de memória \textit{Flash} obtida em cada estratégia.
+
+\begin{figure}[H]
+    \centering
+    \caption{Comparativo de tempo de inferência por passo e ocupação de memória Flash entre as abordagens de código C nativo e X-CUBE-AI.}
+    \label{fig:benchmark_inferencia_flash}
+    \includegraphics[width=0.92\textwidth]{img/resultados/benchmark_inferencia_flash.png}
+    \par\vspace{1.5ex}
+    \sourceFig{o autor, 2026.}
+\end{figure}
+
+A análise da Tabela~\ref{tab:benchmark_compilador_xcube} e da Figura~\ref{fig:benchmark_inferencia_flash} revela aspectos fundamentais para a engenharia de sistemas embarcados:
+\begin{enumerate}
+    \item \textbf{Impacto das Flags do GCC:} A simples transição de \texttt{-O0} para \texttt{-O3} no código C nativo reduziu o tempo de inferência de 4,96\,ms para 1,98\,ms (um ganho de $2{,}51\times$). A flag \texttt{-Os}, comumente adotada em ambientes industriais para equilibrar pegada de binário e velocidade, atingiu 2,08\,ms, consumindo cerca de $20{,}8\%$ da janela de amostragem.
+    
+    \item \textbf{Aceleração Algorítmica via CMSIS-NN:} O motor do X-CUBE-AI em ponto flutuante superou a compilação mais agressiva do GCC (\texttt{-O3}), diminuindo a latência para $\mathbf{1{,}69}$\,ms (ganho adicional de $14{,}6\%$). Esse avanço decorre da reorganização matricial em blocos (\textit{tiling}) e do emprego de instruções SIMD dedicadas da arquitetura Cortex-M4, que realizam operações de multiplicação-acumulação (\textit{MAC}) em ciclos de clock reduzidos.
+    
+    \item \textbf{Compressão Severa com Preservação de Velocidade:} A configuração com compressão alta (\textit{High Compression}) reduziu o consumo de memória \textit{Flash} dos pesos de 130,50\,KiB para apenas $\mathbf{17{,}75}$\,KiB, uma economia de $\mathbf{86{,}4\%}$ no espaço de armazenamento do microcontrolador. Devido à necessidade de descompactação e decodificação dos pesos em tempo de execução, houve um acréscimo temporal de apenas 0,13\,ms (de 1,69 para 1,82\,ms). Notavelmente, mesmo com essa sobrecarga de descompressão, a inferência a 1,82\,ms ainda superou em $\mathbf{8{,}1\%}$ o código C nativo compilado sob \texttt{-O3} (1,98\,ms).
+\end{enumerate}
+
+\subsubsection{Impacto da Compressão no Desempenho em Malha Fechada (SIL)}
+
+Embora a compressão reduza drasticamente o uso de memória, é indispensável verificar se a perda de precisão numérica decorrente da quantização afeta a estabilidade e a qualidade do controle em malha fechada. Para responder a essa questão, foram executados dois ensaios completos de SIL sob a trajetória de Validação~1 no microcontrolador STM32F446RE: o primeiro utilizando a rede X-CUBE-AI sem compressão e o segundo sob compressão alta.
+
+A Tabela~\ref{tab:sil_tracking_comparacao} compara as métricas estatísticas de rastreamento angular e esforço de controle para ambos os ensaios, enquanto a Figura~\ref{fig:sil_xcube_tracking_comparacao} apresenta a sobreposição temporal das trajetórias, a discrepância angular pontual e o sinal de controle correspondente.
+
+\begin{table}[H]
+    \centering
+    \caption{Métricas de desempenho em malha fechada (SIL) sob o framework X-CUBE-AI: sem compressão versus alta compressão.}
+    \label{tab:sil_tracking_comparacao}
+    \small
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{Métrica de Avaliação} & \textbf{X-CUBE-AI (Sem Compressão)} & \textbf{X-CUBE-AI (Alta Compressão)} & \textbf{Variação / Impacto} \\
+        \midrule
+        Erro Quadrático Médio ($\text{RMSE}_\theta$) & 4,8838$^\circ$ & 4,9956$^\circ$ & +0,1118$^\circ$ (+2,3\%) \\
+        Erro Absoluto Médio ($\text{MAE}_\theta$)   & 1,4975$^\circ$ & 1,7507$^\circ$ & +0,2532$^\circ$ \\
+        Erro Absoluto Máximo ($\text{MaxErr}_\theta$) & 45,1900$^\circ$ & 45,1900$^\circ$ & 0,0000$^\circ$ (Idêntico) \\
+        Sinal de Controle Médio ($\bar{u}$)        & 41,20\% & 41,21\% & +0,01\% \\
+        Desvio Padrão do Controle ($\sigma_u$)      & 20,44\% & 20,47\% & +0,03\% \\
+        Tempo de Inferência Médio ($t_{\text{ann}}$) & 1,67\,ms & 1,80\,ms & +0,13\,ms (+7,8\%) \\
+        Memória Flash dos Pesos                     & 130,50\,KiB & 17,75\,KiB & \textbf{-86,4\%} \\
+        \bottomrule
+    \end{tabular}
+    \par\vspace{1ex}
+    {\footnotesize \textit{Nota:} Ensaio executado em SIL no STM32F446RE com $T_s = 10$\,ms durante 83,65\,s (8.365 passos de controle). O erro máximo coincide com o degrau de transição abrupta de 45$^\circ$ da referência.}
+    \par\vspace{1.5ex}
+    \sourceTab{o autor, 2026.}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \caption{Comparação temporal da execução em SIL no STM32F446RE: (topo) rastreamento angular $\theta(t)$; (meio) erro absoluto pontual entre o modelo não-comprimido e o modelo comprimido $|\theta_{\text{comp}} - \theta_{\text{sem}}|$; e (base) sinal de controle $u(t)$ aplicado.}
+    \label{fig:sil_xcube_tracking_comparacao}
+    \includegraphics[width=0.92\textwidth]{img/resultados/sil_xcube_tracking_comparacao.png}
+    \par\vspace{1.5ex}
+    \sourceFig{o autor, 2026.}
+\end{figure}
+
+A comparação direta entre os dados temporais confirma a viabilidade plena da compressão para controle dinâmico em tempo real:
+\begin{enumerate}
+    \item \textbf{Diferença Residual Desprezível:} A discrepância angular média entre o modelo comprimido e o não-comprimido foi de apenas $\mathbf{0{,}448^\circ}$, com diferença média na ação de controle $u$ de apenas $\mathbf{0{,}367\%}$. A variação no $\text{RMSE}$ global em malha fechada foi de insignificantes $0{,}11^\circ$ (de $4{,}88^\circ$ para $5{,}00^\circ$).
+    \item \textbf{Fidelidade Transitória:} Como evidenciado na Figura~\ref{fig:sil_xcube_tracking_comparacao}, a resposta transitória aos degraus, a taxa de amortecimento e a capacidade de rastreamento do sinal senoidal de alta frequência mantiveram-se visualmente indistinguíveis.
+    \item \textbf{Viabilidade em Microcontroladores Ultrarretringidos:} A economia de $86{,}4\%$ de memória Flash viabiliza a implantação de controladores preditivos neurais avançados em microcontroladores dotados de apenas 32\,KiB ou 64\,KiB de Flash (como dispositivos das famílias STM32G0 ou STM32F3), mantendo o atendimento estrito ao requisito de tempo real determinístico a 100\,Hz.
+\end{enumerate}
+
 % ============================================================
 \section{Validação Experimental na Bancada Física do Aeropêndulo}
 \label{sec:res_bancada}
