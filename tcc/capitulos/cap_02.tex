@@ -10,7 +10,7 @@ Este capítulo apresenta o detalhamento completo da fase experimental do projeto
     \label{fig:diagrama-blocos-projeto}
 \end{figure}
 
- A fase offline corresponde: (i)~a síntese e implantação do controlador PID em malha fechada, utilizado tanto para estabilizar a planta durante a coleta de dados quanto como referência de desempenho na comparação final (Seção~\ref{sec:pid}); (ii)~a aquisição dos dados de identificação em malha fechada com o PID ativo e a estimação dos parâmetros do modelo dinâmico via \textit{multiple shooting} (Seção~\ref{sec:identificacao}); (iii)~a formulação e resolução do NMPC via CasADi, a geração do \textit{dataset} e o treinamento da rede neural MLP (Seção~\ref{sec:sintese}). A fase de operação em tempo real, na parte inferior, corresponde à implantação do controlador embarcado no STM32 e sua atuação sobre a planta física (Seção~\ref{sec:embarcado}). A Seção~\ref{sec:descricao_fisica} descreve a bancada e os componentes de hardware que suportam ambas as fases.
+ A fase offline corresponde: (i)~a síntese e implantação do controlador PID em malha fechada, utilizado tanto para estabilizar a planta durante a coleta de dados quanto como referência de desempenho na comparação final (Seção~\ref{sec:pid}); (ii)~a aquisição dos dados de identificação em malha fechada com o PID ativo e a estimação dos parâmetros do modelo dinâmico via \textit{multiple shooting}(Seção~\ref{sec:identificacao}); (iii)~a formulação e resolução do NMPC via CasADi, a geração do \textit{dataset} e o treinamento da rede neural MLP (Seção~\ref{sec:sintese}). A fase de operação em tempo real, na parte inferior, corresponde à implantação do controlador embarcado no STM32 e sua atuação sobre a planta física (Seção~\ref{sec:embarcado}). A Seção~\ref{sec:descricao_fisica} descreve a bancada e os componentes de hardware que suportam ambas as fases.
  
 % ------------------------------------------------------------
 \section{Descrição do Sistema Físico}
@@ -82,7 +82,7 @@ O giroscópio apresenta fundo de escala programável de $\pm250$, $\pm500$, $\pm
         Resolução do ADC             & 16     & bits \\
         Frequência de amostragem     & 100    & Hz \\
         Largura de banda do DLPF     & 51,2   & Hz \\
-        Interface de comunicação     & I$^2$C & --- \\
+        Interface de comunicação     & I$^2$C & {-} \\
         Tensão de alimentação (VDD)  & 3,3    & V \\
         \hline
     \end{tabular}
@@ -139,7 +139,7 @@ alimentação lógica do microcontrolador.
 \section{Identificação do Modelo Dinâmico}
 \label{sec:identificacao}
 
-A síntese do Controle Preditivo Não-Linear (NMPC) exige um modelo matemático rigoroso, mas a modelagem puramente analítica do aeropêndulo impõe dificuldades práticas, visto que parâmetros físicos são de difícil mensuração isolada e o arranjo motor-hélice introduz não-linearidades que costumam ser ignoradas. Contudo, as abordagens clássicas de identificação baseadas em modelos lineares possuem restrições estruturais que as tornam insuficientes para representar os efeitos aerodinâmicos em todo o envelope operacional da planta \cite{jiang2022}.
+A síntese do Controle Preditivo Não-Linear (NMPC) exige um modelo matemático rigoroso, mas a modelagem puramente analítica do aeropêndulo impõe dificuldades práticas, visto que parâmetros físicos são de difícil mensuração isolada e o arranjo motor-hélice introduz não-linearidades que costumam ser ignoradas. Contudo, as abordagens clássicas de identificação baseadas em modelos lineares possuem restrições estruturais que as tornam insuficientes para representar os efeitos aerodinâmicos em todo o envelope operacional da planta \cite{jiang2022}. 
 
 Diante dessas limitações, adota-se uma abordagem híbrida: a estrutura do modelo é derivada analiticamente a partir dos princípios físicos do sistema, enquanto os parâmetros de difícil mensuração são estimados por identificação experimental. Pela Segunda Lei de Newton aplicada à dinâmica rotacional, considerando  explicitamente a massa do conjunto motor-hélice $m_1$ posicionada à distância  $L_1$ do pivô e a massa do contrapeso $m_2$ posicionada à distância $L_2$ no  lado oposto, a equação de movimento do aeropêndulo é:
 
@@ -194,7 +194,7 @@ Para cumprir tais requisitos, foram implementadas três classes de sinais de ref
     
     \item \textbf{\textit{Swept sine} (Chirp):} Senoide com frequência continuamente modulada de forma linear de $f_1 = 0{,}05$\,Hz até $f_2 = f_{\max} = 0{,}50$\,Hz. O ensaio varre de forma contínua o espectro em amplitudes controladas ($\pm 25^\circ$, $\pm 35^\circ$, $\pm 40^\circ$, $\pm 45^\circ$ e $\pm 60^\circ$), permitindo avaliar o comportamento dinâmico e o atraso de fase em função da frequência e amplitude.
     
-    \item \textbf{Sequências de degraus (APRBS e múltiplos patamares):} Sinais de amplitude comutada aleatória (\textit{Amplitude Pseudo-Random Binary Sequence} -- APRBS), além de séries de degraus com patamares de amplitude variada. Esses sinais provocam saltos abruptos seguidos de trechos estacionários, estimulando os modos transitórios de aceleração e possibilitando a verificação direta do ganho em regime permanente.
+    \item \textbf{Sequências de degraus (APRBS e múltiplos patamares):} Sinais de amplitude comutada aleatória, conhecidos pela sigla APRBS (\textit{Amplitude Pseudo-Random Binary Sequence}), além de séries de degraus com patamares de amplitude variada. Esses sinais provocam saltos abruptos seguidos de trechos estacionários, estimulando os modos transitórios de aceleração e possibilitando a verificação direta do ganho em regime permanente.
 \end{itemize}
 
 \subsubsection{Critério Criterioso de Divisão dos Dados: Treinamento vs. Validação}
@@ -212,24 +212,24 @@ Para garantir que o modelo identificado possua alta capacidade de generalizaçã
         \item Chirp em $60^\circ$ com amplitude de $\pm 60^\circ$ (excursão de $0^\circ$ a $120^\circ$);
         \item Sequência APRBS em $60^\circ$.
     \end{enumerate}
-    Ao concentrar os ensaios de maior largura de banda e amplitude no treinamento (totalizando mais de 78.000 amostras concatenadas), assegura-se que o algoritmo de estimação seja exposto às condições dinâmicas mais severas e às máximas deflexões não-lineares da bancada. A evolução temporal das trajetórias de referência angular $r(t)$ utilizadas nos 6 ensaios de treinamento é apresentada na Figura~\ref{fig:sinais_treinamento}.
+    Ao concentrar os ensaios de maior largura de banda e amplitude no treinamento (totalizando mais de 78.000 amostras concatenadas), assegura-se que o algoritmo de estimação seja exposto às condições dinâmicas mais severas e às máximas deflexões não-lineares da bancada. A evolução temporal das referências angulares $r(t)$, dos ângulos medidos $\theta(t)$ e das respectivas ações de controle $u(t)$ aplicadas nos 6 ensaios de treinamento é apresentada na Figura~\ref{fig:sinais_treinamento}.
     
-    \item \textbf{Conjunto de Validação Independente e Testes \textit{Free-Run}:} Todos os ensaios restantes coletados na bancada física foram estritamente reservados para validação cruzada independente. Este conjunto reúne sinais com menores frequências de excitação ($0{,}30$\,Hz e $0{,}40$\,Hz), menores amplitudes ($\pm 25^\circ$, $\pm 35^\circ$, $\pm 40^\circ$) e perfis distintos de degraus estacionários, tanto em $45^\circ$ quanto em $60^\circ$. A avaliação nesses dados testa a capacidade do modelo de interpolar dinâmicas, reproduzir fielmente a resposta em frequências intermediárias e manter predições estáveis em simulação livre (\textit{free-run}) recursiva de longo prazo sem divergência. A Figura~\ref{fig:sinais_validacao} ilustra os sinais de referência angular $r(t)$ correspondentes aos ensaios de validação independente.
+    \item \textbf{Conjunto de Validação Independente e Testes \textit{Free-Run}:} Todos os ensaios restantes coletados na bancada física foram estritamente reservados para validação cruzada independente. Este conjunto reúne sinais com menores frequências de excitação ($0{,}30$\,Hz e $0{,}40$\,Hz), menores amplitudes ($\pm 25^\circ$, $\pm 35^\circ$, $\pm 40^\circ$) e perfis distintos de degraus estacionários, tanto em $45^\circ$ quanto em $60^\circ$. A avaliação nesses dados testa a capacidade do modelo de interpolar dinâmicas, reproduzir fielmente a resposta em frequências intermediárias e manter predições estáveis em simulação livre (\textit{free-run}) recursiva de longo prazo sem divergência. A Figura~\ref{fig:sinais_validacao} ilustra os sinais correspondentes ao conjunto de ensaios de validação independente.
 \end{itemize}
 
 \begin{figure}[H]
     \centering
-    \caption{Sinais de referência angular $r(t)$ aplicados nos ensaios de treinamento do modelo NARX.}
+    \caption{Sinais de referência, ângulo medido e esforço de controle dos ensaios de treinamento do modelo NARX.}
     \label{fig:sinais_treinamento}
-    \includegraphics[width=0.95\textwidth]{img/resultados/narx_train_datasets.png}
+    \includegraphics[width=0.98\textwidth]{img/resultados/narx_train_datasets.png}
     \sourceFig{o autor, 2026.}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \caption{Sinais de referência angular $r(t)$ correspondentes aos ensaios de validação independente do modelo NARX.}
+    \caption{Sinais de referência, ângulo medido e esforço de controle dos ensaios de validação independente do modelo NARX.}
     \label{fig:sinais_validacao}
-    \includegraphics[width=0.95\textwidth]{img/resultados/narx_val_datasets.png}
+    \includegraphics[width=0.98\textwidth]{img/resultados/narx_val_datasets.png}
     \sourceFig{o autor, 2026.}
 \end{figure}
 
@@ -302,7 +302,7 @@ O número total de regressores candidatos gerados pela combinação combinatóri
 \end{equation}
 \noindent subdivididos em 1 termo constante, 30 termos lineares de primeira ordem e 465 termos quadráticos de segunda ordem.
 
-Estimar todos os 496 coeficientes simultaneamente induziria forte multicolinearidade, sobreparametrização numérica e instabilidade dinâmica em simulação recursiva livre. Por conseguinte, aplicou-se o algoritmo FROLS (\textit{Forward Regression Orthogonal Least Squares}) baseado no critério da Razão de Redução do Erro (\textit{Error Reduction Ratio} -- ERR) \cite{chen1989}.
+Estimar todos os 496 coeficientes simultaneamente induziria forte multicolinearidade, sobreparametrização numérica e instabilidade dinâmica em simulação recursiva livre. Por conseguinte, aplicou-se o algoritmo FROLS (\textit{Forward Regression Orthogonal Least Squares}) baseado no critério da Razão de Redução do Erro, ERR (\textit{Error Reduction Ratio}) \cite{chen1989}.
 
 O algoritmo FROLS transforma iterativamente o conjunto de regressores candidatos correlacionados $P = [p_1, \ldots, p_M]$ em um conjunto de bases ortogonais $W = [w_1, \ldots, w_M]$ por decomposição matricial clássica:
 \begin{equation}
@@ -318,7 +318,7 @@ A cada iteração, o algoritmo seleciona avidamente (\textit{greedy selection}) 
 
 \subsubsection{Critérios de Avaliação em Simulação Livre (\textit{Free-Run})}
 
-A validação de modelos NARX polinomiais não pode ser fundamentada apenas no erro de predição um-passo-à-frente (\textit{One-Step-Ahead} -- OSA), pois nessa modalidade a realimentação contínua do estado medido $y(k-1)$ mascara eventuais instabilidades intrínsecas e erros acumulados de ganho. Para qualificar o modelo preditivo que subsidiará o NMPC, a validação foi conduzida exclusivamente por meio de simulação livre (\textit{Free-Run} -- FR):
+A validação de modelos NARX polinomiais não pode ser fundamentada apenas no erro de predição um-passo-à-frente, OSA (\textit{One-Step-Ahead}), pois nessa modalidade a realimentação contínua do estado medido $y(k-1)$ mascara eventuais instabilidades intrínsecas e erros acumulados de ganho. Para qualificar o modelo preditivo que subsidiará o NMPC, a validação foi conduzida exclusivamente por meio de simulação livre, FR (\textit{Free-Run}):
 \begin{equation}
     \hat{y}_{\text{FR}}(k) = F\!\left(\hat{y}_{\text{FR}}(k-1),\,\ldots,\,\hat{y}_{\text{FR}}(k-n_y),\; u(k-1),\,\ldots,\,u(k-n_u)\right),
 \end{equation}
@@ -612,7 +612,7 @@ Para mitigar esse risco, adotou-se a estratégia de excitação persistente com 
 
 O microcontrolador STM32 Nucleo-F446RE dispõe de limites rígidos de armazenamento e memória de execução (512\,KB de memória Flash e 128\,KB de SRAM). Redes neurais superdimensionadas poderiam acarretar sobrecarga de memória ou fazer com que o tempo de inferência excedesse o intervalo de amostragem de $T_s = 10$\,ms.
 
-Como medida preventiva, a arquitetura da MLP foi dimensionada de forma estritamente compacta ($3 \to 32 \to 16 \to 1$), exigindo menos de 4\,KB de Flash e SRAM. O código C nativo gerado e otimizado via X-CUBE-AI alcançou tempo de inferência determinístico inferior a $0{,}5$\,ms por ciclo, operando com margem superior a $95\%$ de folga de CPU no microcontrolador.
+Como medida preventiva, a arquitetura da MLP foi dimensionada com topologia enxuta e eficiente ($130 \to 128 \to 128 \to 1$), contemplando 15 amostras passadas de ângulo, 15 de controle e o horizonte de 100 passos da referência futura, demandando aproximadamente $134$\,KB de memória Flash em precisão \texttt{float32} e menos de 2\,KB de SRAM. As rotinas vetoriais nativas em C compiladas com instruções FPU de hardware alcançaram tempo de inferência estritamente determinístico de $2{,}07$\,ms por ciclo a 180\,MHz, garantindo uma margem de folga de CPU de $79{,}4\%$ em relação ao período de amostragem de 10\,ms.
 
 \subsection{Estabilidade do Controlador Neural e Dados Fora da Distribuição}
 

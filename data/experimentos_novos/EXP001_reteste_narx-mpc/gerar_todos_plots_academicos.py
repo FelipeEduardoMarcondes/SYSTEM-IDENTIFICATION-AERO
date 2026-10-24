@@ -59,13 +59,14 @@ import sys
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-exp_dir = os.path.join(root_dir, "data", "experimentos_novos", "EXP001_legado_narx-mpc")
+exp_dir = os.path.join(root_dir, "data", "experimentos_novos", "EXP001_reteste_narx-mpc")
 py_dir = os.path.join(exp_dir, "2_mpc_python")
 sil_dir = os.path.join(exp_dir, "3_sil_stm32")
 real_dir = os.path.join(exp_dir, "4_aeropendulo")
 
 dest_dirs = [
     os.path.join(root_dir, "tcc", "img"),
+    os.path.join(root_dir, "tcc", "img", "resultados"),
     os.path.join(exp_dir, "plots_academicos")
 ]
 for d in dest_dirs:
@@ -92,24 +93,24 @@ comparacoes = [
         "id": 0,
         "base_name": "comparacao_plot_0",
         "py_csv": os.path.join(py_dir, "simulacao_python.csv"),
-        "sil_csv": os.path.join(sil_dir, "20261006_161042_referencia_mpc.csv"),
-        "real_csv": os.path.join(real_dir, "20261006_181737_referencia_mpc.csv"),
+        "sil_csv": os.path.join(sil_dir, "20261023_214321_referencia_legado_val1_mpc_hybrid.csv"),
+        "real_csv": os.path.join(real_dir, "20261023_180508_referencia_legado_val1_mpc_hybrid.csv"),
         "leg_pos": "lower right"
     },
     {
         "id": 1,
         "base_name": "comparacao_plot_1",
         "py_csv": os.path.join(py_dir, "simulacao_python_val2_degraus.csv"),
-        "sil_csv": os.path.join(sil_dir, "20261006_161234_referencia_val2_degraus.csv"),
-        "real_csv": os.path.join(real_dir, "20261006_182048_referencia_val2_degraus.csv"),
+        "sil_csv": os.path.join(sil_dir, "20261023_214546_referencia_legado_val2_degraus_hybrid.csv"),
+        "real_csv": os.path.join(real_dir, "20261023_180711_referencia_legado_val2_degraus_hybrid.csv"),
         "leg_pos": "upper right"
     },
     {
         "id": 2,
         "base_name": "comparacao_plot_2",
         "py_csv": os.path.join(py_dir, "simulacao_python_val3_senoidal.csv"),
-        "sil_csv": os.path.join(sil_dir, "20261006_161422_referencia_val3_senoidal.csv"),
-        "real_csv": os.path.join(real_dir, "20261006_182839_referencia_val3_senoidal.csv"),
+        "sil_csv": os.path.join(sil_dir, "20261023_214749_referencia_legado_val3_senoidal_hybrid.csv"),
+        "real_csv": os.path.join(real_dir, "20261023_180920_referencia_legado_val3_senoidal_hybrid.csv"),
         "leg_pos": "lower right"
     }
 ]
@@ -351,9 +352,9 @@ for base_name, csv_file, label_name in py_sims:
 # ==============================================================================
 print("\n[6/7] Gerando gráficos individuais de SIL (STM32)...")
 sil_sims = [
-    ("sil_val1", "20261006_161042_referencia_mpc.csv"),
-    ("sil_val2", "20261006_161234_referencia_val2_degraus.csv"),
-    ("sil_val3", "20261006_161422_referencia_val3_senoidal.csv")
+    ("sil_val1", "20261023_214321_referencia_legado_val1_mpc_hybrid.csv"),
+    ("sil_val2", "20261023_214546_referencia_legado_val2_degraus_hybrid.csv"),
+    ("sil_val3", "20261023_214749_referencia_legado_val3_senoidal_hybrid.csv")
 ]
 
 for base_name, csv_file in sil_sims:
@@ -388,9 +389,9 @@ for base_name, csv_file in sil_sims:
 # ==============================================================================
 print("\n[7/7] Gerando gráficos individuais da Bancada Real...")
 real_sims = [
-    ("real_val1", "20261006_181737_referencia_mpc.csv"),
-    ("real_val2", "20261006_182048_referencia_val2_degraus.csv"),
-    ("real_val3", "20261006_182839_referencia_val3_senoidal.csv")
+    ("real_val1", "20261023_180508_referencia_legado_val1_mpc_hybrid.csv"),
+    ("real_val2", "20261023_180711_referencia_legado_val2_degraus_hybrid.csv"),
+    ("real_val3", "20261023_180920_referencia_legado_val3_senoidal_hybrid.csv")
 ]
 
 for base_name, csv_file in real_sims:

@@ -1,33 +1,35 @@
 %----------------Cap_04----------------%
 \chapter{Conclusão}
- 
-Este trabalho propôs e documentou o desenvolvimento de um controlador neural
-embarcado que aproxima a política ótima de um Controle Preditivo Não-Linear
-(NMPC) para rastreamento angular de um aeropêndulo instrumentado. A motivação
-central reside na incompatibilidade entre o custo computacional da otimização
-repetida do NMPC e os recursos disponíveis em microcontroladores de baixo custo,
-problema recorrente em plataformas VTOL de pequeno porte.
+\label{cap:conclusao}
 
-Como referência de desempenho e como mecanismo de estabilização durante os
-ensaios de identificação, um controlador PID foi sintonizado a partir do modelo
-linearizado e implementado digitalmente com discretização trapezoidal e
-anti-windup por \textit{back-calculation}. Os resultados preliminares da
-Etapa~\ref{subsec:etapa2} confirmaram a não-linearidade do sistema, motivando o emprego do modelo não-linear para a síntese do NMPC.
- 
-A estratégia adotada é tecnicamente viável. Os três principais riscos identificados, divergência do modelo identificado, exaustão dos recursos de hardware e
-instabilidade do controlador neural por dados fora da distribuição, possuem
-ações preventivas e de contingência estabelecidas. A etapa de identificação (Etapa~\ref{subsec:etapa3})
-encontra-se em andamento e as etapas subsequentes dependem diretamente da
-qualidade do modelo obtido. Caso o critério de ajuste não seja satisfeito, a
-estrutura do modelo será revisada antes de prosseguir. A compacidade da arquitetura
-MLP e a quantização via X-CUBE-AI constituem caminhos de contingência caso
-os limites de Flash e SRAM do STM32F446 sejam ultrapassados.
- 
-O cronograma prevê a conclusão da identificação e da síntese do NMPC no
-primeiro semestre, reservando o segundo para o treinamento da rede, a implantação
-embarcada e os ensaios experimentais comparativos. A comparação final entre PID,
-NMPC e MLP embarcada, consolidada na Tabela~\ref{tab:comparacao_controladores},
-constituirá a principal contribuição quantitativa do trabalho e permitirá avaliar
-objetivamente os \textit{trade-offs} entre desempenho de rastreamento, rejeição a
-perturbações e custo computacional em hardware embarcado de baixo custo.
- 
+Este trabalho apresentou o projeto, a implementação e a validação experimental de uma arquitetura de controle preditivo neural embarcado (\textit{TinyML}), capaz de aproximar com fidelidade numérica a política de um Controlador Preditivo Não-Linear (NMPC) ótimo e executá-la em tempo real em um microcontrolador de baixo custo (ARM Cortex-M4 a 180\,MHz) para o rastreamento angular de um aeropêndulo instrumentado.
+
+A motivação primordial da pesquisa fundamentou-se no gargalo computacional imposto pela otimização numérica não-linear \textit{online}: a resolução do problema de controle ótimo via solucionadores tradicionais (como o IPOPT no ambiente CasADi) exigiu tempos de convergência entre 90 e 460\,ms por período de controle em computador de mesa de alto desempenho. Frente a uma dinâmica angular rápida que impõe um período de amostragem máximo de $T_s = 10$\,ms ($100$\,Hz), a implantação direta do NMPC convencional em hardware embarcado de baixo custo mostrou-se fisicamente inviável (esgotamento de 10 a 45 vezes o orçamento temporal disponível).
+
+Para transpor esse obstáculo sem abdicar da inteligência reativa de alta ordem do NMPC, adotou-se uma metodologia de quatro estágios sucessivos:
+\begin{enumerate}
+    \item \textbf{Identificação Não-Linear Parcimoniosa (NARX):} Utilizando dados coletados em malha fechada estabilizada por PID, o algoritmo FROLS selecionou autonomamente uma estrutura polinomial de apenas 10 termos a partir de um espaço de 496 regressores. O modelo revelou coerência física com a mecânica da propulsão (empuxo puramente quadrático na entrada $u^2$, atraso de transporte de 30\,ms compatível com a cadeia ESC-motor-IMU e polo autorregressivo dominante quase integrador em $z \approx 0{,}9986$). Na validação em simulação livre (\textit{free-run}) recursiva de mais de 130\,s (13.000 passos), o modelo atingiu $\text{RMSE} = 4{,}685^\circ$ com sincronismo de fase.
+    
+    \item \textbf{Aproximação da Política Ótima via MLP:} Uma rede neural \textit{Multilayer Perceptron} compacta foi treinada supervisionadamente sobre a trajetória ótima gerada pelo NMPC, alcançando coeficiente de determinação $\mathbf{R^2 = 0{,}999}$ de forma idêntica nos conjuntos de treino, validação e teste. A rede incorporou com sucesso a característica de visão antecipada (\textit{preview}), aprendendo a iniciar a modulação de empuxo frações de segundo antes da transição da referência para compensar preventivamente a inércia mecânica.
+    
+    \item \textbf{Embarque Determinístico, Otimização de Código e TinyML (SIL):} A validação em \textit{Software-in-the-Loop} (SIL) no microcontrolador STM32F446RE (180\,MHz) atendeu rigorosamente aos requisitos de sistemas de tempo real crítico a 100\,Hz ($T_s = 10$\,ms). O estudo comparativo de estratégias de compilação demonstrou que a otimização do GCC (\texttt{-O3}) reduziu a latência do código C nativo para 1,98\,ms (frente a 4,96\,ms em \texttt{-O0}). Adicionalmente, a síntese via framework ST X-CUBE-AI (CMSIS-NN) alcançou 1,69\,ms em precisão simples (\texttt{float32}), superando o GCC em 14,6\% graças ao uso de instruções SIMD do Cortex-M4. A aplicação de compressão alta (\textit{High Compression}) promoveu uma economia drástica de $\mathbf{86{,}4\%}$ de memória \textit{Flash} dos pesos (de 130,5\,KiB para $\mathbf{17{,}75}$\,KiB) com tempo de inferência de apenas 1,82\,ms. Ensaios em malha fechada comprovaram que a compressão preservou a estabilidade e a dinâmica de controle, com desvio de RMSE de apenas $+0{,}11^\circ$ e erro médio entre trajetórias de $0{,}448^\circ$, garantindo mais de $81\%$ de folga temporal na CPU.
+    
+    \item \textbf{Validação Experimental na Bancada e Controle Neural Híbrido:} Os ensaios práticos na bancada revelaram o \textit{Sim-to-Real gap}: a política nominal (MLP pura) acumulava viés estacionário de $+2{,}13^\circ$ a $+2{,}67^\circ$ decorrente de desvios estáticos de sustentação da hélice em altas deflexões, além de atraso e patamares horizontais de travamento mecânico por atrito estático de rolamento (\textit{stick-slip}) em movimentos senoidais. A proposição do \textbf{Controlador Neural Híbrido}, integrando a MLP com um compensador integrador residual paralelo ($K_{i,\text{res}} = 0{,}20$) estritamente limitado por saturação anti-windup a $\pm 10\%$ de empuxo, superou essas limitações práticas:
+    \begin{itemize}
+        \item Redução do erro persistente (\textit{bias}) em mais de $\mathbf{96\%}$ a $\mathbf{98\%}$ (convergindo para apenas $+0{,}03^\circ$ a $+0{,}08^\circ$);
+        \item Eliminação dos patamares de travamento mecânico na senoide, reduzindo o erro senoidal pela metade ($\text{RMSE} = 3{,}55^\circ \to \mathbf{1{,}75^\circ}$, ganho de $\mathbf{50{,}8\%}$);
+        \item Preservação da suavidade do atuador, sem induzir ruído de comutação ou \textit{chattering}.
+    \end{itemize}
+\end{enumerate}
+
+A comparação definitiva com a abordagem clássica foi consolidada nos ensaios espelhados da Rodada 7, nos quais a mesma bancada física rastreou sinais multisseno e de varredura de frequência (\textit{chirp}) sob controle PID e sob o controlador neural. Enquanto o PID linear sofreu saturação frequente e severo atraso de fase ($> 60^\circ$ a $90^\circ$) frente a oscilações em 0,50\,Hz (acumulando erros de $6{,}47^\circ$ no multisseno e até $26{,}02^\circ$ no \textit{chirp}), a rede neural reduziu o erro quadrático médio de rastreamento em patamares extraordinários de $\mathbf{69\%}$ a $\mathbf{81\%}$ ($\text{RMSE} = 1{,}99^\circ$ e $4{,}82^\circ$, respectivamente). Essa demonstração empírica comprova de forma contundente a superioridade da compensação preditiva neural sobre o controle linear convencional em envelopes dinâmicos agressivos.
+
+\section{Trabalhos Futuros}
+
+Como desdobramentos naturais desta pesquisa, sugerem-se as seguintes linhas de investigação:
+\begin{enumerate}
+    \item \textbf{Expansão Multivariável para Plataformas 2-DOF:} Expandir a metodologia de modelagem NARX e controle preditivo neural para sistemas com dois graus de liberdade articulados (arfagem e guinada / \textit{pitch} e \textit{yaw}), avaliando o acoplamento giroscópico entre hélices contra-rotativas;
+    \item \textbf{Implementação em Drones VTOL Completos:} Migrar a inferência da MLP em C nativo para os processadores embarcados de pilotos automáticos comerciais (como placas baseadas em STM32F7 ou STM32H7 executando PX4 ou ArduPilot) para o controle de atitude e estabilização de quadricópteros em voo livre;
+    \item \textbf{Quantização Inteira de 8 Bits (INT8):} Avaliar técnicas de quantização pós-treinamento com operadores de ponto fixo INT8 acelerados por instruções vetoriais ARM CMSIS-NN, investigando a possibilidade de execução da rede em microcontroladores ultracompactos (Cortex-M0+ ou Cortex-M33) sem FPU dedicada;
+    \item \textbf{Mecanismos de Adaptação Online de Parâmetros:} Implementar algoritmos de aprendizado por reforço residual ou filtros de Kalman adaptativos em firmware para ajustar dinamicamente os pesos de saída da rede ou o ganho integrador residual conforme a degradação da bateria (tensão do \textit{pack} LiPo) ao longo do tempo de operação.
+\end{enumerate}

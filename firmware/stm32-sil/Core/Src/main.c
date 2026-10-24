@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "app_x-cube-ai.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -137,6 +138,7 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM6_Init();
   MX_USART2_UART_Init();
+  /* MX_X_CUBE_AI_Init(); */
   /* USER CODE BEGIN 2 */
   aeropendulo_init();
 
@@ -148,6 +150,7 @@ int main(void)
   {
     /* USER CODE END WHILE */
 
+    /* MX_X_CUBE_AI_Process(); */
     /* USER CODE BEGIN 3 */
     aeropendulo_loop();
   }

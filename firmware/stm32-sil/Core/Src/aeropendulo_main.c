@@ -35,6 +35,66 @@
 #define SIL_MODE 1 // <-- Comentado para rodar na bancada real com IMU
 #include "ann_weights.h" // Incluido incondicionalmente para ter acesso ao MPC na bancada real
 
+/* ── Chaveador de Motor de Inferência Neural ────────────────────────────── */
+#define USE_XCUBE_AI 0 /* 1: X-CUBE-AI (CMSIS-NN otimizado), 0: C puro handwritten */
+
+#if USE_XCUBE_AI
+#include "app_x-cube-ai.h"
+#include "network.h"
+#include "network_data.h"
+
+static ai_handle s_xcube_net = AI_HANDLE_NULL;
+
+static void xcube_ai_sil_init(void) {
+    if (s_xcube_net != AI_HANDLE_NULL) return;
+    ai_error err = ai_mnetwork_create("network", &s_xcube_net, NULL);
+    if (err.type != AI_ERROR_NONE || s_xcube_net == AI_HANDLE_NULL) {
+        return;
+    }
+    if (!ai_mnetwork_init(s_xcube_net)) {
+        s_xcube_net = AI_HANDLE_NULL;
+    }
+}
+
+static float ann_predict_xcube(float *raw_input) {
+    if (s_xcube_net == AI_HANDLE_NULL) {
+        xcube_ai_sil_init();
+        if (s_xcube_net == AI_HANDLE_NULL) {
+            return ann_predict(raw_input);
+        }
+    }
+
+    float norm_input[130];
+    for (int i = 0; i < 130; i++) {
+        norm_input[i] = (raw_input[i] - scaler_mean[i]) / scaler_scale[i];
+    }
+
+    float out_val = 0.0f;
+    ai_buffer in_buf = ai_network_inputs_get(AI_HANDLE_NULL, NULL)[0];
+    in_buf.data = AI_HANDLE_PTR(norm_input);
+
+    ai_buffer out_buf = ai_network_outputs_get(AI_HANDLE_NULL, NULL)[0];
+    out_buf.data = AI_HANDLE_PTR(&out_val);
+
+    ai_i32 res = ai_mnetwork_run(s_xcube_net, &in_buf, &out_buf);
+    if (res != 1) {
+        return ann_predict(raw_input);
+    }
+
+    if (out_val > 80.0f) out_val = 80.0f;
+    if (out_val < -10.0f) out_val = -10.0f;
+    return out_val;
+}
+
+static inline float predict_mpc(float *raw_input) {
+    return ann_predict_xcube(raw_input);
+}
+#else
+static inline float predict_mpc(float *raw_input) {
+    return ann_predict(raw_input);
+}
+#endif
+
 #ifndef MPC_HORIZON
 #define MPC_HORIZON 100
 #endif
@@ -515,7 +575,23 @@ static void resetar_controlador(void)
     u_i_res = 0.0f;
     was_ann_mode = (ctrl_mode == CTRL_MODE_ANN) ? 1 : 0;
     y_1 = y_atual;
-    u_anterior = 0.0f;
+#ifdef SIL_MODE
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V5)
+    sil_th_rad = 0.0f;
+    sil_v_rad  = 0.0f;
+    sil_a_pct  = 0.0f;
+#endif
+#if defined(NY_MODEL) && (NY_MODEL > 1)
+    for (int i = 0; i < NY_MODEL; i++) sil_y_hist[i] = y_atual;
+#else
+    sil_y_hist[0] = y_atual;
+#endif
+#if defined(NU_MODEL) && (NU_MODEL > 1)
+    for (int i = 0; i < NU_MODEL; i++) sil_u_hist[i] = 0.0f;
+#else
+    sil_u_hist[0] = 0.0f;
+#endif
+#else
 #if defined(MODEL_TYPE_GREYBOX_V5) || defined(MODEL_TYPE_GREYBOX_V3)
     sil_th_rad = 0.0f;
     sil_v_rad  = 0.0f;
@@ -525,6 +601,7 @@ static void resetar_controlador(void)
 #else
     for (int i = 0; i < NY_MODEL; i++) sil_y_hist[i] = y_atual;
     for (int i = 0; i < NU_MODEL; i++) sil_u_hist[i] = 0.0f;
+#endif
 #endif
 }
 
@@ -667,7 +744,9 @@ static void processar_comando(const char *cmd)
     }
 
     if (strcmp(cmd, "RECAL") == 0 && estado == ESTADO_IDLE) {
+#ifndef SIL_MODE
         calibrar_giroscopio();
+#endif
         uart_println("# PRONTO");
         return;
     }
@@ -742,7 +821,11 @@ static void processar_comando(const char *cmd)
     }
 
     if (strcmp(cmd, "FREE") == 0 && estado == ESTADO_IDLE) {
+#ifndef SIL_MODE
         angulo_filtrado = angulo_acelerometro();
+#else
+        angulo_filtrado = 0.0f;
+#endif
         resetar_controlador();
         tempo_inicio = HAL_GetTick();
         ultimo_dado_us = micros();
@@ -750,7 +833,7 @@ static void processar_comando(const char *cmd)
 
         estado = ESTADO_FREE_RUN;
         uart_println("# EXP_START");
-        uart_println("tempo_ms,angulo_deg,u_pct,referencia");
+        uart_println("tempo_ms,angulo_deg,u_pct,referencia,tempo_inf_ms");
         return;
     }
 }
@@ -768,15 +851,25 @@ static void ciclo_controle(void)
 
     /* --- FREE_RUN: apenas coleta sem controle ----------------------------- */
     if (estado == ESTADO_FREE_RUN) {
+        float y_med;
+#ifndef SIL_MODE
         icm_read_ag(&last_ax, &last_az, &last_gy); // Atualiza globais se tiver sucesso
         float angulo_acel = atan2f(-last_az, last_ax) * 180.0f / (float)M_PI;
         float gy          = last_gy - gyro_bias;
         angulo_filtrado   = 0.98f * (angulo_filtrado + (-gy) * TS)
                           + 0.02f * angulo_acel;
+        y_med = angulo_filtrado + 90.0f;
+#else
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V5)
+        y_med = simulate_physical_plant(0.0f);
+#else
+        y_med = sil_y_hist[0];
+#endif
+#endif
 
         char buf[96];
         char s_ang[16];
-        fmt_float(s_ang, angulo_filtrado + 90.0f);
+        fmt_float(s_ang, y_med);
         snprintf(buf, sizeof(buf), "%lu,%s,0.00,0.00,0.000\r\n",
                  (unsigned long)t_exp, s_ang);
         uart_print(buf);
@@ -960,7 +1053,7 @@ static void ciclo_controle(void)
 #endif
 
             uint32_t c_ann1 = DWT->CYCCNT;
-            u = ann_predict(nn_in);
+            u = predict_mpc(nn_in);
             uint32_t c_ann2 = DWT->CYCCNT;
             t_ann_ms  = (float)(c_ann2  - c_ann1)  / (float)(hclk_mhz * 1000.0f);
 
@@ -1116,7 +1209,7 @@ static void ciclo_controle(void)
 #endif
 
             uint32_t c_ann1 = DWT->CYCCNT;
-            u = ann_predict(nn_in);
+            u = predict_mpc(nn_in);
             uint32_t c_ann2 = DWT->CYCCNT;
             t_ann_ms  = (float)(c_ann2  - c_ann1)  / (float)(hclk_mhz * 1000.0f);
 
@@ -1137,13 +1230,23 @@ static void ciclo_controle(void)
         }
     }
 
-    // Apply control to virtual plant
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V5)
+    // Apply control to virtual plant (Physical Model Grey-Box v5)
+    uint32_t c_sim1 = DWT->CYCCNT;
+    simulate_physical_plant(u);
+    uint32_t c_sim2 = DWT->CYCCNT;
+
+    float t_sim_ms = (float)(c_sim2 - c_sim1) / (float)(hclk_mhz * 1000.0f);
+    float t_total_ms = t_ann_ms + t_sim_ms;
+#else
+    // Apply control to virtual plant (NARX Model)
     uint32_t c_narx1 = DWT->CYCCNT;
     simulate_narx(u);
     uint32_t c_narx2 = DWT->CYCCNT;
 
     float t_narx_ms = (float)(c_narx2 - c_narx1) / (float)(hclk_mhz * 1000.0f);
     float t_total_ms = t_ann_ms + t_narx_ms;
+#endif
 
     e_1 = e;
     y_1 = y_med;
@@ -1169,22 +1272,31 @@ static void ciclo_controle(void)
 #ifdef SIL_MODE
     static uint32_t sil_calls = 0;
     static float sum_ann  = 0.0f;
-    static float sum_narx = 0.0f;
+    static float sum_sim  = 0.0f;
     static float sum_total = 0.0f;
     sil_calls++;
     sum_ann   += t_ann_ms;
-    sum_narx  += t_narx_ms;
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V5)
+    sum_sim   += t_sim_ms;
+#else
+    sum_sim   += t_narx_ms;
+#endif
     sum_total += t_total_ms;
     if (sil_calls % 100 == 0) { // a cada 1 segundo (100 ticks de 10ms)
         char t_buf[96];
-        char s_a[16], s_n[16], s_t[16];
+        char s_a[16], s_s[16], s_t[16];
         fmt_float(s_a, sum_ann   / 100.0f);
-        fmt_float(s_n, sum_narx  / 100.0f);
+        fmt_float(s_s, sum_sim   / 100.0f);
         fmt_float(s_t, sum_total / 100.0f);
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V5)
         snprintf(t_buf, sizeof(t_buf),
-                 "# PROFILE ANN=%s NARX=%s TOTAL=%s ms", s_a, s_n, s_t);
+                 "# PROFILE ANN=%s PHYS=%s TOTAL=%s ms", s_a, s_s, s_t);
+#else
+        snprintf(t_buf, sizeof(t_buf),
+                 "# PROFILE ANN=%s NARX=%s TOTAL=%s ms", s_a, s_s, s_t);
+#endif
         uart_println(t_buf);
-        sum_ann = 0.0f; sum_narx = 0.0f; sum_total = 0.0f;
+        sum_ann = 0.0f; sum_sim = 0.0f; sum_total = 0.0f;
     }
 #endif
 }
@@ -1236,6 +1348,15 @@ void aeropendulo_init(void)
 {
     /* Inicia contador de microssegundos (DWT) */
     dwt_init();
+
+#if USE_XCUBE_AI
+    xcube_ai_sil_init();
+    if (s_xcube_net != AI_HANDLE_NULL) {
+        uart_println("# X-CUBE-AI: Modelo inicializado com sucesso!");
+    } else {
+        uart_println("# X-CUBE-AI: Falha ao inicializar!");
+    }
+#endif
 
     /* Inicia recepcao UART o mais cedo possivel */
     HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
@@ -1338,7 +1459,7 @@ void aeropendulo_loop(void)
 
 #ifndef SIL_MODE
     if (!icm_data_ready()) {
-        if (agora_us - ultimo_dado_us > 10000UL) {
+        if (agora_us - ultimo_dado_us > 30000UL) { /* ~3 amostras perdidas */
             uart_println("# IMU_REINIT");
             HAL_I2C_DeInit(&hi2c1);
             I2C_ClearBus();
