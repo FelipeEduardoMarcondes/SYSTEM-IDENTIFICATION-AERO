@@ -271,32 +271,42 @@ orig_time_img = mpimg.imread(os.path.join(py_dir, "MPC_Computational_Time.png"))
 r, g, b = orig_time_img[:,:,0], orig_time_img[:,:,1], orig_time_img[:,:,2]
 blue_mask = (b > 0.6) & (r < 0.3) & (g < 0.6)
 
-# Spines detectadas: x in [191, 1038] (t=0 a t=25s), y in [36, 267] (dt=0.50 a dt=0.0s)
-x_coords = np.arange(191, 1039)
-t_extracted = (x_coords - 191) / (1038 - 191) * 25.0
-dt_extracted = []
+# Spines calibradas: x in [192, 1038] (t=0 a t=25s), y in [46, 267]
+x_coords = np.arange(192, 1039)
+t_extracted = (x_coords - 192.0) / (1038.0 - 192.0) * 25.0
+dt_ms = []
 
 for x in x_coords:
     y_pix = np.where(blue_mask[:, x])[0]
     if len(y_pix) > 0:
-        y_mean = np.mean(y_pix)
-        dt = (267.0 - y_mean) / (267.0 - 36.0) * 0.50
-        dt_extracted.append(max(dt, 0.0))
+        span = np.max(y_pix) - np.min(y_pix)
+        if span > 8:
+            y_val = np.min(y_pix)
+        else:
+            y_val = np.mean(y_pix)
+        val = (298.0 - y_val) / 550.0 * 1000.0
+        dt_ms.append(val)
     else:
-        dt_extracted.append(dt_extracted[-1] if dt_extracted else 0.10)
+        dt_ms.append(dt_ms[-1] if dt_ms else 100.0)
 
-dt_extracted = np.array(dt_extracted)
+dt_ms = np.array(dt_ms)
 
-fig, ax = plt.subplots(figsize=(7.2, 3.2))
-ax.plot(t_extracted, dt_extracted * 1000.0, color='#1f77b4', linestyle='-', linewidth=1.3, 
+fig, ax = plt.subplots(figsize=(7.2, 3.4))
+ax.plot(t_extracted, dt_ms, color='#1f77b4', linestyle='-', linewidth=1.2, 
         label='Tempo de Solução NMPC (IPOPT)')
 ax.axhline(10.0, color='#d62728', linestyle='--', linewidth=1.4, 
            label=r'Período de Amostragem $T_s = 10$ ms (Deadline)')
 
-# Anotação com seta indicando os picos
-ax.annotate('Pico por transição\nde degrau (0,46 s)', 
-            xy=(9.5, 455), xytext=(12.0, 420),
-            arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=6),
+# Seta para o pico inicial de cold-start (t = 0 s, 458 ms)
+ax.annotate('Cold-start inicial\n(458 ms)', 
+            xy=(0.0, 458), xytext=(1.8, 420),
+            arrowprops=dict(facecolor='black', shrink=0.08, width=0.8, headwidth=5),
+            fontsize=8.5)
+
+# Seta para o pico de transição dinâmica (t = 9.17 s, 333 ms)
+ax.annotate('Pico em transição\nde degrau (333 ms)', 
+            xy=(9.17, 333), xytext=(11.5, 320),
+            arrowprops=dict(facecolor='black', shrink=0.08, width=0.8, headwidth=5),
             fontsize=8.5)
 
 ax.set_xlabel('Tempo [s]')

@@ -333,14 +333,44 @@
   ],
   "environment": {
     "generated_model": {
-      "generated_time": "2026-10-24T19:25:02-0300",
+      "generated_time": "2026-10-25T00:05:02-0300",
+      "model_files": [
+        {
+          "name": "network_data_params.h",
+          "signature": "0x65046b28dd36545461f2cd882bc59447"
+        },
+        {
+          "name": "network_data_params.c",
+          "signature": "0x2ae98c58af2b175a9bfe53fc2b8e6642"
+        },
+        {
+          "name": "network_data.h",
+          "signature": "0xe03d8730b1e0498c9dc6b21be4724637"
+        },
+        {
+          "name": "network_data.c",
+          "signature": "0xd78c1250bbdadd6a74a149b9cd5eab97"
+        },
+        {
+          "name": "network_config.h",
+          "signature": "0xe68861aa3021bfdd42e7405d35807506"
+        },
+        {
+          "name": "network.h",
+          "signature": "0xd5721f7dbd44a046031238ee3e1adb44"
+        },
+        {
+          "name": "network.c",
+          "signature": "0xba881f864aee7ce496aa677f50225764"
+        }
+      ],
       "name": "network"
     },
-    "network_signature": "0x017762f7b9b45fca",
+    "network_signature": "0xa8c24f7767f2a087",
     "test_name": "",
     "tools": [
       {
-        "arguments": "validate --target stm32f4 --name network -m C:/Users/vicio/Documents/AEROPENDULO/data/experimentos_novos/EXP001_otimizacao_narx/3_sil_stm32/ann_model.onnx --compression none --verbosity 1 -O time --workspace C:/Users/vicio/AppData/Local/Temp/mxAI_workspace27471434037810018159563847868380338 --output C:/Users/vicio/.stm32cubemx/network_output --mode target --desc serial:500000",
+        "arguments": "analyze --target stm32f4 --name network -m C:/Users/vicio/Documents/AEROPENDULO/data/experimentos_novos/EXP001_otimizacao_narx/3_sil_stm32/ann_model.onnx --compression none --verbosity 1 -O time --workspace C:/Users/vicio/AppData/Local/Temp/mxAI_workspace29150446298650011921755613548034038 --output C:/Users/vicio/.stm32cubemx/network_output",
         "environment": [
           "STATS_TYPE=X-CUBE-AI"
         ],
@@ -605,6 +635,20 @@
     }
   ],
   "json_schema_version": "2.0",
+  "memory_footprint": {
+    "activations": 1032,
+    "io": [
+      0,
+      0
+    ],
+    "kernel_flash": 8756,
+    "kernel_ram": 1812,
+    "series": "stm32f4",
+    "toolchain": "arm-none-eabi-gcc (GNU Tools for STM32 14.3.rel1.20251027-0700) 14.3.1 20250623",
+    "toolchain_flash": 0,
+    "toolchain_ram": 0,
+    "weights": 133636
+  },
   "memory_pools": [
     {
       "address": "NULL",
@@ -634,7 +678,7 @@
       "virtual": false
     },
     {
-      "address": "NULL",
+      "address": "s_network_weights_array_u64",
       "alignment": 0,
       "attributes": {
         "latency": "UNDEF",

@@ -1,627 +1,77 @@
 %----------------Cap_02----------------%
-\chapter{Detalhamento do Projeto}
- 
-Este capítulo apresenta o detalhamento completo da fase experimental do projeto, cobrindo a descrição do sistema físico, a modelagem e identificação do modelo dinâmico e a implementação do controlador no hardware embarcado. A arquitetura da solução está sintetizada no diagrama de blocos da Figura~\ref{fig:diagrama-blocos-projeto}, que organiza o desenvolvimento em duas fases.
- 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=1\textwidth]{img/blocos-projeto.png}
-    \caption{Diagrama de Blocos do Projeto}
-    \label{fig:diagrama-blocos-projeto}
-\end{figure}
+\chapter{Fundamentação Teórica e Estado da Arte}
+\label{cap:fundamentacao}
 
- A fase offline corresponde: (i)~a síntese e implantação do controlador PID em malha fechada, utilizado tanto para estabilizar a planta durante a coleta de dados quanto como referência de desempenho na comparação final (Seção~\ref{sec:pid}); (ii)~a aquisição dos dados de identificação em malha fechada com o PID ativo e a estimação dos parâmetros do modelo dinâmico via \textit{multiple shooting}(Seção~\ref{sec:identificacao}); (iii)~a formulação e resolução do NMPC via CasADi, a geração do \textit{dataset} e o treinamento da rede neural MLP (Seção~\ref{sec:sintese}). A fase de operação em tempo real, na parte inferior, corresponde à implantação do controlador embarcado no STM32 e sua atuação sobre a planta física (Seção~\ref{sec:embarcado}). A Seção~\ref{sec:descricao_fisica} descreve a bancada e os componentes de hardware que suportam ambas as fases.
- 
-% ------------------------------------------------------------
-\section{Descrição do Sistema Físico}
-\label{sec:descricao_fisica}
-A infraestrutura física e mecânica da bancada do aeropêndulo utilizada neste trabalho foi originalmente projetada e construída por \citeonline{lima2025}. O sistema mecânico pré-existente e reaproveitado compreende a base de madeira, as torres de suporte, o eixo de alumínio instrumentado e a haste pendular contendo o motor \textit{brushless} (BLDC) acoplado.
-
-O aeropêndulo atua como um sistema de um grau de liberdade, composto por esse braço rígido livre para rotacionar em torno do eixo horizontal fixo. A posição angular $\theta$ é medida em relação à horizontal, sendo $0^\circ$ definido quando o sistema está em repouso com o motor na posição inferior.
-
-% ------------------------------------------------------------
-\subsection{Estrutura Mecânica}
-
-A estrutura física do aeropêndulo é montada sobre uma base de madeira compensada. Dois suportes triangulares confeccionados em MDF sustentam o eixo de rotação do sistema. As faces foram unidas por colagem nas arestas, e peças impressas em 3D foram fixadas nos cantos de cada torre e parafusadas à base.
-
-Para fixar o eixo de alumínio às torres, é utilizado um cuboide retangular contendo um rolamento de esferas, permitindo que o eixo gire livremente. No centro do eixo foi usinado e rosqueado um furo para encaixe da haste do pêndulo.
-
-A haste rosqueada também permite a fixação e remoção facilitada de contrapesos, que foram usinados e rosqueados para se encaixar diretamente na haste. Um suporte impresso em 3D acopla o motor BLDC à extremidade da haste. A propulsão é gerada por uma hélice bipá de passo fixo. Um alojamento impresso em 3D para a Unidade de Medição Inercial (IMU) foi desenvolvido e fixado ao eixo de rotação, responsável por capturar o ângulo do sistema. A Figura~\ref{fig:montagem-bancada} ilustra o formato atual da bancada. Os principais parâmetros construtivos do sistema são resumidos na Tabela~\ref{tab:componentes_mecanicos}.
-
-\begin{figure}[h]
-    \centering
-    \includegraphics[width=1\textwidth]{img/montagem-bancada.png}
-    \caption{Desenho da Bancada}
-    \label{fig:montagem-bancada}
-\end{figure}
-
-\begin{table}[h!]
-    \centering
-    \caption{Componentes mecânicos do aeropêndulo}
-    \label{tab:componentes_mecanicos}
-    \begin{tabular}{ll}
-        \hline
-        \textbf{Componente}       & \textbf{Material / Modelo}              \\
-        \hline
-        Base                      & Madeira compensada                      \\
-        Torres de suporte         & MDF com reforços em PLA (impressão 3D)  \\
-        Eixo de rotação           & Alumínio                                \\
-        Mancal                    & Rolamento de esferas                    \\
-        Haste do pêndulo          & Haste rosqueada                         \\
-        Contrapesos               & Peças rosqueadas (ajustáveis)           \\
-        Suporte do motor          & PLA (impressão 3D)                      \\
-        Alojamento da IMU         & PLA (impressão 3D)                      \\
-        Motor                     & EMAX RS2306                             \\
-        Hélice                    & Bipá, passo fixo                        \\
-        \hline
-    \end{tabular}
-\end{table}
-
-% ------------------------------------------------------------
-\subsection{Sensores}
-
-% ------------------------------------------------------------
-\subsubsection{Unidade de Medição Inercial (IMU)}
-
-A unidade de medição inercial utilizada é o ICM-20948, fabricado pela InvenSense (TDK), um dispositivo MEMS de 9 eixos que integra giroscópio triaxial, acelerômetro triaxial e magnetômetro triaxial em um único encapsulamento QFN de 3$\times$3$\times$1\,mm \cite{invensense2021icm20948}.
-
-A comunicação com o microcontrolador é realizada via I$^2$C no modo \textit{fast} (400\,kHz), utilizando os pinos SCL e SDA do STM32. O endereço I$^2$C do dispositivo é definido pelo nível lógico do pino AD0, com AD0 em nível baixo, o endereço é \texttt{0x68}. Os dados do giroscópio e do acelerômetro são utilizados em conjunto na estimação do ângulo gerado pelo braço do aeropêndulo.
-
-O giroscópio apresenta fundo de escala programável de $\pm250$, $\pm500$, $\pm1000$ ou $\pm2000$\,dps, com ADC de 16 bits e sensibilidade de 131\,LSB/dps na configuração de menor fundo de escala. A densidade espectral de ruído típica é de 0,015\,dps/$\sqrt{\text{Hz}}$, e o filtro passa-baixas digital (DLPF) é configurável entre 5,7 e 197\,Hz \cite{invensense2021icm20948}. A Tabela~\ref{tab:icm_gyro} resume os parâmetros do giroscópio que são relevantes para a aplicação.
-
-\begin{table}[h]
-    \centering
-    \caption{Parâmetros do giroscópio do ICM-20948 utilizados no projeto.}
-    \label{tab:icm_gyro}
-    \begin{tabular}{lcc}
-        \hline
-        \textbf{Parâmetro} & \textbf{Valor} & \textbf{Unidade} \\
-        \hline
-        Fundo de escala selecionado & $\pm500$ & dps \\
-        Sensibilidade                & 65,5   & LSB/dps \\
-        Resolução do ADC             & 16     & bits \\
-        Frequência de amostragem     & 100    & Hz \\
-        Largura de banda do DLPF     & 51,2   & Hz \\
-        Interface de comunicação     & I$^2$C & {-} \\
-        Tensão de alimentação (VDD)  & 3,3    & V \\
-        \hline
-    \end{tabular}
-\end{table}
-
-A frequência de amostragem de 100\,Hz satisfaz o requisito de $T_s \leq 10$\,ms imposto pela dinâmica do aeropêndulo, e a largura de banda do filtro de 51,2\,Hz é suficiente para capturar os modos dinâmicos relevantes sem amplificar ruído de alta frequência.
-
-A leitura dos registradores de saída do giroscópio é executada via interrupção de timer no STM32, garantindo periodicidade determinística.
-
-% ------------------------------------------------------------
-\subsection{Microcontrolador STM32 Nucleo-F446RE}
-
-O núcleo de processamento do aeropêndulo é composto pelo microcontrolador STM32F446, baseado na arquitetura Arm Cortex-M4 de 32 bits, operando a uma frequência de clock máxima de 180\,MHz. Este processador incorpora uma Unidade de Ponto Flutuante (FPU) em hardware que suporta todas as instruções de precisão única do padrão IEEE 754, o que elimina a sobrecarga computacional de emulação por software e otimiza a execução em tempo real do algoritmo de controle do aeropêndulo e da filtragem dos sensores. A arquitetura de memória do dispositivo conta com 512\,KB de memória Flash para armazenamento do firmware e 128\,KB de memória SRAM para alocação dinâmica de variáveis e buffers de execução \cite{stm32}.
-
-Os periféricos internos atendem aos requisitos dinâmicos e de interface do sistema, dividindo-se nas seguintes funções:
-
-\begin{itemize}
-    \item \textbf{Inter-Integrated Circuit (I$^2$C):} Barramento serial síncrono configurado no modo \textit{Fast Mode} (400\,kHz) para comunicação direta com a IMU ICM-20948, realizando a leitura periódica dos registradores do acelerômetro e giroscópio.
-    \item \textbf{Temporizador (TIM):} Configurado em modo de geração de PWM (\textit{Pulse Width Modulation}) com resolução adequada para o acionamento do ESC (\textit{Electronic Speed Controller}), regulando de forma determinística a potência elétrica entregue ao motor \textit{brushless}.
-    \item \textbf{Universal Asynchronous Receiver-Transmitter (UART):} Interface serial assíncrona estabelecida com taxa de transmissão elevada (ex.: 500.000\,baud) para o envio de telemetria em tempo real (ângulo estimado, erro, ação de controle) para o computador de ensaios e recepção de comandos de depuração.
-\end{itemize}
-
-A Tabela~\ref{tab:perifericos_stm32} especifica a atribuição física de pinos e periféricos utilizada na implementação do protótipo.
-
-\begin{table}[h]
-    \centering
-    \caption{Mapeamento de periféricos e pinos do STM32F446 para o aeropêndulo.}
-    \label{tab:perifericos_stm32}
-    \begin{tabularx}{\textwidth}{llXX}
-        \hline
-        \textbf{Periférico} & \textbf{Pino} & \textbf{Função Configurada} & \textbf{Destino / Interface} \\
-        \hline
-        \\
-        I2C1\_SCL  & PB8  & Clock do barramento I$^2$C (400\,kHz) & Pino SCL da IMU ICM-20948 \\
-        I2C1\_SDA  & PB9  & Dados do barramento I$^2$C (400\,kHz) & Pino SDA da IMU ICM-20948 \\
-        TIM1\_CH1  & PA8  & Saída PWM (Sinal de Controle) & Entrada de Sinal do ESC \\
-        USART2\_TX & PA2  & Transmissão Serial Assíncrona & Receptor USB-UART \\
-        USART2\_RX & PA3  & Recepção Serial Assíncrona    & Receptor USB-UART \\
-        \hline
-    \end{tabularx}
-\end{table}
-
-A Figura~\ref{fig:esquematico} apresenta o esquemático elétrico simplificado da bancada, ilustrando a interligação entre o STM32 Nucleo-F446RE, a IMU ICM-20948 e o ESC. A fonte de alimentação do motor (VBAT) é independente da 
-alimentação lógica do microcontrolador.
-
-\begin{figure}[h]
-    \centering
-    \includegraphics[width=1\textwidth]{img/diagrama-eletrico.png}
-    \caption{Esquemático elétrico simplificado da bancada}
-    \label{fig:esquematico}
-\end{figure}
+Este capítulo estabelece a base teórica e conceitual que fundamenta o desenvolvimento deste trabalho, cobrindo os princípios do controle clássico, a formulação do controle preditivo não-linear, os métodos de identificação de sistemas dinâmicos e as técnicas de inteligência computacional embarcada (\textit{TinyML}) empregadas para a aproximação de políticas ótimas. Ao final, revisam-se os trabalhos correlatos recentes na literatura e evidencia-se a lacuna científica e tecnológica abordada pela pesquisa.
 
 % ============================================================
-\section{Identificação do Modelo Dinâmico}
-\label{sec:identificacao}
-
-A síntese do Controle Preditivo Não-Linear (NMPC) exige um modelo matemático rigoroso, mas a modelagem puramente analítica do aeropêndulo impõe dificuldades práticas, visto que parâmetros físicos são de difícil mensuração isolada e o arranjo motor-hélice introduz não-linearidades que costumam ser ignoradas. Contudo, as abordagens clássicas de identificação baseadas em modelos lineares possuem restrições estruturais que as tornam insuficientes para representar os efeitos aerodinâmicos em todo o envelope operacional da planta \cite{jiang2022}. 
-
-Diante dessas limitações, adota-se uma abordagem híbrida: a estrutura do modelo é derivada analiticamente a partir dos princípios físicos do sistema, enquanto os parâmetros de difícil mensuração são estimados por identificação experimental. Pela Segunda Lei de Newton aplicada à dinâmica rotacional, considerando  explicitamente a massa do conjunto motor-hélice $m_1$ posicionada à distância  $L_1$ do pivô e a massa do contrapeso $m_2$ posicionada à distância $L_2$ no  lado oposto, a equação de movimento do aeropêndulo é:
-
-\begin{equation}
-    J\ddot{\theta} + b\dot{\theta} + (m_1 L_1 - m_2 L_2)\,g\sin(\theta) = \tau(u),
-    \label{eq:dinamica}
-\end{equation}
-\noindent onde $\theta$ é o ângulo de inclinação em relação à vertical,  $\dot{\theta}$ a velocidade angular, $J$ o momento de inércia total, $b$ o  coeficiente de atrito viscoso, $g$ a aceleração da gravidade e $\tau(u)$ o  torque gerado pelo empuxo do motor em função do sinal de controle $u$. O termo  $(m_1 L_1 - m_2 L_2)\,g\sin(\theta)$ caracteriza a não-linearidade gravitacional  intrínseca ao sistema, cujo valor efetivo depende do balanço entre o torque  restaurador do motor e o torque compensatório do contrapeso, tornando inadequada  qualquer representação linear para operação em ampla faixa angular \cite{khalil2002}.
-
-Para o formalismo do NMPC, é necessário representar o sistema na forma de  espaço de estados não-linear $\dot{x} = f(x, u)$. Definindo o vetor de estados  $x = [\theta,\;\dot{\theta}]^\top$ e isolando $\ddot{\theta}$ na  Equação~\ref{eq:dinamica}, obtém-se:
-
-\begin{equation}
-    \dot{x} = f(x,\, u) =
-    \begin{bmatrix}
-        \dot{\theta} \\[4pt]
-        \dfrac{\tau(u) - b\dot{\theta} - (m_1 L_1 - m_2 L_2)\,g\sin(\theta)}{J}
-    \end{bmatrix},
-    \label{eq:estadonl}
-\end{equation}
-\noindent forma exigida pelo NMPC para propagar os estados ao longo do horizonte de predição \cite{mayne2000}. Os parâmetros geométricos e de massa ($m_1$, $m_2$,  $L_1$ e $L_2$) são medidos fisicamente e fixados no modelo. Os parâmetros $J$,  $b$ e a constante de empuxo $K_\tau$, assumindo $\tau(u) = K_\tau u$, não são  diretamente mensuráveis de forma isolada e são estimados por identificação  experimental, conforme descrito nas subseções seguintes.
-
-% ------------------------------------------------------------
-\subsection{Ensaios no Sistema e Estratégia de Excitação}
-\label{subsec:ensaios}
-
-Os ensaios de identificação foram conduzidos com o aeropêndulo operando obrigatoriamente em malha fechada, estabilizado por um controlador PID preliminar embarcado no microcontrolador STM32 (Seção~\ref{sec:pid}). A realimentação em malha fechada constituiu um requisito mandatório de segurança operacional: dada a natureza subamortecida da planta e a ausência de batentes amortecidos, ensaios em malha aberta conduziriam o braço do pêndulo a colisões destrutivas contra os limites físicos da bancada ou a regimes de saturação irreversível do atuador.
-
-O microcontrolador STM32 Nucleo-F446RE foi responsável pela execução determinística da lei de controle PID a uma taxa de amostragem de $f_s = 100$\,Hz ($T_s = 10$\,ms), pela injeção sincronizada dos sinais de referência dinâmicos e pelo envio contínuo da telemetria serial em tempo real para a estação de processamento em terra.
-
-\subsubsection{Riqueza Espectral e Seleção dos Sinais de Excitação}
-
-A identificação precisa da planta exige sinais de excitação com elevada riqueza espectral (\textit{persistently exciting}), capazes de estimular simultaneamente os múltiplos fenômenos físicos não-lineares acoplados: o empuxo aerodinâmico puramente quadrático do conjunto motor-hélice ($\tau(u) \propto \omega^2 \propto u^2$), a dinâmica de atraso de transporte eletromecânico e filtragem inercial, o amortecimento viscoso e a forte não-linearidade estática gravitacional descrita pelo termo $(m_1 L_1 - m_2 L_2)g\sin(\theta)$.
-
-Para assegurar a identificabilidade desses efeitos em todo o envelope físico, estabeleceram-se as seguintes premissas metodológicas de projeto dos sinais:
-
-\begin{enumerate}
-    \item \textbf{Frequência máxima de excitação ($f_{\max} = 0{,}50$\,Hz):} A largura de banda mecânica do aeropêndulo é dominada por polos lentos associados à inércia da haste e aos tempos de subida do empuxo aerodinâmico. Fixou-se, portanto, a frequência máxima de excitação em $f_{\max} = 0{,}50$\,Hz. Frequências superiores a esse patamar não acrescentam informação dinâmica relevante sobre o movimento de corpo rígido do aeropêndulo. Em relação à frequência de amostragem de $100$\,Hz, a banda de $0{,}50$\,Hz opera com uma razão de superamostragem de 100:1, garantindo excelente resolução temporal na captura dos transitórios.
-    
-    \item \textbf{Dois níveis de estabilização em malha fechada ($45^\circ$ e $60^\circ$):} Os ensaios foram realizados em torno de dois pontos de equilíbrio centrais: $\theta_0 = 45^\circ$ e $\theta_0 = 60^\circ$. A operação em dois patamares distintos é indispensável para cobrir diferentes inclinações operacionais da planta, onde o ganho estático requerido do motor e as derivadas do torque gravitacional diferem substancialmente. Em $45^\circ$, o sistema opera na região de máxima sensibilidade gravitacional ($\frac{d}{d\theta}\sin\theta = \cos 45^\circ \approx 0{,}707$), enquanto em $60^\circ$ o empuxo contínuo exigido para sustentação estática é cerca de $22\%$ superior, alterando o ponto de trabalho do propulsor.
-    
-    \item \textbf{Faixa total definida de referência ($0^\circ$ a $120^\circ$):} O envelope total de rastreamento estipulado para o projeto compreende o intervalo de $0^\circ$ (posição de repouso vertical com o motor inferior desativado) até $120^\circ$ (inclinação acentuada acima da horizontal). Em torno do nível de $45^\circ$, os sinais dinâmicos impõem variações de até $\pm 45^\circ$, cobrindo o intervalo de $0^\circ$ a $90^\circ$. Em torno do nível de $60^\circ$, os sinais atingem excursões de até $\pm 60^\circ$, percorrendo de $0^\circ$ a $120^\circ$, de modo a excitar toda a não-linearidade do envelope de voo.
-\end{enumerate}
-
-Para cumprir tais requisitos, foram implementadas três classes de sinais de referência:
-
-\begin{itemize}
-    \item \textbf{Multi-seno com fases aleatórias:} Formado pela sobreposição harmônica de $d$ senoides com amplitude homogênea distribuídas uniformemente no espectro até $f_{\max} = 0{,}50$\,Hz, com fases $\varphi_k$ sorteadas independentemente em $[0, 2\pi)$:
-    \begin{equation}
-        r(t) = \theta_0 + \sum_{k=1}^{d} A_k \cos\!\bigl(2\pi f_k t + \varphi_k\bigr), \qquad f_k = \frac{k}{d} f_{\max}.
-    \end{equation}
-    A aleatorização das fases minimiza o fator de crista temporal, permitindo injetar alta densidade de potência sem provocar saturação nos atuadores \cite{ljung1999}.
-    
-    \item \textbf{\textit{Swept sine} (Chirp):} Senoide com frequência continuamente modulada de forma linear de $f_1 = 0{,}05$\,Hz até $f_2 = f_{\max} = 0{,}50$\,Hz. O ensaio varre de forma contínua o espectro em amplitudes controladas ($\pm 25^\circ$, $\pm 35^\circ$, $\pm 40^\circ$, $\pm 45^\circ$ e $\pm 60^\circ$), permitindo avaliar o comportamento dinâmico e o atraso de fase em função da frequência e amplitude.
-    
-    \item \textbf{Sequências de degraus (APRBS e múltiplos patamares):} Sinais de amplitude comutada aleatória, conhecidos pela sigla APRBS (\textit{Amplitude Pseudo-Random Binary Sequence}), além de séries de degraus com patamares de amplitude variada. Esses sinais provocam saltos abruptos seguidos de trechos estacionários, estimulando os modos transitórios de aceleração e possibilitando a verificação direta do ganho em regime permanente.
-\end{itemize}
-
-\subsubsection{Critério Criterioso de Divisão dos Dados: Treinamento vs. Validação}
-\label{subsec:divisao_dados}
-
-Para garantir que o modelo identificado possua alta capacidade de generalização e não sofra de sobreajuste (\textit{overfitting}) a um padrão temporal particular, adotou-se um critério sistemático de particionamento dos dados experimentais coletados na bancada:
-
-\begin{itemize}
-    \item \textbf{Conjunto de Treinamento dos Modelos:} Foram selecionados exclusivamente os ensaios que apresentavam a \textbf{maior frequência} ($f_{\max} = 0{,}50$\,Hz) e as \textbf{maiores amplitudes} angulares em ambos os níveis de equilíbrio. Especificamente, o conjunto de treinamento é composto por 6 ensaios fundamentais:
-    \begin{enumerate}
-        \item Multisseno em $45^\circ$ com frequência máxima de $0{,}50$\,Hz;
-        \item Chirp em $45^\circ$ com amplitude de $\pm 45^\circ$ (excursão de $0^\circ$ a $90^\circ$);
-        \item Sequência APRBS em $45^\circ$;
-        \item Multisseno em $60^\circ$ com frequência máxima de $0{,}50$\,Hz;
-        \item Chirp em $60^\circ$ com amplitude de $\pm 60^\circ$ (excursão de $0^\circ$ a $120^\circ$);
-        \item Sequência APRBS em $60^\circ$.
-    \end{enumerate}
-    Ao concentrar os ensaios de maior largura de banda e amplitude no treinamento (totalizando mais de 78.000 amostras concatenadas), assegura-se que o algoritmo de estimação seja exposto às condições dinâmicas mais severas e às máximas deflexões não-lineares da bancada. A evolução temporal das referências angulares $r(t)$, dos ângulos medidos $\theta(t)$ e das respectivas ações de controle $u(t)$ aplicadas nos 6 ensaios de treinamento é apresentada na Figura~\ref{fig:sinais_treinamento}.
-    
-    \item \textbf{Conjunto de Validação Independente e Testes \textit{Free-Run}:} Todos os ensaios restantes coletados na bancada física foram estritamente reservados para validação cruzada independente. Este conjunto reúne sinais com menores frequências de excitação ($0{,}30$\,Hz e $0{,}40$\,Hz), menores amplitudes ($\pm 25^\circ$, $\pm 35^\circ$, $\pm 40^\circ$) e perfis distintos de degraus estacionários, tanto em $45^\circ$ quanto em $60^\circ$. A avaliação nesses dados testa a capacidade do modelo de interpolar dinâmicas, reproduzir fielmente a resposta em frequências intermediárias e manter predições estáveis em simulação livre (\textit{free-run}) recursiva de longo prazo sem divergência. A Figura~\ref{fig:sinais_validacao} ilustra os sinais correspondentes ao conjunto de ensaios de validação independente.
-\end{itemize}
-
-\begin{figure}[H]
-    \centering
-    \caption{Sinais de referência, ângulo medido e esforço de controle dos ensaios de treinamento do modelo NARX.}
-    \label{fig:sinais_treinamento}
-    \includegraphics[width=0.98\textwidth]{img/resultados/narx_train_datasets.png}
-    \sourceFig{o autor, 2026.}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \caption{Sinais de referência, ângulo medido e esforço de controle dos ensaios de validação independente do modelo NARX.}
-    \label{fig:sinais_validacao}
-    \includegraphics[width=0.98\textwidth]{img/resultados/narx_val_datasets.png}
-    \sourceFig{o autor, 2026.}
-\end{figure}
-
-\subsubsection{Procedimento Experimental de Coleta de Dados}
-
-Durante os ensaios, os dados foram transmitidos em tempo real pela interface USART2 do microcontrolador STM32 Nucleo-F446RE a uma taxa de comunicação de 500.000\,baud para o computador hospedeiro. Cada quadro de telemetria transmitido continha o carimbo de tempo determinístico (\textit{timestamp} com resolução de microssegundos), o sinal de referência $r(t)$, a ação de controle de saída $u(t)$ calculada pelo PID (expressa em porcentagem de \textit{duty cycle} do PWM no ESC) e o ângulo $\theta(t)$ estimado pelo filtro complementar a partir dos eixos do acelerômetro e giroscópio da IMU ICM-20948.
-
-Os pacotes seriais foram capturados por um script Python dedicado utilizando a biblioteca \texttt{pyserial}, armazenados em arquivos estruturados de formato CSV e submetidos à rotina de pré-processamento, na qual os primeiros 10\,s (partida do motor e acomodação da comunicação) e os últimos 13\,s (desativação e frenagem) foram aparados, preservando os trechos estacionários de regime contínuo. O Algoritmo~\ref{alg:aquisicao_dados} sintetiza a lógica do laço em tempo real executada no microcontrolador durante as coletas.
-
-\begin{algorithm}[H]
-\caption{Ciclo Determinístico de Amostragem e Telemetria no STM32}
-\begin{algorithmic}[1]
-\label{alg:aquisicao_dados}
-\Procedure{Setup}{}
-    \State Inicializar periféricos (TIM, I$^2$C no modo Fast 400\,kHz, UART a 500\,kbaud, PWM a 50\,Hz)
-    \State Calibrar offsets de bias do giroscópio da IMU ICM-20948 em repouso
-    \State Inicializar estados internos do filtro complementar e integrador do PID
-\EndProcedure
-
-\Statex
-\Procedure{Loop Amostragem Determinística}{}
-    \State Aguardar comando de sincronização de ensaio via UART
-    \State $t_{\text{inicio}} \gets \text{obterMicros()}$
-
-    \While{$\text{ensaioAtivo}$}
-        \State Sincronizar com período base do Timer de hardware ($T_s = 10\,\text{ms} \to 100\,\text{Hz}$)
-        \State $t_{\text{atual}} \gets \text{obterMicros()} - t_{\text{inicio}}$
-
-        \State Atualizar referência angular dinâmica: $\theta_{\text{ref}} \gets \text{avaliarSinalExcitacao}(t_{\text{atual}})$
-        \State Ler acelerômetro ($a_x, a_z$) e giroscópio ($\omega_y$) da IMU via I$^2$C DMA
-        \State Estimar ângulo atual $\theta(k)$ via filtro complementar de fusão sensorial
-        \State Calcular esforço de controle $u(k) \gets \text{PID}(\theta_{\text{ref}},\, \theta(k))$ com saturação $[0,\, 100]\%$
-        \State Atualizar comparador de captura do Timer de PWM para o ESC
-        \State Enviar pacote binário de telemetria $(t_{\text{atual}},\, \theta(k),\, \theta_{\text{ref}},\, u(k))$ via UART DMA
-    \EndWhile
-
-    \State Desativar propulsão ($u \gets 0\%$) e aguardar parada mecânica
-\EndProcedure
-\end{algorithmic}
-\end{algorithm}
-
-% ------------------------------------------------------------
-\subsection{Estrutura do Modelo NARX Polinomial e Algoritmo FROLS/ERR}
-\label{subsec:narx_frols}
-
-Embora as equações diferenciais da física clássica~\eqref{eq:dinamica} forneçam a interpretação qualitativa das forças atuantes, a representação discreta não-linear via modelo NARX (\textit{Nonlinear AutoRegressive with eXogenous inputs}) foi a formulação adotada para sintetizar o preditor utilizado no Controle Preditivo Não-Linear (NMPC) e na validação em \textit{Software-in-the-Loop} (SIL). Essa escolha decorre de sua capacidade de representar com precisão não-linearidades estáticas e dinâmicas arbitrárias, acoplamentos cruzados de transporte e características de amortecimento sem a exigência de integração numérica contínua em malha aberta, computacionalmente proibitiva em hardware restrito.
-
-O modelo NARX polinomial discreto de entrada e saída única (SISO) mapeia a predição da saída angular futura $\hat{y}(k)$ como uma função polinomial expansível de saídas passadas e entradas passadas:
-\begin{equation}
-    \hat{y}(k) = F\!\left(y(k-1),\,\ldots,\,y(k-n_y),\; u(k-1),\,\ldots,\,u(k-n_u)\right),
-    \label{eq:narx_geral}
-\end{equation}
-\noindent onde $n_y$ e $n_u$ são as ordens de atraso temporal na saída e na entrada, respectivamente. A representação linear-nos-parâmetros assume a forma:
-\begin{equation}
-    \hat{y}(k) = \sum_{m=1}^{M} \theta_m p_m(k),
-    \label{eq:narx_linear_parametros}
-\end{equation}
-\noindent em que $p_m(k)$ são os monômios ou regressores formados por combinações de potências e produtos cruzados dos termos autorregressivos $y(k-i)$ e exógenos $u(k-j)$ até um grau de não-linearidade polinomial $\ell$, $\theta_m$ são os coeficientes constantes a estimar e $M$ denota o número total de regressores candidatos.
-
-Para a planta do aeropêndulo operando a $100$\,Hz, os hiperparâmetros estruturais candidatos foram definidos como:
-\begin{itemize}
-    \item Ordem de memória de saída: $n_y = 15$ ($150$\,ms de histórico temporal);
-    \item Ordem de memória de entrada: $n_u = 15$ ($150$\,ms de histórico de comandos);
-    \item Grau polinomial de não-linearidade: $\ell = 2$ (termos lineares, produtos cruzados e termos quadráticos puros).
-\end{itemize}
-
-O número total de regressores candidatos gerados pela combinação combinatória é dado por:
-\begin{equation}
-    M_{\text{total}} = \frac{(n_y + n_u + \ell)!}{(n_y + n_u)!\,\ell!} = \frac{(15 + 15 + 2)!}{30!\,2!} = \frac{32 \times 31}{2} = 496 \text{ termos},
-\end{equation}
-\noindent subdivididos em 1 termo constante, 30 termos lineares de primeira ordem e 465 termos quadráticos de segunda ordem.
-
-Estimar todos os 496 coeficientes simultaneamente induziria forte multicolinearidade, sobreparametrização numérica e instabilidade dinâmica em simulação recursiva livre. Por conseguinte, aplicou-se o algoritmo FROLS (\textit{Forward Regression Orthogonal Least Squares}) baseado no critério da Razão de Redução do Erro, ERR (\textit{Error Reduction Ratio}) \cite{chen1989}.
-
-O algoritmo FROLS transforma iterativamente o conjunto de regressores candidatos correlacionados $P = [p_1, \ldots, p_M]$ em um conjunto de bases ortogonais $W = [w_1, \ldots, w_M]$ por decomposição matricial clássica:
-\begin{equation}
-    P = W A,
-\end{equation}
-\noindent onde $A$ é uma matriz triangular superior com diagonal unitária. O critério ERR de cada regressor candidato $p_m$ no passo $i$ de seleção é definido pela fração da variância total da saída explicada pela inclusão desse termo:
-\begin{equation}
-    [\text{ERR}]_i = \frac{g_i^2 \, w_i^\top w_i}{y^\top y} \times 100\%, \qquad g_i = \frac{w_i^\top y}{w_i^\top w_i}.
-    \label{eq:err_criterio}
-\end{equation}
-
-A cada iteração, o algoritmo seleciona avidamente (\textit{greedy selection}) o regressor que fornece a maior contribuição $[\text{ERR}]_i$. O processo de seleção é interrompido quando a redução adicional de erro atinge um limiar desprezível ou quando se atinge o número pré-fixado de regressores parcimoniosos. No projeto, estipulou-se a seleção estrita de $10$ termos (\texttt{n\_components = 10}), garantindo que o modelo resultante seja compacto, computacionalmente eficiente para o resolvedor IPOPT do NMPC e numericamente estável.
-
-\subsubsection{Critérios de Avaliação em Simulação Livre (\textit{Free-Run})}
-
-A validação de modelos NARX polinomiais não pode ser fundamentada apenas no erro de predição um-passo-à-frente, OSA (\textit{One-Step-Ahead}), pois nessa modalidade a realimentação contínua do estado medido $y(k-1)$ mascara eventuais instabilidades intrínsecas e erros acumulados de ganho. Para qualificar o modelo preditivo que subsidiará o NMPC, a validação foi conduzida exclusivamente por meio de simulação livre, FR (\textit{Free-Run}):
-\begin{equation}
-    \hat{y}_{\text{FR}}(k) = F\!\left(\hat{y}_{\text{FR}}(k-1),\,\ldots,\,\hat{y}_{\text{FR}}(k-n_y),\; u(k-1),\,\ldots,\,u(k-n_u)\right),
-\end{equation}
-\noindent em que, após a inicialização com as condições iniciais nos primeiros $n_y$ instantes, todas as saídas subsequentes são geradas de maneira estritamente autorregressiva utilizando apenas suas próprias estimativas passadas $\hat{y}_{\text{FR}}$ e a sequência de controle real $u$.
-
-A aderência quantitativa do modelo é avaliada por três métricas consolidadas sobre os dados de validação retidos:
-\begin{align}
-    \text{RMSE} &= \sqrt{\frac{1}{N} \sum_{k=1}^{N} \bigl(y(k) - \hat{y}(k)\bigr)^2}, \label{eq:rmse} \\
-    \text{MAE}  &= \frac{1}{N} \sum_{k=1}^{N} \bigl|y(k) - \hat{y}(k)\bigr|, \label{eq:mae} \\
-    \text{FIT}  &= \left(1 - \frac{\|y - \hat{y}\|_2}{\|y - \bar{y}\|_2}\right) \times 100\%, \label{eq:fit}
-\end{align}
-\noindent onde $y(k)$ é o ângulo experimental medido pela IMU, $\hat{y}(k)$ é a trajetória predita pelo modelo NARX e $\bar{y}$ é a média da saída experimental.
-
-Complementarmente, a formulação contínua da Equação~\eqref{eq:estadonl} também foi parametrizada pelo método \textit{grey-box} não-linear via \textit{multiple shooting} com diferenciação automática em JAX \cite{helonayala_ms}, servindo como termo comparativo de sensibilidade física. Conforme demonstrado no Capítulo~\ref{cap:resultados}, o modelo polinomial NARX sobressaem-se em fidelidade de fase e aderência estática quadrática ao longo de longos horizontes temporais, consolidando-se como a base preditiva oficial do sistema preditivo ótimo.
- 
- 
+\section{Controle Clássico}
+\label{sec:fund_classico}
 % ============================================================
-\section{Síntese do Controlador}
-\label{sec:sintese}
- 
-Esta seção descreve a síntese dos três controladores avaliados no projeto. O
-controlador PID é sintetizado primeiro, pois desempenha papel duplo, ele estabiliza
-a planta durante os ensaios de identificação em malha fechada e serve como
-referência de desempenho na comparação final. Em seguida, o NMPC é formulado e
-resolvido offline via CasADi, e sua política ótima é utilizada para gerar o
-\textit{dataset} de treinamento da rede neural MLP.
- 
-% ------------------------------------------------------------
-% ------------------------------------------------------------
-\subsection{Síntese do Controlador PID}
-\label{sec:pid}
 
-O controlador PID cumpre duas funções no projeto, a de estabilizar o aeropêndulo em
-malha fechada durante os ensaios de coleta de dados para identificação e servir
-como referência de desempenho na comparação final com o NMPC e a MLP embarcada.
+Controladores clássicos como o PID (Proporcional-Integral-Derivativo) constituem a espinha dorsal de inúmeras aplicações industriais e robóticas. O desenvolvimento formal dessa lei de controle, também conhecida como controle de três termos, foi apresentado em 1922 pelo engenheiro Nicolas Minorsky \cite{bennett1996}.
 
-A síntese inicial parte do modelo linear de segunda ordem obtido pela linearização da
-equação de movimento~\eqref{eq:dinamica} em torno de um ponto de equilíbrio
-$(\theta_0, u_0)$ pelo desenvolvimento em série de Taylor de primeira ordem,
-que fornece
-\begin{equation}
-    \delta\dot{x} = A\,\delta x + B\,\delta u,
-    \label{eq:linear_eq}
-\end{equation}
-\noindent onde $A = \partial f/\partial x\big|_{x_0,u_0}$ e
-$B = \partial f/\partial u\big|_{x_0,u_0}$ são as matrizes Jacobianas avaliadas
-no ponto de operação. Os ganhos do controlador ($K_p$, $K_i$ e $K_d$) foram sintonizados computacionalmente a partir dessa função de transferência linearizada, utilizando técnicas de resposta em frequência para garantir margem de fase adequada e minimizar o tempo de acomodação.
-
-Contudo, para a operação no microcontrolador STM32, a lei de controle exige
-discretização com período de amostragem $T_s = 10$\,ms. A implementação digital evita o fenômeno do \textit{derivative kick} ao aplicar a ação derivativa diretamente sobre a variável de processo $y[k]$ estimada pela IMU, e não sobre o erro $e[k] = r[k] - y[k]$ \cite{astrom1995}. O termo integral é discretizado pelo método Trapezoidal (transformada de Tustin), o termo derivativo é aproximado pela diferença atrasada (\textit{backward Euler}) aplicada diretamente sobre a medição. As componentes do controlador no instante discreto $k$ são definidas por:
-\begin{align}
-    u_p[k] &= K_p\, e[k] \\
-    u_i[k] &= u_i[k-1] + K_i \frac{T_s}{2} \bigl(e[k] + e[k-1]\bigr) \\
-    u_d[k] &= -\frac{K_d}{T_s} \bigl(y[k] - y[k-1]\bigr)
-\end{align}
-
-A ação de controle ideal requerida é a soma das parcelas $u_{ideal}[k] = u_p[k] + u_i[k] + u_d[k]$.
-Dadas as restrições operacionais do atuador (ESC e motor), o sinal efetivamente 
-aplicado à planta é saturado simetricamente:
-\begin{equation}
-    u[k] = \text{sat}(u_{ideal}[k],\; -u_{max},\; u_{max}).
-\end{equation}
-
-Para prevenir o acúmulo excessivo do termo integral e a consequente degradação da resposta  transitória durante os períodos de saturação do atuador (\textit{integral windup}), implementa-se um mecanismo de anti-windup por \textit{back-calculation} reativo:
-\begin{equation}
-    u_i[k] \leftarrow u_i[k] - \bigl(u_{ideal}[k] - u[k]\bigr).
-\end{equation}
-\noindent Esse retrocálculo subtrai o excesso de controle diretamente da memória 
-do integrador, garantindo que o controlador abandone o estado de saturação sem atrasos 
-assim que o erro de rastreamento mudar de sinal \cite{astrom1995}.
-% ------------------------------------------------------------
-\subsection{NMPC: Formulação do Problema de Controle Ótimo}
-\label{subsec:nmpc_ocp}
-
-O NMPC fundamenta-se na resolução repetida, a cada período de amostragem $T_s$, de um Problema de Controle Ótimo (OCP) em horizonte finito \cite{rawlings2017}. A síntese offline desse controlador exige ferramentas capazes de (i)~expressar simbolicamente o modelo dinâmico não-linear, (ii)~transcrever o OCP em um Problema de Programação Não-Linear (NLP) e (iii)~calcular automaticamente as derivadas de primeira e segunda ordem exigidas pelo resolvedor numérico. O framework CasADi atende a esses três requisitos de forma integrada \cite{andersson2019}.
-
-\subsubsection*{Problema de Controle Ótimo em Horizonte Finito}
-
-Para o estado atual $x_k$ e a referência $x_{ref,k} = [\theta_{ref,k},\; 0]^\top$, define-se o conjunto de sequências de controle admissíveis
-\begin{equation}
-    \mathcal{U}_N(x_k) := \bigl\{U_k \mid
-        (x_{k+j|k},\, u_{k+j}) \in \mathcal{Z},\;
-        x_{k+N|k} \in \mathcal{X}_f,\;
-        j = 0,\ldots,N-1
-    \bigr\},
-    \label{eq:admissivel}
-\end{equation}
-\noindent onde $\mathcal{Z} := \mathcal{X} \times \mathcal{U}$ é o conjunto admissível de pares estado-controle e $\mathcal{X}_f \subseteq \mathcal{X}$ é o conjunto terminal. O domínio de factibilidade do OCP é
-\begin{equation}
-    \mathcal{X}_N := \bigl\{x \in \mathcal{X} \mid
-        \mathcal{U}_N(x) \neq \emptyset \bigr\},
-    \label{eq:factivel}
-\end{equation}
-\noindent ou seja, o conjunto de estados a partir dos quais existe ao menos uma sequência de controle que satisfaz todas as restrições e conduz o sistema ao conjunto terminal em $N$ passos \cite{rawlings2017}.
-
-O OCP resolvido no instante $k$ é
-\begin{equation}
-    \min_{U_k}\;
-    \underbrace{\sum_{j=0}^{N-1}
-    \ell\!\left(x_{k+j|k},\, u_{k+j},\, x_{ref,k}\right)}_{\text{custo acumulado}}
-    +\;
-    \underbrace{V_f\!\left(x_{k+N|k},\, x_{ref,k}\right)}_{\text{custo terminal}}
-    \label{eq:ocp}
-\end{equation}
-\noindent sujeito a
-\begin{align}
-    x_{k+j+1|k} &= x_{k+j|k} + T_s\, f\!\left(x_{k+j|k},\, u_{k+j}\right),
-    && j = 0, \ldots, N-1, \label{eq:ocp_dinamica} \\
-    x_{k|k}      &= x_k, \label{eq:ocp_ic} \\
-    u_{k+j}      &\in \mathcal{U}, && j = 0, \ldots, N-1, \label{eq:ocp_u} \\
-    x_{k+j|k}    &\in \mathcal{X}, && j = 1, \ldots, N, \label{eq:ocp_x} \\
-    x_{k+N|k}    &\in \mathcal{X}_f, \label{eq:ocp_terminal}
-\end{align}
-\noindent onde $N$ é o horizonte de predição; $U_k = \{u_{k}, \ldots, u_{k+N-1}\}$ é a sequência de controle a otimizar; $x_{k+j|k}$ é o estado predito $j$ passos à frente, propagado pela discretização de Euler explícita da dinâmica contínua~\eqref{eq:estadonl}; e $\mathcal{U}$ e $\mathcal{X}$ são os conjuntos admissíveis de entrada e de estado.
-
-\subsubsection*{Custo de Estágio e Custo Terminal}
-
-O custo de estágio adota a forma quadrática em relação ao vetor de estados completo $x = [\theta,\; \dot{\theta}]^\top$ e ao vetor de referência $x_{ref} = [\theta_{ref},\; 0]^\top$:
-\begin{equation}
-    \ell(x, u, x_{ref}) =
-    (x - x_{ref})^\top Q\,(x - x_{ref}) + u^\top R\, u,
-    \label{eq:custo_estagio}
-\end{equation}
-\noindent onde $Q \in \mathbb{R}^{2\times2}$ e $R \in \mathbb{R}$ são, respectivamente, as matrizes de peso definidas positivas ($Q \succ 0$ e $R > 0$). A matriz $Q$ penaliza o erro de rastreamento angular e a velocidade angular, garantindo o amortecimento do sistema, enquanto $R$ penaliza o esforço de controle, inibindo variações bruscas no sinal enviado ao ESC. A positividade estrita de $Q$ e $R$ garante que $\ell(x, u, x_{ref}) \geq \alpha_1(|x - x_{ref}|)$ para alguma função de classe $\mathcal{K}_\infty$, condição necessária para que a função de valor ótimo $V_N^0(\cdot)$ admita uma cota inferior compatível com os requisitos de uma função de Lyapunov \cite{rawlings2017}.
-
-
-O custo terminal é definido de forma análoga sobre o vetor de estados:
-\begin{equation}
-    V_f(x, x_{ref}) =
-    (x - x_{ref})^\top P\,(x - x_{ref}),
-    \label{eq:custo_terminal}
-\end{equation}
-\noindent onde a matriz $P \succ 0$ é obtida pela solução da equação de Lyapunov do sistema linearizado em torno do ponto de equilíbrio, operando sob uma lei de controle local estabilizante $u = K(x - x_{ref})$. Essa escolha garante que $V_f$ atue como uma Função de Lyapunov de Controle (CLF) local: para todo $x \in \mathcal{X}_f$, existe $u = Kx$ tal que
-\begin{equation}
-    V_f\!\left(f(x, u),\, x_{ref}\right) - V_f(x, x_{ref})
-    \leq -\ell(x, u, x_{ref}),
-    \label{eq:clf}
-\end{equation}
-\noindent condição denominada suposição básica de estabilidade por
-\citeonline{rawlings2017}. O conjunto terminal
-$\mathcal{X}_f$ é escolhido como um subconjunto compacto e invariante por
-controle em torno de $\theta_{ref}$, tipicamente um subnível de $V_f$, de
-modo que~\eqref{eq:clf} seja satisfeita para todo $x \in \mathcal{X}_f$.
-
-\subsubsection*{Estratégia de Horizonte Deslizante e Viabilidade Recursiva}
-
-A estratégia de horizonte deslizante (\textit{receding horizon}) aplica apenas a primeira ação ótima $u_k^* = u^0(0; x_k)$ da sequência $U_k^* = \arg\min \eqref{eq:ocp}$, descarta os demais elementos e resolve novamente o OCP no instante seguinte com o novo estado medido $x_{k+1}$, incorporando retroalimentação de forma natural \cite{mayne2000}. A lei de controle implícita resultante é
-\begin{equation}
-    \kappa_N(x_k) := u^0(0;\, x_k), \qquad x_k \in \mathcal{X}_N.
-    \label{eq:lei_controle}
-\end{equation}
-
-Uma propriedade fundamental dessa estratégia é a viabilidade recursiva, se o OCP é factível para o estado inicial $x_0 \in \mathcal{X}_N$, então ele permanece factível para todos os estados subsequentes $x_k$ do sistema em malha fechada $x^+ = f(x,
-\kappa_N(x))$, desde que $\mathcal{X}_f$ seja invariante por controle \cite{rawlings2017}. Isso garante que o controlador nunca encontra um estado para o qual não exista solução, evitando falhas em operação.
-Sob as condições~\eqref{eq:clf}, pode-se mostrar que a função de valor ótimo satisfaz
-\begin{equation}
-    V_N^0\!\left(f(x, \kappa_N(x))\right) \leq V_N^0(x) - \ell(x,\kappa_N(x))
-    \quad \forall x \in \mathcal{X}_N,
-    \label{eq:descida}
-\end{equation}
-\noindent o que caracteriza $V_N^0(\cdot)$ como uma função de Lyapunov do sistema em malha fechada, assegurando estabilidade assintótica da origem (erro de rastreamento nulo) em $\mathcal{X}_N$ \cite{rawlings2017}.
-
-O OCP~\eqref{eq:ocp}--\eqref{eq:ocp_terminal} é transcrito em um NLP e resolvido pelo CasADi \cite{andersson2019}, que constrói grafos de expressão simbólica (DAGs) e calcula automaticamente as derivadas de primeira e segunda ordem exigidas pelo resolvedor numérico IPOPT.
-
-% ------------------------------------------------------------
-\subsection{Geração do \textit{Dataset}}
-
-A política de controle ótima gerada pelo NMPC em malha fechada é utilizada para compor o \textit{dataset} de treinamento da rede neural MLP, conforme o bloco central da fase offline na Figura~\ref{fig:diagrama-blocos-projeto}. Para cada instante de simulação, o OCP~\eqref{eq:ocp} é parametrizado pela referência corrente $\theta_{ref,k}$, e registra-se o par entrada-saída:
-\begin{equation}
-    \mathcal{D} = \bigl\{
-        \bigl(x_k,\; u_k^*\bigr)
-    \bigr\}_{k=1}^{M},
-    \label{eq:dataset}
-\end{equation}
-\noindent onde $x_k = [\theta_k,\, \dot{\theta}_k,\, \theta_{ref,k}]^\top \in \mathbb{R}^3$ é o vetor de entrada no instante $k$, composto pelos estados do sistema e pela referência angular que parametriza o OCP, e $u_k^* \in \mathbb{R}$ é a ação de controle ótima fornecida pelo NMPC. A inclusão de $\theta_{ref,k}$ como componente do vetor de entrada é necessária para que a rede neural replique o comportamento do controlador em diferentes pontos de rastreamento, em harmonia com a formulação do OCP da Seção~\ref{subsec:nmpc_ocp}. A cobertura do espaço de estados e de referências é garantida pela variação sistemática das condições iniciais e dos degraus de \textit{setpoint} ao longo das trajetórias simuladas \cite{karg2020}.
-
-O \textit{dataset} é normalizado componente a componente para o intervalo $[-1, 1]$ antes do treinamento, procedimento padrão que melhora o condicionamento do problema de otimização do aprendizado e a convergência do algoritmo Adam \cite{karg2020}.
-
-% ------------------------------------------------------------
-\subsection{Arquitetura e Treinamento da MLP em PyTorch}
-
-A implementação e o treinamento da rede neural MLP são realizados utilizando o PyTorch. O PyTorch é uma biblioteca de aprendizado de máquina que unifica facilidade de uso e alta performance computacional. Diferentemente de frameworks baseados na construção prévia de grafos estáticos de fluxo de dados, o PyTorch adota o paradigma de execução dinâmica e imperativa. Isso permite que os modelos de aprendizado profundo sejam programados e depurados como programas Python convencionais, mantendo o controle total do fluxo sob responsabilidade do usuário \cite{paszke2019}.
-A estrutura da rede, a configuração dos hiperparâmetros e a rotina de otimização, que inclui um critério de parada prematura (\textit{early stopping}) para evitar \textit{overfitting}, estão consolidadas no Algoritmo~\ref{alg:treino_mlp}.
-
-\begin{algorithm}
-\caption{Treinamento da Rede Neural para Aproximação do Controlador}
-\label{alg:treino_mlp}
-\begin{algorithmic}[1]
-
-\Procedure{TreinarAproximador}{}
-
-    \State Carregar dataset gerado pelo controlador ótimo
-    \State Dividir dataset em conjuntos de treino, validação e teste
-    \State Inicializar rede neural e otimizador
-    \State $melhorLoss \gets \infty$, \quad $contadorPaciencia \gets 0$
-
-    \Statex
-    \For{cada época}
-        \State Atualizar pesos minimizando o erro nos batches de treino
-        \State Avaliar erro no conjunto de validação
-
-        \If{houve melhora na validação}
-            \State Registrar melhora e salvar pesos atuais
-            \State Resetar contador de paciência
-        \Else
-            \State Incrementar contador de paciência
-            \If{paciência esgotada}
-                \State \textbf{break} \Comment{\textit{Early stopping}}
-            \EndIf
-        \EndIf
-    \EndFor
-
-    \Statex
-    \State Restaurar melhores pesos
-    \State Avaliar desempenho final no conjunto de teste
-    \State Exportar modelo para implantação embarcada
-
-\EndProcedure
-\end{algorithmic}
-\end{algorithm}
+Em plataformas ágeis, como os Veículos Aéreos Não Tripulados (VANTs), o controle PID muitas vezes não é suficiente de forma isolada, sendo frequentemente relegado a uma malha interna rápida de estabilização de atitude ou de velocidade angular. Essa limitação decorre de sua incapacidade intrínseca de considerar restrições operacionais explícitas nos atuadores (como saturações de empuxo) e de antecipar dinâmicas futuras não-lineares, criando a necessidade de estratégias preditivas mais avançadas capazes de gerenciar sistemas com dinâmicas acopladas e restrições físicas rígidas \cite{nguyen2020}.
 
 % ============================================================
-\section{Controle Embarcado em Tempo Real}
-\label{sec:embarcado}
-
-% ------------------------------------------------------------
-\subsection{Conversão do Modelo via X-CUBE-AI}
-
-O STM32Cube.AI é uma ferramenta de software desenvolvida pela STMicroelectronics projetada para a implantação de aprendizado de máquina em microcontroladores (TinyML). Esse ecossistema atua como um gerador de código baseado em compilação, recebendo modelos treinados em plataformas como Keras e TensorFlow Lite para gerar código C otimizado para a linha de microcontroladores STM32 \cite{stmu2526}.
-
-Diferentemente de abordagens baseadas em interpretadores embarcados, que processam a topologia do modelo em tempo de execução, a geração de código nativo pode aumentar consideravelmente o desempenho da inferência. Como apontado por \citeonline{david2021}, metodologias baseadas em compilação fixam as chamadas de operação diretamente em código de máquina, eliminando as etapas de roteamento do interpretador. A ferramenta analisa a topologia da rede neural, otimiza o uso de \textit{buffers} e mapeia as operações matemáticas diretamente para as capacidades de hardware do processador alvo, minimizando o uso de memória Flash e SRAM e permitindo a execução de inferências com restrições de latência e consumo energético.
-
-% ------------------------------------------------------------
-\subsection{Firmware de Controle no STM32}
-
-O firmware de controle utiliza uma arquitetura orientada a eventos e não-bloqueante para garantir o atendimento ao \textit{deadline} de $T_s = 10$\,ms. Um temporizador de hardware (TIM) operando a 100\,Hz atua como base de tempo determinística. A cada disparo do timer, a CPU apenas inicia a transferência dos dados inerciais da IMU via I$^2$C utilizando acesso direto à memória (DMA) e retorna imediatamente do contexto de interrupção, não bloqueando a execução.
-
-Apenas quando a transferência I$^2$C é concluída, uma interrupção de conclusão do DMA (\textit{Transfer Complete}) é acionada, desencadeando a rotina de controle principal. Neste momento, com os dados inerciais já disponíveis na memória SRAM, o processador realiza a leitura da referência angular, a estimação do estado atual via filtro complementar, a inferência da rede neural e a atualização do \textit{duty cycle} do PWM no ESC, conforme o Algoritmo~\ref{alg:isr_controle}.
-
-As operações de ponto flutuante, em particular o cálculo de \texttt{atan2} no filtro complementar e as multiplicações matriciais da MLP gerada pelo X-CUBE-AI, são executadas nativamente pela FPU do Cortex-M4, eliminando a sobrecarga de emulação por software. A transmissão da telemetria ao final da rotina também é delegada a um canal DMA vinculado à UART. Essa delegação maciça da movimentação de dados aos periféricos garante que o tempo de CPU fique dedicado estritamente aos cálculos de controle.
-
-\begin{algorithm}[H]
-\caption{Rotina de Controle em Tempo Real (Arquitetura DMA)}
-\label{alg:isr_controle}
-\begin{algorithmic}[1]
-\Statex \textbf{Base de Tempo:} $f_s = 100$\,Hz ($T_s = 10$\,ms)
-\Statex
-
-\Procedure{Timer\_ISR}{}
-    \State \Comment{Disparo determinístico a cada 10ms}
-    \State $\text{IniciarLeituraIMU\_DMA()}$ \Comment{Inicia transação I$^2$C em background}
-\EndProcedure
-
-\Statex
-\Procedure{I2C\_DMA\_Complete\_ISR}{}
-    \State \Comment{1. Leitura da Referência (UART)}
-    \State $\theta_{ref} \gets \text{LerReferencia()}$
-
-    \Statex
-    \State \Comment{2. Estimação de Estados (FPU)}
-    \State $\theta, \dot{\theta} \gets \text{EstimarEstados(Buffer\_I2C)}$
-
-    \Statex
-    \State \Comment{3. Cálculo da Ação de Controle (Inferência)}
-    \State $x \gets [\theta,\; \dot{\theta},\; \theta_{ref}]^\top$
-    \State $u \gets \text{Controlador}(x)$
-
-    \Statex
-    \State \Comment{4. Atuação (PWM)}
-    \State $\text{AplicarControle}(u)$
-
-    \Statex
-    \State \Comment{5. Registro de Dados (UART DMA)}
-    \State $\text{IniciarTelemetria\_DMA}(\theta,\; \dot{\theta},\; \theta_{ref},\; u)$
-\EndProcedure
-\end{algorithmic}
-\end{algorithm}
+\section{Controle Preditivo Não-Linear (NMPC)}
+\label{sec:fund_nmpc}
 % ============================================================
-\section{Análise de Riscos e Considerações Práticas de Engenharia}
-\label{sec:riscos}
 
-O desenvolvimento experimental de sistemas mecatrônicos complexos e o embarque de algoritmos de controle ótimo e inteligência computacional envolvem desafios práticos que exigem estratégias de mitigação integradas à arquitetura do projeto. Três riscos críticos foram identificados e mitigados ao longo do desenvolvimento:
+O Controle Preditivo Não-Linear (NMPC) fundamenta-se na resolução repetida, a cada período de amostragem, de um problema de controle ótimo em tempo discreto e horizonte finito. Um otimizador numérico propaga um modelo preditivo não-linear da planta para calcular uma sequência de controle que minimiza uma função de custo quadrática acumulada, respeitando ativamente restrições de estado e de entrada \cite{mayne2000, rawlings2017}.
 
-\subsection{Divergência do Modelo Dinâmico e Não-Linearidades Aerodinâmicas}
+Uma das maiores vantagens do NMPC em relação às malhas lineares clássicas reside na característica de \textit{preview} (visão antecipada da referência futura): ao conhecer a trajetória desejada ao longo do horizonte $N$, o controlador inicia a aceleração ou frenagem de maneira preventiva antes que o erro de rastreamento se acumule. Todavia, a resolução iterativa online de um Problema de Programação Não-Linear (NLP) impõe elevado custo computacional, tornando sua aplicação direta em microcontroladores de baixo custo um desafio expressivo em sistemas com dinâmicas rápidas \cite{nguyen2020}.
 
-A dinâmica aerodinâmica do conjunto motor-hélice apresenta fortes não-linearidades e atrasos de transporte que, se ignorados ou mapeados com imprecisão, poderiam induzir o NMPC a gerar ações de controle subótimas e enviesar o aprendizado supervisionado da rede neural.
+% ============================================================
+\section{MPC Explícito e suas Limitações}
+\label{sec:fund_empc}
+% ============================================================
 
-Para mitigar esse risco, adotou-se a estratégia de excitação persistente com sinais multisseno e chirps cobrindo $f_{\max} = 0{,}50$\,Hz e os dois patamares de operação ($45^\circ$ e $60^\circ$). A adoção do modelo polinomial NARX com seleção parcimoniosa FROLS/ERR permitiu mapear explicitamente a proporcionalidade puramente quadrática do empuxo ($u^2$) e o atraso de transporte efetivo de 30\,ms, validado com margem de segurança em simulação livre (\textit{free-run}) antes da etapa de síntese preditiva.
+Buscando contornar a sobrecarga computacional da otimização numérica online, propôs-se o conceito de MPC Explícito (EMPC). Nessa formulação, o problema de controle ótimo sob restrições lineares é resolvido parametricamente offline por meio de programação multiparamétrica. A lei de controle resultante é expressa como uma função afim por partes (\textit{Piecewise Affine} - PWA) definida sobre partições politópicas do espaço de estados, de modo que a avaliação online restringe-se à busca pontual do polítopo ativo e à avaliação de uma equação linear simples \cite{bemporad2002}.
 
-\subsection{Restrições de Memória e Recursos de Hardware no STM32}
+Apesar de eliminar os resolvedores iterativos no hardware embarcado, o EMPC sofre de um severo problema de escalabilidade dimensional: o número de partições politópicas cresce exponencialmente com o horizonte de predição e com a quantidade de restrições ativas. Essa explosão combinatória inviabiliza o armazenamento da tabela de polítopos na memória estática de microcontroladores para sistemas de ordem média ou com horizontes estendidos \cite{bemporad2002}. Tal limitação estimula a exploração de técnicas de aprendizado de máquina como aproximadores de função com consumo de memória determinístico \cite{alsmeier2024}.
 
-O microcontrolador STM32 Nucleo-F446RE dispõe de limites rígidos de armazenamento e memória de execução (512\,KB de memória Flash e 128\,KB de SRAM). Redes neurais superdimensionadas poderiam acarretar sobrecarga de memória ou fazer com que o tempo de inferência excedesse o intervalo de amostragem de $T_s = 10$\,ms.
+% ============================================================
+\section{Aproximação de Leis de Controle por Redes Neurais}
+\label{sec:fund_ann_mpc}
+% ============================================================
 
-Como medida preventiva, a arquitetura da MLP foi dimensionada com topologia enxuta e eficiente ($130 \to 128 \to 128 \to 1$), contemplando 15 amostras passadas de ângulo, 15 de controle e o horizonte de 100 passos da referência futura, demandando aproximadamente $134$\,KB de memória Flash em precisão \texttt{float32} e menos de 2\,KB de SRAM. As rotinas vetoriais nativas em C compiladas com instruções FPU de hardware alcançaram tempo de inferência estritamente determinístico de $2{,}07$\,ms por ciclo a 180\,MHz, garantindo uma margem de folga de CPU de $79{,}4\%$ em relação ao período de amostragem de 10\,ms.
+A necessidade de contornar as restrições de memória do EMPC impulsiona o emprego de Redes Neurais Artificiais para aprender a política ótima de controle. Formalmente, \citeonline{karg2020} demonstraram que Redes Neurais Profundas (DNNs) com funções de ativação do tipo ReLU (\textit{Rectified Linear Unit}) são estruturalmente capazes de representar de forma exata qualquer função afim por partes gerada por controladores preditivos lineares e aproximar funções contínuas arbitrárias decorrentes de NMPCs com alta fidelidade.
 
-\subsection{Estabilidade do Controlador Neural e Dados Fora da Distribuição}
+O desafio central dessa abordagem consiste no controle do erro de aproximação e na manutenção de salvaguardas de estabilidade. Para mitigar esses riscos, investigam-se abordagens estatísticas baseadas na Desigualdade de Hoeffding para certificar a satisfação de restrições com alta probabilidade \cite{hertneck2018}, além de métodos determinísticos baseados em constantes de Lipschitz para assegurar que as discrepâncias entre a inferência da rede e o comando ótimo nominal permaneçam limitadas dentro da margem de robustez do sistema \cite{alsmeier2024}.
 
-Por se tratar de um aproximador universal orientado a dados, redes neurais não fornecem garantias analíticas de estabilidade assintótica para estados que estejam substancialmente fora da distribuição (\textit{out-of-distribution}) vista durante o treinamento supervisionado.
+% ============================================================
+\section{Identificação de Sistemas para Alimentação do NMPC}
+\label{sec:fund_sysid}
+% ============================================================
 
-Para mitigar esse comportamento:
-\begin{enumerate}
-    \item A referência do NMPC para geração do \textit{dataset} foi projetada com alta riqueza temporal cobrindo de $12^\circ$ a $110^\circ$, expondo a rede a uma ampla distribuição de estados transitórios e estacionários;
-    \item A saída da rede neural foi submetida à saturação de segurança rígida no firmware ($0 \leq u \leq 100\%$);
-    \item Implementou-se no firmware uma rotina de monitoramento de integridade (\textit{watchdog} angular) com comutação automática para o controlador PID clássico em caso de desvios angulares anômalos fora dos limites operacionais da bancada.
-\end{enumerate}
+A viabilidade prática e o desempenho de qualquer controlador preditivo dependem intrinsecamente da qualidade preditiva do modelo dinâmico utilizado. Em plantas mecatrônicas de aeropêndulo operadas por motores BLDC e hélices, fenômenos como atrito seco nos mancais, histerese aerodinâmica e efeitos de recirculação de ar são de difícil quantificação puramente fenomenológica.
 
+Nesse contexto, as técnicas de Identificação de Sistemas orientadas a dados desempenham papel fundamental. A partir de ensaios dinâmicos em que o sistema é excitado por sinais com riqueza espectral persistente, identificam-se modelos não-lineares — como modelos autorregressivos com entradas exógenas (NARX) ou modelos de caixa cinza (\textit{grey-box}) ajustados via \textit{multiple shooting} —, permitindo alimentar o otimizador preditivo com representações fiéis do envelope operacional real \cite{jiang2022, billings2013}.
+
+% ============================================================
+\section{Redes Neurais Multicamadas (MLP)}
+\label{sec:fund_mlp}
+% ============================================================
+
+Dentre as topologias neurais, as redes \textit{Feedforward} do tipo Perceptron Multicamadas (MLP) são especialmente adequadas para aproximar leis de controle preditivo em razão de seu tempo de execução estritamente determinístico e ausência de laços recorrentes internos. A rede é estruturada em uma camada de entrada que recebe o vetor de estados medidos, históricos passados e a trajetória de referências futuras (\textit{preview}), camadas ocultas densas com ativações ReLU e uma camada de saída linear que fornece o comando escalar de controle ótimo $u^*(k)$.
+
+O treinamento é conduzido sob o paradigma supervisionado com a função de perda do Erro Quadrático Médio (MSE), utilizando algoritmos de otimização estocástica baseados em gradiente, como o Adam. O banco de dados de treinamento é gerado pela resolução offline do problema de controle ótimo em malha fechada cobrindo sistematicamente o espaço de estados de interesse \cite{karg2020, paszke2019}.
+
+% ============================================================
+\section{Inferência de Redes Neurais em Hardware Embarcado (TinyML)}
+\label{sec:fund_tinyml}
+% ============================================================
+
+A implantação de modelos neurais em sistemas mecatrônicos de baixo custo e tempo real restrito insere-se no domínio do \textit{TinyML} (\textit{Tiny Machine Learning}). Em microcontroladores de classe ARM Cortex-M, os recursos de computação são severamente limitados: memórias SRAM da ordem de centenas de kilobytes, memória Flash de alguns megabytes e operação desprovida de sistema operacional de propósito geral.
+
+Para atender a essas restrições, utilizam-se cadeias de ferramentas especializadas. Bibliotecas como o \textit{TensorFlow Lite for Microcontrollers} (TFLM) e extensões proprietárias como o \texttt{X-CUBE-AI} da STMicroelectronics analisam o grafo computacional da rede e o traduzem em código C nativo otimizado, explorando instruções vetoriais da biblioteca CMSIS-NN e unidades de ponto flutuante (FPU). Esse pipeline viabiliza inferências em frações de milissegundo, preservando a determinabilidade temporal requerida para malhas de controle de alta taxa de amostragem \cite{david2021}.
+
+% ============================================================
+\section{Trabalhos Correlatos e Lacuna Identificada}
+\label{sec:fund_correlatos}
+% ============================================================
+
+A convergência entre aprendizado de máquina e controle preditivo tem sido explorada ativamente na literatura recente. \citeonline{jiang2022} aplicaram uma rede neural feedforward operando como modelo dinâmico preditivo acoplado a um otimizador online em um veículo aéreo, enfrentando ainda demandas computacionais consideráveis. Na linha de compensação de perturbações, \citeonline{sanyal2024} propuseram a arquitetura RAMP-Net, que combina Redes Neurais Informadas pela Física (PINNs) para absorver distúrbios de vento em NMPC de drones. Em trabalhos teóricos, \citeonline{li2024} investigaram o Learning-MPC diretamente no grupo de Lie $SO(3)$, exigindo computadores de bordo com GPUs dedicadas para processamento em tempo real.
+
+Nota-se, contudo, que grande parte dos trabalhos foca na aceleração em computadores de bordo pesados ou limita-se à validação puramente simulada. Identifica-se uma expressiva lacuna tecnológica no que concerne ao **pipeline completo de ponta a ponta**: desde a identificação não-linear de uma bancada física real, passando pela síntese offline do NMPC e aproximação neural, até a implantação experimental determinística em microcontrolador de baixo custo (Cortex-M4 a 180\,MHz a 100\,Hz) com diagnóstico e superação do *Sim-to-Real gap*. É a essa lacuna que este trabalho se dedica.
