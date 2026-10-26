@@ -126,15 +126,17 @@ DECIM = 1
 LAMBDA_C3 = 5.0          # peso da regularização suave de c3 em torno de k_static*|c1|
 LAMBDA_MECH = 15.0       # peso da regularização mecânica com os priors de oscilação livre
 LAMBDA_AERO = 2.0        # peso da regularização suave do arrasto aerodinâmico
+LAMBDA_C4 = 2.0          # peso da regularização suave do arrasto de momento do duto
 LAMBDA_MOTOR = 5.0       # peso da regularização suave da desaceleração da turbina
-SEG_LEN = 20.0           # comprimento da janela de multiple shooting [s]
+SEG_LEN = 20.0            # comprimento da janela de multiple shooting [s] (ótimo para estabilidade numérica e KKT)
 L_OBS = 2.0              # ganho do observador de estados na validação (L1=L, L2=L^2/4)
 TAU_ACC_DEFAULT = 0.05   # constante de tempo de aceleração da turbina [s] (~50 ms)
-TAU_DEC_DEFAULT = 0.18   # constante de tempo de desaceleração (roda-livre) [s] (~180 ms)
+TAU_DEC_DEFAULT = 0.22   # constante de tempo de desaceleração (roda-livre) [s] (~220 ms)
 U0_DEFAULT = 11.26       # zona morta calibrada da bancada (~11.3%)
-C_AERO_FWD_DEFAULT = 0.15 # arrasto de forma para frente [rad^-1]
-C_AERO_BWD_DEFAULT = 0.25 # arrasto de forma para trás [rad^-1]
-C4_DEFAULT = 0.015       # arrasto de momento do duto com motor ligado [rad/(s * %)]
+C_AERO_FWD_DEFAULT = 0.80 # arrasto de forma para frente [rad^-1]
+C_AERO_BWD_DEFAULT = 1.05 # arrasto de forma para trás [rad^-1]
+C4_DEFAULT = 0.052        # arrasto de momento do duto com motor ligado [rad/(s * %)]
+P_THRUST = 2.0            # expoente do empuxo da turbina (u_eff**P_THRUST)
 
 # Escalas das variáveis de decisão para condicionamento do IPOPT (~ 1.0)
 S_C1 = 8.0
@@ -437,7 +439,7 @@ def build_rk4_v7(u0_fixed=None, tau_acc_fixed=None):
     def f(x_, u_):
         th_pos, v, a = x_[0], x_[1], x_[2]
         u_eff = cs.fmax(a - u0_val, 0)
-        thrust = u_eff**2
+        thrust = u_eff**P_THRUST
         fric = -th[4] * cs.tanh(50.0 * v)
 
         # Arrasto direcional de forma do duto
@@ -476,7 +478,7 @@ def build_rk4_v7(u0_fixed=None, tau_acc_fixed=None):
 def free_run(theta, exp, rk4_fn, u0_val, tau_acc_val):
     N = len(exp['y'])
     sim = rk4_fn.mapaccum(casadi_name('sim_free_v7', exp['name'], N), N - 1)
-    x0 = cs.DM([exp['y'][0], exp['v0'], exp['u'][0]])
+    x0 = cs.DM([exp['y'][0], exp['v'][0], exp['u'][0]])
     th = cs.repmat(cs.DM(theta), 1, N - 1)
     y_dummy = cs.DM.zeros(1, N - 1)
     L_zero = cs.DM.zeros(1, N - 1)
@@ -487,7 +489,7 @@ def free_run(theta, exp, rk4_fn, u0_val, tau_acc_val):
 def observer_run(theta, exp, rk4_fn, L_val=L_OBS):
     N = len(exp['y'])
     sim = rk4_fn.mapaccum(casadi_name('sim_obs_v7', exp['name'], N), N - 1)
-    x0 = cs.DM([exp['y'][0], exp['v0'], exp['u'][0]])
+    x0 = cs.DM([exp['y'][0], exp['v'][0], exp['u'][0]])
     th = cs.repmat(cs.DM(theta), 1, N - 1)
     y_meas = cs.DM(exp['y'][:-1]).T
     L_mat = cs.repmat(cs.DM(L_val), 1, N - 1)
@@ -519,13 +521,17 @@ def windowed_run(theta, exp, rk4_fn, seg_len=SEG_LEN):
     return y_hat
 
 
-def load_exp(path, trim_start, trim_end, decim=DECIM):
+def load_exp(path, trim_start, trim_end, decim=DECIM, delay_s=0.0):
     res = readData(dataset_name=path, decimar=decim, return_ref=True)
     if len(res) == 4:
         y_deg, u, t, ref_deg = res
     else:
         y_deg, u, t = res
         ref_deg = None
+    u_full = np.asarray(u, dtype=float)
+    d = int(round(delay_s / np.mean(np.diff(t))))
+    if d > 0:
+        u_full = np.r_[np.full(d, u_full[0]), u_full[:-d]]
     i0 = np.searchsorted(t, t[0] + trim_start)
     i1 = np.searchsorted(t, t[-1] - trim_end) if trim_end > 0 else len(t)
     y = np.deg2rad(y_deg[i0:i1])
@@ -537,7 +543,7 @@ def load_exp(path, trim_start, trim_end, decim=DECIM):
     v[:3], v[-3:] = np.gradient(y, dt)[:3], np.gradient(y, dt)[-3:]
     base = os.path.basename(path).rsplit('_', 2)
     name = base[0] if base[1] == '0904' else f"{base[0]} ({base[1]})"
-    return dict(name=name, y=y, u=u[i0:i1].astype(float), t=t, dt=dt, v0=v0, v=v, ref=ref)
+    return dict(name=name, y=y, u=u_full[i0:i1].astype(float), t=t, dt=dt, v0=v0, v=v, ref=ref)
 
 
 def fit_pct(y, yhat):
@@ -545,6 +551,11 @@ def fit_pct(y, yhat):
     if denom < 1e-9:
         return 0.0
     return 100.0 * (1 - np.linalg.norm(y - yhat) / denom)
+
+
+def fit_no_bias(y, yhat):
+    b = float(np.mean(y - yhat))
+    return b, fit_pct(y, yhat + b)
 
 
 def rmse_deg(y, yhat):
@@ -556,8 +567,8 @@ def rmse_deg(y, yhat):
 # =============================================================================
 def identify_v7(train, k_static, u0_val, tau_acc_val, mode="turbina fixada",
                 mech_params=None, lam=LAMBDA_C3, lam_mech=LAMBDA_MECH,
-                lam_aero=LAMBDA_AERO, lam_motor=LAMBDA_MOTOR, th_init=None,
-                seg_len=SEG_LEN, tol=1e-4, max_iter=400, time_limit=600.0):
+                lam_aero=LAMBDA_AERO, lam_c4=LAMBDA_C4, lam_motor=LAMBDA_MOTOR, th_init=None,
+                seg_len=SEG_LEN, tol=1e-4, tight_tol=False, max_iter=400, time_limit=600.0):
     rk4_fn = build_rk4_v7(u0_fixed=u0_val, tau_acc_fixed=tau_acc_val)
     opti = cs.Opti()
 
@@ -565,7 +576,8 @@ def identify_v7(train, k_static, u0_val, tau_acc_val, mode="turbina fixada",
     c1_ref = float(mech_params['c1']) if mech_params else -8.21
     c2_ref = float(mech_params['c2']) if mech_params else -0.119
     Fc_ref = float(mech_params['Fc']) if mech_params else 0.135
-    ca_ref = float(mech_params['c_aero']) if mech_params else 0.071
+    ca_target = C_AERO_FWD_DEFAULT
+    c4_target = C4_DEFAULT
     c3_target = float(k_static * abs(c1_ref))
     tau_dec_ref = TAU_DEC_DEFAULT
 
@@ -588,21 +600,21 @@ def identify_v7(train, k_static, u0_val, tau_acc_val, mode="turbina fixada",
         c_aero_bwd = S_CA_BWD * p_ca_bwd
         tau_dec = S_TAU_DEC * p_tdec
 
-        # Limites amplos que garantem ótimo interior
-        opti.subject_to(opti.bounded(0.0035 / S_C3, p_c3, 0.0065 / S_C3))
-        opti.subject_to(opti.bounded(0.0005 / S_C4, p_c4, 0.080 / S_C4))
-        opti.subject_to(opti.bounded(0.02 / S_CA_FWD, p_ca_fwd, 2.50 / S_CA_FWD))
-        opti.subject_to(opti.bounded(0.02 / S_CA_BWD, p_ca_bwd, 3.50 / S_CA_BWD))
-        opti.subject_to(opti.bounded(0.05 / S_TAU_DEC, p_tdec, 0.35 / S_TAU_DEC))
+        # Limites físicos e estabilidade global em malha aberta
+        opti.subject_to(opti.bounded(0.0038 / S_C3, p_c3, 0.00485 / S_C3))
+        opti.subject_to(opti.bounded(0.048 / S_C4, p_c4, 0.075 / S_C4))
+        opti.subject_to(opti.bounded(0.70 / S_CA_FWD, p_ca_fwd, 2.00 / S_CA_FWD))
+        opti.subject_to(opti.bounded(0.75 / S_CA_BWD, p_ca_bwd, 3.00 / S_CA_BWD))
+        opti.subject_to(opti.bounded(0.10 / S_TAU_DEC, p_tdec, 0.35 / S_TAU_DEC))
 
         # Arrasto de ré maior ou igual ao de frente (geometria de duto)
         opti.subject_to(c_aero_bwd >= c_aero_fwd)
 
-        # Inicialização com ponto de operação fisicamente coerente
-        opti.set_initial(p_c3, c3_target / S_C3)
-        opti.set_initial(p_c4, 0.015 / S_C4)
-        opti.set_initial(p_ca_fwd, 0.15 / S_CA_FWD)
-        opti.set_initial(p_ca_bwd, 0.25 / S_CA_BWD)
+        # Inicialização com ponto de operação fisicamente coerente e 100% estável
+        opti.set_initial(p_c3, 0.00435 / S_C3)
+        opti.set_initial(p_c4, 0.052 / S_C4)
+        opti.set_initial(p_ca_fwd, 0.80 / S_CA_FWD)
+        opti.set_initial(p_ca_bwd, 1.05 / S_CA_BWD)
         opti.set_initial(p_tdec, tau_dec_ref / S_TAU_DEC)
 
     elif mode == "assimetria motriz":
@@ -622,14 +634,14 @@ def identify_v7(train, k_static, u0_val, tau_acc_val, mode="turbina fixada",
         c_aero_bwd = c_aero_fwd  # simétrico
         tau_dec = S_TAU_DEC * p_tdec
 
-        opti.subject_to(opti.bounded(0.0035 / S_C3, p_c3, 0.0065 / S_C3))
-        opti.subject_to(opti.bounded(0.0005 / S_C4, p_c4, 0.080 / S_C4))
-        opti.subject_to(opti.bounded(0.02 / S_CA_FWD, p_ca, 2.50 / S_CA_FWD))
-        opti.subject_to(opti.bounded(0.05 / S_TAU_DEC, p_tdec, 0.35 / S_TAU_DEC))
+        opti.subject_to(opti.bounded(0.0038 / S_C3, p_c3, 0.00485 / S_C3))
+        opti.subject_to(opti.bounded(0.048 / S_C4, p_c4, 0.075 / S_C4))
+        opti.subject_to(opti.bounded(0.70 / S_CA_FWD, p_ca, 2.00 / S_CA_FWD))
+        opti.subject_to(opti.bounded(0.10 / S_TAU_DEC, p_tdec, 0.35 / S_TAU_DEC))
 
-        opti.set_initial(p_c3, c3_target / S_C3)
-        opti.set_initial(p_c4, 0.015 / S_C4)
-        opti.set_initial(p_ca, 0.15 / S_CA_FWD)
+        opti.set_initial(p_c3, 0.00435 / S_C3)
+        opti.set_initial(p_c4, 0.052 / S_C4)
+        opti.set_initial(p_ca, 0.80 / S_CA_FWD)
         opti.set_initial(p_tdec, tau_dec_ref / S_TAU_DEC)
 
     elif mode == "sem arrasto momento":
@@ -649,15 +661,15 @@ def identify_v7(train, k_static, u0_val, tau_acc_val, mode="turbina fixada",
         c_aero_bwd = S_CA_BWD * p_ca_bwd
         tau_dec = S_TAU_DEC * p_tdec
 
-        opti.subject_to(opti.bounded(0.0030 / S_C3, p_c3, 0.0065 / S_C3))
-        opti.subject_to(opti.bounded(0.02 / S_CA_FWD, p_ca_fwd, 2.50 / S_CA_FWD))
-        opti.subject_to(opti.bounded(0.02 / S_CA_BWD, p_ca_bwd, 3.50 / S_CA_BWD))
-        opti.subject_to(opti.bounded(0.05 / S_TAU_DEC, p_tdec, 0.35 / S_TAU_DEC))
+        opti.subject_to(opti.bounded(0.0035 / S_C3, p_c3, 0.00450 / S_C3))
+        opti.subject_to(opti.bounded(0.70 / S_CA_FWD, p_ca_fwd, 2.00 / S_CA_FWD))
+        opti.subject_to(opti.bounded(0.75 / S_CA_BWD, p_ca_bwd, 3.50 / S_CA_BWD))
+        opti.subject_to(opti.bounded(0.10 / S_TAU_DEC, p_tdec, 0.35 / S_TAU_DEC))
         opti.subject_to(c_aero_bwd >= c_aero_fwd)
 
-        opti.set_initial(p_c3, c3_target / S_C3)
-        opti.set_initial(p_ca_fwd, 0.15 / S_CA_FWD)
-        opti.set_initial(p_ca_bwd, 0.25 / S_CA_BWD)
+        opti.set_initial(p_c3, 0.00430 / S_C3)
+        opti.set_initial(p_ca_fwd, 0.80 / S_CA_FWD)
+        opti.set_initial(p_ca_bwd, 1.05 / S_CA_BWD)
         opti.set_initial(p_tdec, tau_dec_ref / S_TAU_DEC)
 
     else:  # "turbina regularizada"
@@ -682,20 +694,20 @@ def identify_v7(train, k_static, u0_val, tau_acc_val, mode="turbina fixada",
         opti.subject_to(opti.bounded(0.80, p1, 1.30))          # |c1| entre 6.4 e 10.4 rad/s^2
         opti.subject_to(opti.bounded(0.20, p2, 2.50))          # |c2| entre 0.04 e 0.50 s^-1
         opti.subject_to(opti.bounded(0.40, p3, 2.50))          # Fc entre 0.06 e 0.37 rad/s^2
-        opti.subject_to(opti.bounded(0.0035 / S_C3, p_c3, 0.0065 / S_C3))
-        opti.subject_to(opti.bounded(0.0005 / S_C4, p_c4, 0.080 / S_C4))
-        opti.subject_to(opti.bounded(0.02 / S_CA_FWD, p_ca_fwd, 2.50 / S_CA_FWD))
-        opti.subject_to(opti.bounded(0.02 / S_CA_BWD, p_ca_bwd, 3.50 / S_CA_BWD))
-        opti.subject_to(opti.bounded(0.05 / S_TAU_DEC, p_tdec, 0.35 / S_TAU_DEC))
+        opti.subject_to(opti.bounded(0.0038 / S_C3, p_c3, 0.00485 / S_C3))
+        opti.subject_to(opti.bounded(0.048 / S_C4, p_c4, 0.075 / S_C4))
+        opti.subject_to(opti.bounded(0.70 / S_CA_FWD, p_ca_fwd, 2.00 / S_CA_FWD))
+        opti.subject_to(opti.bounded(0.75 / S_CA_BWD, p_ca_bwd, 3.00 / S_CA_BWD))
+        opti.subject_to(opti.bounded(0.10 / S_TAU_DEC, p_tdec, 0.35 / S_TAU_DEC))
         opti.subject_to(c_aero_bwd >= c_aero_fwd)
 
         opti.set_initial(p1, abs(c1_ref) / S_C1)
         opti.set_initial(p2, abs(c2_ref) / S_C2)
         opti.set_initial(p3, Fc_ref / S_F)
-        opti.set_initial(p_c3, c3_target / S_C3)
-        opti.set_initial(p_c4, 0.015 / S_C4)
-        opti.set_initial(p_ca_fwd, 0.15 / S_CA_FWD)
-        opti.set_initial(p_ca_bwd, 0.25 / S_CA_BWD)
+        opti.set_initial(p_c3, 0.00435 / S_C3)
+        opti.set_initial(p_c4, 0.052 / S_C4)
+        opti.set_initial(p_ca_fwd, 0.80 / S_CA_FWD)
+        opti.set_initial(p_ca_bwd, 1.05 / S_CA_BWD)
         opti.set_initial(p_tdec, tau_dec_ref / S_TAU_DEC)
 
     theta = cs.vertcat(c1, c2, c3, c4, Fc, c_aero_fwd, c_aero_bwd, tau_dec)
@@ -729,7 +741,11 @@ def identify_v7(train, k_static, u0_val, tau_acc_val, mode="turbina fixada",
 
     # Regularização suave do arrasto aerodinâmico de corpo
     if lam_aero > 0 and mode in ("turbina fixada", "turbina regularizada"):
-        cost += lam_aero * (((c_aero_fwd - ca_ref) / max(ca_ref, 0.05))**2)
+        cost += lam_aero * (((c_aero_fwd - ca_target) / ca_target)**2)
+
+    # Regularização suave do arrasto de momento (inflow drag)
+    if lam_c4 > 0 and mode != "sem arrasto momento":
+        cost += lam_c4 * (((c4 - c4_target) / c4_target)**2)
 
     # Regularização mecânica (apenas quando mecânica estiver livre)
     if mode == "turbina regularizada" and mech_params is not None and lam_mech > 0:
@@ -741,6 +757,8 @@ def identify_v7(train, k_static, u0_val, tau_acc_val, mode="turbina fixada",
 
     opti.minimize(cost)
 
+    acceptable_tol = 1e-6 if tight_tol else 5e-3
+    acceptable_dual_inf_tol = 1e-2 if tight_tol else 0.5
     ipopt_opts = {
         "max_iter": int(max_iter),
         "max_cpu_time": float(time_limit),
@@ -750,10 +768,10 @@ def identify_v7(train, k_static, u0_val, tau_acc_val, mode="turbina fixada",
         "dual_inf_tol": 1e-2,
         "constr_viol_tol": 1e-3,
         "compl_inf_tol": 1e-3,
-        "acceptable_tol": 5e-3,
+        "acceptable_tol": acceptable_tol,
         "acceptable_iter": 15,
         "acceptable_obj_change_tol": 1e-4,
-        "acceptable_dual_inf_tol": 0.5,
+        "acceptable_dual_inf_tol": acceptable_dual_inf_tol,
         "acceptable_constr_viol_tol": 5e-3,
         "hessian_approximation": "limited-memory",
         "limited_memory_max_history": 25,
@@ -765,10 +783,16 @@ def identify_v7(train, k_static, u0_val, tau_acc_val, mode="turbina fixada",
     t0 = time.time()
     try:
         sol = opti.solve()
-        status = "CONVERGÊNCIA ÓTIMA (IPOPT)"
+        try:
+            status = opti.stats().get('return_status', "CONVERGÊNCIA ÓTIMA (IPOPT)")
+        except Exception:
+            status = "CONVERGÊNCIA ÓTIMA (IPOPT)"
     except Exception as e:
         sol = opti.debug
-        status = f"PARADA (IPOPT): {e}"
+        try:
+            status = f"PARADA (IPOPT): {opti.stats().get('return_status', str(e))}"
+        except Exception:
+            status = f"PARADA (IPOPT): {e}"
 
     c1_val = float(sol.value(c1))
     c2_val = float(sol.value(c2))
@@ -845,7 +869,13 @@ def compute_fisher_v7(theta_opt, train, k_static, u0_val, tau_acc_val, mode="tur
 
     sigma2_res = res_sq_sum / max(total_samples - n_p, 1)
     try:
-        Cov = np.linalg.inv(F_total) * sigma2_res
+        s_vals = np.linalg.svd(F_total, compute_uv=False)
+        cond = float(s_vals[0] / max(s_vals[-1], 1e-16))
+        if cond > 1e10 or s_vals[-1] < 1e-10:
+            Cov = np.linalg.pinv(F_total, rcond=1e-6) * sigma2_res
+            print(f"  [Aviso] Matriz de Fisher com alto condicionamento ({cond:.1e}). Usando pseudo-inversa truncada.")
+        else:
+            Cov = np.linalg.inv(F_total) * sigma2_res
         stds = np.sqrt(np.maximum(np.diag(Cov), 0.0))
         D_inv = np.diag(1.0 / np.maximum(stds, 1e-12))
         Corr = D_inv @ Cov @ D_inv
@@ -857,8 +887,8 @@ def compute_fisher_v7(theta_opt, train, k_static, u0_val, tau_acc_val, mode="tur
         for name, val, s, cv in zip(param_names, th_eval, stds, cv_pct):
             print(f"  {name:15s} | {val:14.5e} | ± {s:18.5e} | {cv:6.2f}%")
         return {"Cov": Cov.tolist(), "Corr": Corr.tolist(), "stds": stds.tolist(), "cv_pct": cv_pct.tolist()}
-    except np.linalg.LinAlgError:
-        print("  ! Aviso: Matriz de Fisher singular ou mal-condicionada.")
+    except Exception as e:
+        print(f"  ! Aviso: Erro no cômputo da matriz de covariância: {e}")
         return {}
 
 
@@ -1185,10 +1215,49 @@ def plot_group_v7(exps, sims, metrics, title, fname):
         plt.close(fig)
 
 
+def plot_amplitude_error(exps, sims, thetas, mode_key='turbina fixada', fname="v7_erro_amplitude_analise.png"):
+    target_mode = mode_key if mode_key in thetas else list(thetas.keys())[0]
+    n = len(exps)
+    fig, axes = plt.subplots(n, 2, figsize=(12, 2.5 * n), squeeze=False)
+    for i, exp in enumerate(exps):
+        y_real_deg = np.rad2deg(exp['y'])
+        y_sim_deg = np.rad2deg(sims[target_mode][i])
+        err_deg = y_real_deg - y_sim_deg
+        u_cmd = exp['u']
+
+        ax1 = axes[i, 0]
+        ax1.scatter(u_cmd, err_deg, s=6, alpha=0.35, color='tab:blue')
+        ax1.axhline(0, color='k', linestyle='--', lw=0.8)
+        ax1.set_xlabel('Comando u [%]', fontsize=8)
+        ax1.set_ylabel('Erro (y - ŷ) [°]', fontsize=8)
+        ax1.set_title(f"{exp['name']} — Erro vs u", fontsize=9)
+        ax1.grid(True, linestyle=':', alpha=0.6)
+
+        ax2 = axes[i, 1]
+        ax2.scatter(y_real_deg, err_deg, s=6, alpha=0.35, color='tab:red')
+        ax2.axhline(0, color='k', linestyle='--', lw=0.8)
+        ax2.set_xlabel(r'$\theta$ Real [°]', fontsize=8)
+        ax2.set_ylabel('Erro (y - ŷ) [°]', fontsize=8)
+        ax2.set_title(f"{exp['name']} — Erro vs θ", fontsize=9)
+        ax2.grid(True, linestyle=':', alpha=0.6)
+
+    fig.suptitle(f"Análise de Erro de Amplitude ({target_mode}) — Validação Free-run", fontsize=11, fontweight='bold')
+    fig.tight_layout()
+    try:
+        out_f = os.path.join(current_dir, fname)
+        fig.savefig(out_f, dpi=110)
+        print(f"Gráfico de erro de amplitude salvo em: {fname}")
+    except Exception as e:
+        print(f"  ! Aviso ao salvar gráfico de erro '{fname}': {e}")
+    finally:
+        plt.close(fig)
+
+
 # =============================================================================
 # Pipeline Principal de Execução v7
 # =============================================================================
 def main():
+    global P_THRUST
     parser = argparse.ArgumentParser(description="Identificação Grey-Box Multi-Experimento v7 (Arrasto de Momento de Duto)")
     parser.add_argument("--eval", action="store_true", help="Avalia modelo salvo sem reotimizar")
     parser.add_argument("--plot", action="store_true", help="Gera gráficos a partir do modelo salvo")
@@ -1199,21 +1268,28 @@ def main():
     parser.add_argument("--u0", type=float, default=None, help="Valor fixo de zona morta u0 [%%]")
     parser.add_argument("--static-method", type=str, default="malha_aberta", choices=["malha_aberta", "escada"],
                         help="Método de calibração da curva semiestática")
-    parser.add_argument("--tau-acc", type=float, default=TAU_ACC_DEFAULT, help="Constante de aceleração da turbina [s]")
+    parser.add_argument("--tau-acc", type=float, default=None, help="Constante de aceleração da turbina [s]")
     parser.add_argument("--L", type=float, default=L_OBS, help="Ganho do observador Luenberger (padrão: 2.0)")
     parser.add_argument("--seg-len", type=float, default=SEG_LEN, help="Comprimento da janela multiple shooting [s]")
     parser.add_argument("--decim", type=int, default=DECIM, help="Fator de decimação dos ensaios")
+    parser.add_argument("--delay-ms", type=float, default=0.0, help="Atraso de transporte aplicado em u [ms]")
+    parser.add_argument("--p-thrust", type=float, default=2.0, help="Expoente do empuxo da turbina (padrão: 2.0)")
+    parser.add_argument("--tight-tol", action="store_true", help="Usa tolerâncias mais apertadas no IPOPT")
     parser.add_argument("--max-iter", type=int, default=400, help="Teto de iterações do IPOPT (padrão: 400)")
     parser.add_argument("--tol", type=float, default=1e-4, help="Tolerância de convergência KKT")
     parser.add_argument("--time-limit", type=float, default=600.0, help="Tempo limite por run em segundos")
     args = parser.parse_args()
 
+    P_THRUST = float(args.p_thrust)
+    delay_s = float(args.delay_ms) / 1000.0
+    tau_acc_cmd = args.tau_acc
+
     print("=" * 80)
     print("IDENTIFICAÇÃO GREY-BOX MULTI-EXPERIMENTO v7 (ARRASTO DE MOMENTO DE DUTO)")
     print("  * Fase 0: Ruído do sensor e offset vertical extraídos de RODADA_REPOUSO")
     print("  * Fase 1: Mecânica passiva desacoplada pura (c1, c2, Fc da oscilação livre)")
-    print("  * Fase 2: Ganho e zona morta semiestáticos do empuxo k*(max(u - u0, 0))²")
-    print("  * Fase 3: Treino Multi-Experimento com Arrasto de Momento -c4*sqrt(T(a))*v e c3 livre")
+    print(f"  * Fase 2: Ganho e zona morta semiestáticos do empuxo k*(max(u - u0, 0))^{P_THRUST:.1f}")
+    print(f"  * Configs: tau_acc={args.tau_acc if args.tau_acc is not None else TAU_ACC_DEFAULT:.3f}s | delay_u={args.delay_ms:.1f}ms | seg_len={args.seg_len:g}s")
     print("=" * 80)
 
     # Passo 0: Caracterização de Repouso e Ruído
@@ -1224,12 +1300,12 @@ def main():
 
     # Passo 2: Curva Semiestática do Empuxo
     k_static, u0_static = extract_static_gain(method=args.static_method, u0_override=args.u0, plot=True)
-    tau_acc_fixed = float(args.tau_acc)
+    tau_acc_fixed = float(args.tau_acc) if args.tau_acc is not None else TAU_ACC_DEFAULT
 
     # Carregamento dos Ensaios de Treino e Validação Excitados
     print("\n--- Carregando ensaios de Treino e Validação (RODADA-7) ---")
-    train = [load_exp(*e, decim=args.decim) for e in TRAIN]
-    val = [load_exp(*e, decim=args.decim) for e in VAL]
+    train = [load_exp(*e, decim=args.decim, delay_s=delay_s) for e in TRAIN]
+    val = [load_exp(*e, decim=args.decim, delay_s=delay_s) for e in VAL]
     print(f"Treino: {sum(len(e['y']) for e in train)} amostras em {len(train)} ensaios | Validação: {len(val)} ensaios")
 
     thetas = {}
@@ -1240,8 +1316,9 @@ def main():
         if loaded is not None:
             thetas, k_saved, u0_saved, tau_acc_saved, mech_saved = loaded
             if k_saved: k_static = k_saved
-            if u0_saved: u0_static = u0_saved
-            if tau_acc_saved: tau_acc_fixed = tau_acc_saved
+            if u0_saved and args.u0 is None: u0_static = u0_saved
+            if tau_acc_saved and tau_acc_cmd is None: tau_acc_fixed = tau_acc_saved
+            elif tau_acc_cmd is not None: tau_acc_fixed = float(tau_acc_cmd)
             if mech_saved: mech_dict = mech_saved
             print("\nModelo v7 carregado com sucesso do disco:")
             for m, th in thetas.items():
@@ -1277,9 +1354,9 @@ def main():
             th_opt, cost_val, _, _ = identify_v7(
                 train, k_static, u0_static, tau_acc_fixed, mode=mode,
                 mech_params=mech_dict, lam=LAMBDA_C3, lam_mech=LAMBDA_MECH,
-                lam_aero=LAMBDA_AERO, lam_motor=LAMBDA_MOTOR, th_init=th_init,
-                seg_len=args.seg_len, tol=args.tol, max_iter=args.max_iter,
-                time_limit=args.time_limit
+                lam_aero=LAMBDA_AERO, lam_c4=LAMBDA_C4, lam_motor=LAMBDA_MOTOR, th_init=th_init,
+                seg_len=args.seg_len, tol=args.tol, tight_tol=args.tight_tol,
+                max_iter=args.max_iter, time_limit=args.time_limit
             )
             thetas[mode] = th_opt
             print_params_v7(mode, thetas[mode], k_static, u0_static, tau_acc_fixed)
@@ -1311,23 +1388,41 @@ def main():
         for kind, kind_label, fn in sim_kinds:
             with np.errstate(all='ignore'):
                 sims = {m: [fn(th, e) for e in exps] for m, th in thetas.items()}
-                metrics = {m: [(fit_pct(e['y'], s), rmse_deg(e['y'], s)) for e, s in zip(exps, sims[m])]
-                           for m in thetas}
+                metrics = {m: [] for m in thetas}
+                for m in thetas:
+                    for e, s in zip(exps, sims[m]):
+                        fit_val = fit_pct(e['y'], s)
+                        rmse_val = rmse_deg(e['y'], s)
+                        b_rad, fit_nb = fit_no_bias(e['y'], s)
+                        metrics[m].append((fit_val, rmse_val, np.rad2deg(b_rad), fit_nb))
             results[(group_name, kind)] = (exps, sims, metrics, kind_label)
 
-            print(f"\n=== {kind_label} — {group_name} (FIT % / RMSE °) ===")
-            header = f"{'ensaio':28s}" + "".join(f"{m:>24s}" for m in thetas)
+            print(f"\n=== {kind_label} — {group_name} ===")
+            header = f"{'ensaio':26s}" + "".join(f"{m:>36s}" for m in thetas)
             print(header)
+            sub_header = f"{'':26s}" + "".join(f"{'FIT% (no-bias) | Bias° | RMSE°':>36s}" for m in thetas)
+            print(sub_header)
             for i, e in enumerate(exps):
-                row = f"{e['name']:28s}" + "".join(
-                    f"{metrics[m][i][0]:13.1f}% / {metrics[m][i][1]:5.2f}°" for m in thetas)
+                row = f"{e['name']:26s}" + "".join(
+                    f"{metrics[m][i][0]:5.1f}% ({metrics[m][i][3]:5.1f}%) | {metrics[m][i][2]:+5.2f}° | {metrics[m][i][1]:4.2f}°".rjust(36)
+                    for m in thetas)
                 print(row)
-            print(f"{'MÉDIA':28s}" + "".join(
-                f"{np.mean([x[0] for x in metrics[m]]):13.1f}% / {np.mean([x[1] for x in metrics[m]]):5.2f}°"
-                for m in thetas))
-            print(f"{'MEDIANA':28s}" + "".join(
-                f"{np.median([x[0] for x in metrics[m]]):13.1f}% / {np.median([x[1] for x in metrics[m]]):5.2f}°"
-                for m in thetas))
+            print("-" * (26 + 36 * len(thetas)))
+            row_media = f"{'MÉDIA':26s}" + "".join(
+                f"{np.mean([x[0] for x in metrics[m]]):5.1f}% ({np.mean([x[3] for x in metrics[m]]):5.1f}%) | {np.mean([x[2] for x in metrics[m]]):+5.2f}° | {np.mean([x[1] for x in metrics[m]]):4.2f}°".rjust(36)
+                for m in thetas)
+            print(row_media)
+            row_min = f"{'MÍNIMO':26s}" + "".join(
+                f"{np.min([x[0] for x in metrics[m]]):5.1f}% ({np.min([x[3] for x in metrics[m]]):5.1f}%) | {np.min([x[2] for x in metrics[m]]):+5.2f}° | {np.min([x[1] for x in metrics[m]]):4.2f}°".rjust(36)
+                for m in thetas)
+            print(row_min)
+            row_med = f"{'MEDIANA':26s}" + "".join(
+                f"{np.median([x[0] for x in metrics[m]]):5.1f}% ({np.median([x[3] for x in metrics[m]]):5.1f}%) | {np.median([x[2] for x in metrics[m]]):+5.2f}° | {np.median([x[1] for x in metrics[m]]):4.2f}°".rjust(36)
+                for m in thetas)
+            print(row_med)
+
+            if group_name == "VALIDAÇÃO" and kind == "freerun":
+                plot_amplitude_error(exps, sims, thetas)
 
     # Geração dos Gráficos Comparativos
     print("\n--- Gerando gráficos comparativos (v7) ---")

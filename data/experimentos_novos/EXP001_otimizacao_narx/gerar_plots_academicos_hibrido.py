@@ -53,7 +53,8 @@ real_dir = os.path.join(exp_dir, "4_aeropendulo")
 dest_dirs = [
     os.path.join(root_dir, "tcc", "img", "resultados"),
     os.path.join(root_dir, "tcc", "img"),
-    os.path.join(exp_dir, "plots_academicos")
+    os.path.join(exp_dir, "plots_academicos"),
+    os.path.join(root_dir, "fluxograma-tcc", "10_comparativos_finais", "nominal_vs_hibrido")
 ]
 for d in dest_dirs:
     os.makedirs(d, exist_ok=True)
@@ -63,25 +64,34 @@ comparacoes = [
         "id": 1,
         "base_name": "comparacao_hibrido_val1",
         "title": "Validação 1 (Multisseno + Degraus / Chirp)",
-        "f_sem": os.path.join(real_dir, "20261023_174615_referencia_mpc_hybrid.csv"),
-        "f_com": os.path.join(real_dir, "20261022_205219_referencia_mpc_hybrid.csv"),
-        "leg_pos": "lower right"
+        "f_sem": os.path.join(real_dir, "20261023_180508_referencia_legado_val1_mpc_hybrid.csv"),
+        "f_com": os.path.join(real_dir, "20261023_181157_referencia_legado_val1_mpc_hybrid.csv"),
+        "leg1_pos": "lower right",
+        "leg1_ncol": 3,
+        "leg2_pos": "upper right",
+        "leg2_ncol": 2
     },
     {
         "id": 2,
         "base_name": "comparacao_hibrido_val2",
         "title": "Validação 2 (Degraus Aleatórios)",
-        "f_sem": os.path.join(real_dir, "20261023_174918_referencia_val2_degraus_hybrid.csv"),
-        "f_com": os.path.join(real_dir, "20261022_205643_referencia_val2_degraus_hybrid.csv"),
-        "leg_pos": "upper right"
+        "f_sem": os.path.join(real_dir, "20261023_180711_referencia_legado_val2_degraus_hybrid.csv"),
+        "f_com": os.path.join(real_dir, "20261023_181401_referencia_legado_val2_degraus_hybrid.csv"),
+        "leg1_pos": "upper right",
+        "leg1_ncol": 1,
+        "leg2_pos": "upper right",
+        "leg2_ncol": 2
     },
     {
         "id": 3,
         "base_name": "comparacao_hibrido_val3",
         "title": "Validação 3 (Senoidal Suave)",
-        "f_sem": os.path.join(real_dir, "20261023_175131_referencia_val3_senoidal_hybrid.csv"),
-        "f_com": os.path.join(real_dir, "20261022_205902_referencia_val3_senoidal_hybrid.csv"),
-        "leg_pos": "lower right"
+        "f_sem": os.path.join(real_dir, "20261023_180920_referencia_legado_val3_senoidal_hybrid.csv"),
+        "f_com": os.path.join(real_dir, "20261023_181719_referencia_legado_val3_senoidal_hybrid.csv"),
+        "leg1_pos": "lower right",
+        "leg1_ncol": 3,
+        "leg2_pos": "upper right",
+        "leg2_ncol": 2
     }
 ]
 
@@ -104,7 +114,7 @@ for c in comparacoes:
     
     ax1.set_ylabel(r"Ângulo $\theta$ [$^\circ$]")
     ax1.grid(True)
-    ax1.legend(loc=c["leg_pos"], ncol=3, framealpha=0.95)
+    ax1.legend(loc=c["leg1_pos"], ncol=c["leg1_ncol"], framealpha=0.95)
     
     # Subplot 2: Controle u
     ax2.axhline(0, color="gray", linestyle="--", linewidth=0.7)
@@ -115,9 +125,10 @@ for c in comparacoes:
     ax2.set_ylabel(r"Controle $u$ [\%]")
     ax2.set_ylim(-15, 95)
     ax2.grid(True)
-    ax2.legend(loc="upper right", ncol=2, framealpha=0.95)
+    ax2.legend(loc=c["leg2_pos"], ncol=c["leg2_ncol"], framealpha=0.95)
     
-    ax1.set_xlim(0, 75.0)
+    max_t = min(t_s.max(), t_c.max())
+    ax1.set_xlim(0, max_t)
     plt.tight_layout()
     
     for d in dest_dirs:
@@ -129,6 +140,8 @@ for c in comparacoes:
         # Também salva com o nome sem_vs_com
         fig.savefig(os.path.join(d, f"comparacao_bancada_sem_vs_com_{c['id']}.png"), dpi=300)
         fig.savefig(os.path.join(d, f"comparacao_bancada_sem_vs_com_{c['id']}.pdf"), format="pdf")
+        fig.savefig(os.path.join(d, f"comparacao_bancada_sem_vs_com_val{c['id']}.png"), dpi=300)
+        fig.savefig(os.path.join(d, f"comparacao_bancada_sem_vs_com_val{c['id']}.pdf"), format="pdf")
         
     print(f"-> Sucesso: {c['base_name']} gerado em PNG (300 DPI) e PDF vetorial.")
     plt.close(fig)

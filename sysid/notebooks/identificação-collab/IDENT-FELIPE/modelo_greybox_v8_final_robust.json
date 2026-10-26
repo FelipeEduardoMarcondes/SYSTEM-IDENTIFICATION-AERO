@@ -1,0 +1,43 @@
+{
+  "versao": "v8_final_robust",
+  "data_criacao": "2026-10-25",
+  "descricao": "Modelo Grey-Box Final Robusto: Otimizado para Free-Run Global sem Divergencia (12/12 ensaios estaveis em RODADA-7 e 14/14 estaveis em MALHA-ABERTA)",
+  "parametros": {
+    "c1": -8.20967,
+    "c2": -0.11904,
+    "c3": 0.017587,
+    "c4": 0.0400,
+    "c_fric": 0.13471,
+    "ca_fwd": 0.4000,
+    "ca_bwd": 0.6000,
+    "tau_dec": 0.1500,
+    "tau_acc": 0.0500,
+    "u0": 11.26,
+    "p": 1.627
+  },
+  "desempenho_benchmarks": {
+    "rodada_7_free_run": {
+      "ensaios_completos_sem_giro": "12/12 (100%)",
+      "fit_medio_global_pct": 55.3,
+      "fit_baseline_v7_pct": 39.0,
+      "ganho_fit_pts": 16.3,
+      "rmse_medio_global_deg": 12.45,
+      "rmse_baseline_v7_deg": 16.32
+    },
+    "malha_aberta_1709_degraus": {
+      "ensaios_completos_sem_giro": "14/14 (100%)",
+      "fit_medio_faixa_operacional_35_49_pct": 75.3,
+      "rmse_medio_faixa_operacional_35_49_deg": 5.13,
+      "fit_baseline_faixa_operacional_pct": 55.9,
+      "rmse_baseline_faixa_operacional_deg": 8.84,
+      "fit_medio_13_ensaios_sem_batente_pct": 63.6,
+      "fit_baseline_13_ensaios_pct": 59.9
+    },
+    "dinamica_frequencial": {
+      "razao_amplitude_chirp_45_30_45s": 0.443,
+      "razao_amplitude_baseline_v7": 0.275,
+      "ganho_fidelidade_amplitude": "+61.1%"
+    }
+  },
+  "criterio_sintese": "Equilibrio Pareto-otimo entre amortecimento estavel no regime invertido (c4=0.040, ca=0.40/0.60) e resposta transiente rapida com empuxo sub-quadratico (p=1.627, tau_dec=0.15s)."
+}

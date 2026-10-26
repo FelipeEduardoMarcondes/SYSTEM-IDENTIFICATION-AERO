@@ -11,7 +11,7 @@ Este capítulo apresenta o detalhamento completo da fase experimental do projeto
     \label{fig:diagrama-blocos-projeto}
 \end{figure}
 
- A fase offline corresponde: (i)~a síntese e implantação do controlador PID em malha fechada, utilizado tanto para estabilizar a planta durante a coleta de dados quanto como referência de desempenho na comparação final (Seção~\ref{sec:pid}); (ii)~a aquisição dos dados de identificação em malha fechada com o PID ativo e a estimação dos parâmetros do modelo dinâmico via \textit{multiple shooting}(Seção~\ref{sec:identificacao}); (iii)~a formulação e resolução do NMPC via CasADi, a geração do \textit{dataset} e o treinamento da rede neural MLP (Seção~\ref{sec:sintese}). A fase de operação em tempo real, na parte inferior, corresponde à implantação do controlador embarcado no STM32 e sua atuação sobre a planta física (Seção~\ref{sec:embarcado}). A Seção~\ref{sec:descricao_fisica} descreve a bancada e os componentes de hardware que suportam ambas as fases.
+ A fase offline corresponde: (i)~a síntese e implantação do controlador PID em malha fechada, utilizado tanto para estabilizar a planta durante a coleta de dados quanto como referência de desempenho na comparação final (Seção~\ref{sec:pid}); (ii)~a aquisição dos dados de identificação em malha fechada com o PID ativo e a estimação dos parâmetros do modelo dinâmico via \textit{multiple shooting} (Seção~\ref{sec:identificacao}); (iii)~a formulação e resolução do NMPC via CasADi, a geração do \textit{dataset} e o treinamento da rede neural MLP (Seção~\ref{sec:sintese}). A fase de operação em tempo real, na parte inferior, corresponde à implantação do controlador embarcado no STM32 e sua atuação sobre a planta física (Seção~\ref{sec:embarcado}). A Seção~\ref{sec:descricao_fisica} descreve a bancada e os componentes de hardware que suportam ambas as fases.
  
 % ------------------------------------------------------------
 \section{Descrição do Sistema Físico}
@@ -163,32 +163,33 @@ Para o formalismo do NMPC, é necessário representar o sistema na forma de  esp
 \noindent forma exigida pelo NMPC para propagar os estados ao longo do horizonte de predição \cite{mayne2000}. Os parâmetros geométricos e de massa ($m_1$, $m_2$,  $L_1$ e $L_2$) são medidos fisicamente e fixados no modelo. Os parâmetros $J$,  $b$ e a constante de empuxo $K_\tau$, assumindo $\tau(u) = K_\tau u$, não são  diretamente mensuráveis de forma isolada e são estimados por identificação  experimental, conforme descrito nas subseções seguintes.
 
 % ------------------------------------------------------------
-\subsection{Ensaios no Sistema e Estratégia de Excitação}
+\subsection{Ensaios e Estratégia de Excitação}
 \label{subsec:ensaios}
 
 Os ensaios de identificação foram conduzidos com o aeropêndulo operando obrigatoriamente em malha fechada, estabilizado por um controlador PID preliminar embarcado no microcontrolador STM32 (Seção~\ref{sec:pid}). A realimentação em malha fechada constituiu um requisito mandatório de segurança operacional: dada a natureza subamortecida da planta e a ausência de batentes amortecidos, ensaios em malha aberta conduziriam o braço do pêndulo a colisões destrutivas contra os limites físicos da bancada ou a regimes de saturação irreversível do atuador.
 
 O microcontrolador STM32 Nucleo-F446RE foi responsável pela execução determinística da lei de controle PID a uma taxa de amostragem de $f_s = 100$\,Hz ($T_s = 10$\,ms), pela injeção sincronizada dos sinais de referência dinâmicos e pelo envio contínuo da telemetria serial em tempo real para a estação de processamento em terra.
 
-\subsubsection{Riqueza Espectral e Seleção dos Sinais de Excitação}
+\subsubsection{Sinais de Excitação}
 
 A identificação precisa da planta exige sinais de excitação com elevada riqueza espectral (\textit{persistently exciting}), capazes de estimular simultaneamente os múltiplos fenômenos dinâmicos acoplados: o comportamento não-linear de empuxo do conjunto propulsor, o atraso de transporte eletromecânico, o amortecimento viscoso e a componente gravitacional dependente da inclinação angular descrita pelo termo $(m_1 L_1 - m_2 L_2)g\sin(\theta)$.
 
 Para assegurar a identificabilidade desses efeitos em todo o envelope físico, estabeleceram-se as seguintes premissas metodológicas de projeto dos sinais:
 
 \begin{enumerate}
-    \item \textbf{Frequência máxima de excitação ($f_{\max} = 0{,}50$\,Hz):} A largura de banda mecânica do aeropêndulo é dominada por polos lentos associados à inércia da haste e aos tempos de subida do empuxo aerodinâmico. Fixou-se, portanto, a frequência máxima de excitação em $f_{\max} = 0{,}50$\,Hz. Frequências superiores a esse patamar não acrescentam informação dinâmica relevante sobre o movimento de corpo rígido do aeropêndulo. Em relação à frequência de amostragem de $100$\,Hz, a banda de $0{,}50$\,Hz opera com uma razão de superamostragem de 100:1, garantindo excelente resolução temporal na captura dos transitórios.
+    \item \textbf{Frequência máxima de excitação ($f_{\max} = 0{,}50$\,Hz):} A largura de banda mecânica do aeropêndulo é dominada por polos lentos associados à inércia da haste e aos tempos de subida do empuxo aerodinâmico. Fixou-se, portanto, a frequência máxima de excitação em $f_{\max} = 0{,}50$\,Hz. Frequências superiores a esse patamar não acrescentam informações dinâmicas relevantes sobre o movimento de corpo rígido do aeropêndulo.
     
     \item \textbf{Dois níveis de estabilização em malha fechada ($45^\circ$ e $60^\circ$):} Os ensaios foram realizados em torno de dois pontos de equilíbrio centrais: $\theta_0 = 45^\circ$ e $\theta_0 = 60^\circ$. A operação em dois patamares distintos é indispensável para cobrir diferentes inclinações operacionais da planta, onde o ganho estático requerido do motor e as derivadas do torque gravitacional diferem substancialmente. Em $45^\circ$, o sistema opera na região de máxima sensibilidade gravitacional ($\frac{d}{d\theta}\sin\theta = \cos 45^\circ \approx 0{,}707$), enquanto em $60^\circ$ o empuxo contínuo exigido para sustentação estática é cerca de $22\%$ superior, alterando o ponto de trabalho do propulsor.
     
     \item \textbf{Faixa total definida de referência ($0^\circ$ a $120^\circ$):} O envelope total de rastreamento estipulado para o projeto compreende o intervalo de $0^\circ$ (posição de repouso vertical com o motor inferior desativado) até $120^\circ$ (inclinação acentuada acima da horizontal). Em torno do nível de $45^\circ$, os sinais dinâmicos impõem variações de até $\pm 45^\circ$, cobrindo o intervalo de $0^\circ$ a $90^\circ$. Em torno do nível de $60^\circ$, os sinais atingem excursões de até $\pm 60^\circ$, percorrendo de $0^\circ$ a $120^\circ$, de modo a excitar toda a não-linearidade do envelope de voo.
 \end{enumerate}
 
+
 A Tabela~\ref{tab:ranges_angulos} sintetiza a matriz experimental dos 24 sinais sintetizados para a bancada, estruturados em torno dos patamares de $45^\circ$ e $60^\circ$ para cobrir todo o envelope dinâmico ($0^\circ$ a $120^\circ$).
 
 \begin{table}[H]
     \centering
-    \caption{Matriz experimental dos sinais de excitação em malha fechada ($T_f = 120$\,s, $f_s = 100$\,Hz).}
+    \caption{Matriz experimental dos sinais de excitação em malha fechada.}
     \label{tab:ranges_angulos}
     \begin{tabular}{l c p{7.5cm} c}
         \toprule
@@ -201,6 +202,8 @@ A Tabela~\ref{tab:ranges_angulos} sintetiza a matriz experimental dos 24 sinais 
     \end{tabular}
     \sourceTab{o autor, 2026.}
 \end{table}
+
+
 
 Para cumprir tais requisitos, a síntese dos perfis de referência foi realizada em ambiente computacional a uma taxa de amostragem de $f_s = 100$\,Hz ($T_s = 10$\,ms). Todas as trajetórias geradas incorporam intervalos iniciais e finais de repouso (\textit{zero-padding} de 3 a 5\,s), indispensáveis para a estabilização da comunicação serial e para a calibração automática de \textit{bias} do giroscópio da IMU antes do início da movimentação dinâmica. Adicionalmente, os perfis foram delimitados a valores não-negativos ($\ge 0^\circ$) para respeitar a geometria da bancada física, sendo estruturados em torno dos patamares operacionais de $45^\circ$ e $60^\circ$.
 
@@ -220,13 +223,13 @@ Foram sintetizadas quatro classes principais de sinais dinâmicos:
     \item \textbf{Curva semi-estática:} Rampa suave de variação angular ascendente e descendente com longa duração ($T_f = 75$\,s), utilizada especificamente para levantar a característica estática de empuxo e quantificar os efeitos de histerese mecânica e atrito seco dos mancais.
 \end{itemize}
 
-\subsubsection{Critério de Particionamento dos Dados: Treinamento vs. Validação}
+\subsubsection{Particionamento dos Dados}
 \label{subsec:divisao_dados}
 
 Para garantir que o modelo identificado possua alta capacidade de generalização e não sofra de sobreajuste (\textit{overfitting}) a um padrão temporal particular, adotou-se um critério sistemático de particionamento dos dados experimentais coletados na bancada:
 
 \begin{itemize}
-    \item \textbf{Conjunto de Treinamento dos Modelos:} Foram selecionados exclusivamente os ensaios que apresentavam a \textbf{maior frequência} ($f_{\max} = 0{,}50$\,Hz) e as \textbf{maiores amplitudes} angulares em ambos os níveis de equilíbrio. Especificamente, o conjunto de treinamento é composto por 6 ensaios fundamentais:
+    \item \textbf{Conjunto de Treinamento dos Modelos:} Foram selecionados exclusivamente os ensaios que apresentavam a maior frequência ($f_{\max} = 0{,}50$\,Hz) e as maiores amplitudes angulares em ambos os níveis de equilíbrio. Especificamente, o conjunto de treinamento é composto por 6 ensaios fundamentais:
     \begin{enumerate}
         \item Multisseno em $45^\circ$ com frequência máxima de $0{,}50$\,Hz;
         \item Chirp em $45^\circ$ com amplitude de $\pm 45^\circ$ (excursão de $0^\circ$ a $90^\circ$);
@@ -235,30 +238,30 @@ Para garantir que o modelo identificado possua alta capacidade de generalizaçã
         \item Chirp em $60^\circ$ com amplitude de $\pm 60^\circ$ (excursão de $0^\circ$ a $120^\circ$);
         \item Sequência APRBS em $60^\circ$.
     \end{enumerate}
-    Ao concentrar os ensaios de maior largura de banda e amplitude no treinamento (totalizando mais de 78.000 amostras concatenadas), assegura-se que o algoritmo de estimação seja exposto às condições dinâmicas mais severas e às máximas deflexões não-lineares da bancada. A evolução temporal das referências angulares $r(t)$, dos ângulos medidos $\theta(t)$ e das respectivas ações de controle $u(t)$ aplicadas nos 6 ensaios de treinamento é apresentada na Figura~\ref{fig:sinais_treinamento}.
+    Ao concentrar os ensaios de maior largura de banda e amplitude no treinamento, assegura-se que o algoritmo de estimação seja exposto às condições dinâmicas mais severas e às máximas deflexões não-lineares da bancada. A evolução temporal das referências angulares $r(t)$, dos ângulos medidos $\theta(t)$ e das respectivas ações de controle $u(t)$ aplicadas nos 6 ensaios de treinamento é apresentada na Figura~\ref{fig:sinais_treinamento}.
     
     \item \textbf{Conjunto de Validação Independente e Testes \textit{Free-Run}:} Todos os ensaios restantes coletados na bancada física foram estritamente reservados para validação cruzada independente. Este conjunto reúne sinais com menores frequências de excitação ($0{,}30$\,Hz e $0{,}40$\,Hz), menores amplitudes ($\pm 25^\circ$, $\pm 35^\circ$, $\pm 40^\circ$) e perfis distintos de degraus estacionários, tanto em $45^\circ$ quanto em $60^\circ$. A avaliação nesses dados testa a capacidade do modelo de interpolar dinâmicas, reproduzir fielmente a resposta em frequências intermediárias e manter predições estáveis em simulação livre (\textit{free-run}) recursiva de longo prazo sem divergência. A Figura~\ref{fig:sinais_validacao} ilustra os sinais correspondentes ao conjunto de ensaios de validação independente.
 \end{itemize}
 
 \begin{figure}[H]
     \centering
-    \caption{Sinais de referência, ângulo medido e esforço de controle dos ensaios de treinamento do modelo NARX.}
+    \caption{Sinais de ensaios para treinamento.}
     \label{fig:sinais_treinamento}
-    \includegraphics[width=0.98\textwidth]{img/resultados/narx_train_datasets.png}
+    \includegraphics[width=0.90\textwidth]{img/resultados/narx_train_datasets.png}
     \sourceFig{o autor, 2026.}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \caption{Sinais de referência, ângulo medido e esforço de controle dos ensaios de validação independente do modelo NARX.}
+    \caption{Sinais de ensaios de validação independente.}
     \label{fig:sinais_validacao}
-    \includegraphics[width=0.98\textwidth]{img/resultados/narx_val_datasets.png}
+    \includegraphics[width=0.90\textwidth]{img/resultados/narx_val_datasets.png}
     \sourceFig{o autor, 2026.}
 \end{figure}
 
-\subsubsection{Procedimento Experimental de Coleta de Dados}
+\subsubsection{Procedimento de Coleta de Dados}
 
-Durante os ensaios, os dados foram transmitidos em tempo real pela interface USART2 do microcontrolador STM32 Nucleo-F446RE a uma taxa de comunicação de 500.000\,baud para o computador hospedeiro. Cada quadro de telemetria transmitido continha o carimbo de tempo determinístico (\textit{timestamp} com resolução de microssegundos), o sinal de referência $r(t)$, a ação de controle de saída $u(t)$ calculada pelo PID (expressa em porcentagem de \textit{duty cycle} do PWM no ESC) e o ângulo $\theta(t)$ estimado pelo filtro complementar a partir dos eixos do acelerômetro e giroscópio da IMU ICM-20948.
+Durante os ensaios, os dados foram transmitidos em tempo real pela interface USART2 do microcontrolador STM32 Nucleo-F446RE a uma taxa de comunicação de 500.000\,baud para o computador hospedeiro. Cada quadro de telemetria transmitido continha o carimbo de tempo determinístico (\textit{timestamp} com resolução de microssegundos), o sinal de referência $r(t)$, a ação de controle de saída $u(t)$ calculada pelo PID (expressa em porcentagem de \textit{duty cycle} do PWM no ESC) e o ângulo $\theta(t)$ estimado pelo filtro complementar a partir dos eixos do acelerômetro e giroscópio.
 
 Os pacotes seriais foram capturados por um script Python dedicado utilizando a biblioteca \texttt{pyserial}, armazenados em arquivos estruturados de formato CSV e submetidos à rotina de pré-processamento, na qual os primeiros 10\,s (partida do motor e acomodação da comunicação) e os últimos 13\,s (desativação e frenagem) foram aparados, preservando os trechos estacionários de regime contínuo. O Algoritmo~\ref{alg:aquisicao_dados} sintetiza a lógica do laço em tempo real executada no microcontrolador durante as coletas.
 
@@ -295,10 +298,11 @@ Os pacotes seriais foram capturados por um script Python dedicado utilizando a b
 \end{algorithm}
 
 % ------------------------------------------------------------
-\subsection{Estrutura do Modelo NARX Polinomial e Algoritmo FROLS/ERR}
+\subsection{Modelo NARX e Algoritmo FROLS}
 \label{subsec:narx_frols}
 
-Embora as equações diferenciais da física clássica~\eqref{eq:dinamica} forneçam a interpretação qualitativa das forças atuantes, a representação discreta não-linear via modelo NARX (\textit{Nonlinear AutoRegressive with eXogenous inputs}) foi a formulação adotada para sintetizar o preditor utilizado no Controle Preditivo Não-Linear (NMPC) e na validação em \textit{Software-in-the-Loop} (SIL). Essa escolha decorre de sua capacidade de representar com precisão não-linearidades estáticas e dinâmicas arbitrárias, acoplamentos cruzados de transporte e características de amortecimento sem a exigência de integração numérica contínua em malha aberta, computacionalmente proibitiva em hardware restrito.
+Embora as equações diferenciais da física clássica~\eqref{eq:dinamica} forneçam a base teórica sobre as forças atuantes, sua parametrização experimental revelou limitações práticas: o modelo analítico simplificado não conseguiu se ajustar com fidelidade às dinâmicas reais da bancada (como o atrito seco dos mancais e as perdas aerodinâmicas do conjunto motor). Em contrapartida, a representação discreta orientada a dados via modelo NARX (\textit{Nonlinear AutoRegressive with eXogenous inputs}) apresentou convergência imediata e excelente aderência aos ensaios experimentais logo na primeira identificação. Por capturar com precisão a dinâmica não-linear de fase e amplitude sem exigir a integração contínua de equações diferenciais, o modelo NARX foi a formulação adotada para sintetizar o preditor utilizado no NMPC e na validação em \textit{Software-in-the-Loop} (SIL).
+
 
 O modelo NARX polinomial discreto de entrada e saída única (SISO) mapeia a predição da saída angular futura $\hat{y}(k)$ como uma função polinomial expansível de saídas passadas e entradas passadas:
 \begin{equation}
@@ -339,7 +343,7 @@ O algoritmo FROLS transforma iterativamente o conjunto de regressores candidatos
 
 A cada iteração, o algoritmo seleciona avidamente (\textit{greedy selection}) o regressor que fornece a maior contribuição $[\text{ERR}]_i$. O processo de seleção é interrompido quando a redução adicional de erro atinge um limiar desprezível ou quando se atinge o número pré-fixado de regressores parcimoniosos. No projeto, estipulou-se a seleção estrita de $10$ termos (\texttt{n\_components = 10}), garantindo que o modelo resultante seja compacto, computacionalmente eficiente para o resolvedor IPOPT do NMPC e numericamente estável.
 
-\subsubsection{Critérios de Avaliação em Simulação Livre (\textit{Free-Run})}
+\subsubsection{Avaliação em Simulação Livre}
 
 A validação de modelos NARX polinomiais não pode ser fundamentada apenas no erro de predição um-passo-à-frente, OSA (\textit{One-Step-Ahead}), pois nessa modalidade a realimentação contínua do estado medido $y(k-1)$ mascara eventuais instabilidades intrínsecas e erros acumulados de ganho. Para qualificar o modelo preditivo que subsidiará o NMPC, a validação foi conduzida exclusivamente por meio de simulação livre, FR (\textit{Free-Run}):
 \begin{equation}
@@ -371,12 +375,12 @@ resolvido offline via CasADi, e sua política ótima é utilizada para gerar o
  
 % ------------------------------------------------------------
 % ------------------------------------------------------------
-\subsection{Síntese do Controlador PID}
+\subsection{Controlador PID}
 \label{sec:pid}
 
 O controlador PID cumpre duas funções metodológicas no projeto: a de estabilizar o aeropêndulo em malha fechada durante os ensaios de varredura dinâmica para coleta de dados ricos de identificação (Seção~\ref{subsec:ensaios}) e a de servir como linha de base de desempenho linear clássico para a comparação final com o NMPC e a rede neural MLP embarcada.
 
-\subsubsection{Modelagem Linear em Torno do Ponto de Operação}
+\subsubsection{Linearização no Ponto de Operação}
 
 Devido à natureza subamortecida e instável do aeropêndulo em malha aberta, a sintonia preliminar partiu de uma aproximação linear de segunda ordem em torno do ponto de operação nominal $\theta_0 = 40^\circ$. A linearização da dinâmica rotacional~\eqref{eq:dinamica} por expansão em série de Taylor de primeira ordem resulta na representação em espaço de estados incremental:
 \begin{equation}
@@ -406,7 +410,7 @@ Para a implantação computacional e simulação digital em tempo discreto com p
     y[k] = 1{,}9907\,y[k-1] - 0{,}9913\,y[k-2] + 0{,}0003466\,u[k-1] + 0{,}0003456\,u[k-2].
 \end{equation}
 
-\subsubsection{Critérios de Desempenho e Sintonia em Frequência}
+\subsubsection{Sintonia em Frequência}
 
 A determinação dos ganhos $K_p$, $K_i$ e $K_d$ foi conduzida no ambiente MATLAB utilizando técnicas de resposta em frequência, visando conciliar amortecimento do modo oscilatório com rapidez de resposta sem provocar saturações prematuras do atuador. Estabeleceram-se as seguintes especificações de malha fechada:
 \begin{itemize}
@@ -426,7 +430,7 @@ A síntese computacional pelo algoritmo \texttt{pidtune} com refinamento experim
     \label{eq:ganhos_pid}
 \end{equation}
 
-\subsubsection{Implementação Digital no Firmware STM32}
+\subsubsection{Implementação Digital no Firmware}
 
 No microcontrolador STM32 Nucleo-F446RE, a lei de controle PID é executada de forma estritamente periódica a cada $T_s = 10$\,ms dentro da rotina de interrupção temporal. Para evitar o fenômeno destrutivo do \textit{derivative kick} (surtos de derivada provocados por transições abruptas no sinal de referência $r[k]$), a ação derivativa foi aplicada diretamente sobre a medição angular filtrada $y[k]$ fornecida pela IMU \cite{astrom1995}.
 
@@ -454,13 +458,13 @@ Para prevenir o fenômeno de \textit{integral windup} decorrente de saturações
 \end{equation}
 Esse mecanismo descarrega instantaneamente o integrador digital na proporção exata da saturação sofrida, assegurando retorno imediato à região linear assim que o sinal de erro se inverte.
 
-\subsubsection{Validação Experimental em Degraus e Evidência da Não-Linearidade}
+\subsubsection{Validação Experimental em Degraus}
 
 A validação da malha PID foi conduzida na bancada física por meio de degraus de referência em três pontos de operação: $30^\circ$, $40^\circ$ (ponto nominal de sintonia) e $60^\circ$. A Figura~\ref{fig:pid_degraus_consolidado} apresenta o confronto direto entre a simulação do modelo linear discretizado~\eqref{eq:tf_discreta} e a resposta experimental real registrada pela telemetria serial a 100\,Hz.
 
 \begin{figure}[H]
     \centering
-    \caption{Resposta ao degrau do controlador PID: confronto entre o modelo linear simulado (azul) e a resposta experimental na bancada real (vermelho) para $30^\circ$, $40^\circ$ e $60^\circ$.}
+    \caption{Resposta ao degrau do controlador PID}
     \label{fig:pid_degraus_consolidado}
     \includegraphics[width=0.95\textwidth]{img/pid_degraus_consolidado.png}
     \sourceFig{o autor, 2026.}
@@ -477,7 +481,7 @@ A análise comparativa da Figura~\ref{fig:pid_degraus_consolidado} revela aspect
 
 Essa disparidade comprova experimentalmente que um modelo linear invariante no tempo e um controlador linear clássico (PID) são incapazes de garantir desempenho homogêneo ao longo de todo o envelope de voo do aeropêndulo. Esse resultado justifica plenamente a necessidade de adotar uma formulação preditiva não-linear (NMPC) baseada em modelo dinâmico NARX, apresentada a seguir.
 % ------------------------------------------------------------
-\subsection{NMPC: Formulação do Problema de Controle Ótimo}
+\subsection{Formulação do NMPC}
 \label{subsec:nmpc_ocp}
 
 O NMPC fundamenta-se na resolução repetida, a cada período de amostragem $T_s$, de um Problema de Controle Ótimo (OCP) em horizonte finito \cite{rawlings2017}. A síntese offline desse controlador exige ferramentas capazes de (i)~expressar simbolicamente o modelo dinâmico não-linear, (ii)~transcrever o OCP em um Problema de Programação Não-Linear (NLP) e (iii)~calcular automaticamente as derivadas de primeira e segunda ordem exigidas pelo resolvedor numérico. O framework CasADi atende a esses três requisitos de forma integrada \cite{andersson2019}.
@@ -587,7 +591,7 @@ A inclusão das referências futuras dota a rede neural da capacidade de visão 
 O \textit{dataset} é normalizado componente a componente para o intervalo $[-1, 1]$ antes do treinamento, procedimento padrão que melhora o condicionamento do problema de otimização do aprendizado e a convergência do algoritmo Adam \cite{karg2020}.
 
 % ------------------------------------------------------------
-\subsection{Arquitetura e Treinamento da MLP em PyTorch}
+\subsection{Arquitetura e Treinamento da MLP}
 
 A implementação e o treinamento da rede neural MLP são realizados utilizando o PyTorch. O PyTorch é uma biblioteca de aprendizado de máquina que unifica facilidade de uso e alta performance computacional. Diferentemente de frameworks baseados na construção prévia de grafos estáticos de fluxo de dados, o PyTorch adota o paradigma de execução dinâmica e imperativa. Isso permite que os modelos de aprendizado profundo sejam programados e depurados como programas Python convencionais, mantendo o controle total do fluxo sob responsabilidade do usuário \cite{paszke2019}.
 A estrutura da rede, a configuração dos hiperparâmetros e a rotina de otimização, que inclui um critério de parada prematura (\textit{early stopping}) para evitar \textit{overfitting}, estão consolidadas no Algoritmo~\ref{alg:treino_mlp}.
@@ -634,7 +638,7 @@ A estrutura da rede, a configuração dos hiperparâmetros e a rotina de otimiza
 \label{sec:embarcado}
 
 % ------------------------------------------------------------
-\subsection{Conversão do Modelo via X-CUBE-AI}
+\subsection{Conversão via X-CUBE-AI}
 
 O STM32Cube.AI é uma ferramenta de software desenvolvida pela STMicroelectronics projetada para a implantação de aprendizado de máquina em microcontroladores (TinyML). Esse ecossistema atua como um gerador de código baseado em compilação, recebendo modelos treinados em plataformas como Keras e TensorFlow Lite para gerar código C otimizado para a linha de microcontroladores STM32 \cite{stmu2526}.
 
@@ -686,30 +690,3 @@ As operações de ponto flutuante, em particular o cálculo de \texttt{atan2} no
 \end{algorithmic}
 \end{algorithm}
 % ============================================================
-\section{Análise de Riscos e Considerações Práticas de Engenharia}
-\label{sec:riscos}
-
-O desenvolvimento experimental de sistemas mecatrônicos complexos e o embarque de algoritmos de controle ótimo e inteligência computacional envolvem desafios práticos que exigem estratégias de mitigação integradas à arquitetura do projeto. Três riscos críticos foram identificados e mitigados ao longo do desenvolvimento:
-
-\subsection{Divergência do Modelo Dinâmico e Não-Linearidades Aerodinâmicas}
-
-A dinâmica aerodinâmica do conjunto motor-hélice apresenta fortes não-linearidades e atrasos de transporte que, se ignorados ou mapeados com imprecisão, poderiam induzir o NMPC a gerar ações de controle subótimas e enviesar o aprendizado supervisionado da rede neural.
-
-Para mitigar esse risco, adotou-se a estratégia de excitação persistente com sinais multisseno e chirps cobrindo $f_{\max} = 0{,}50$\,Hz e os dois patamares de operação ($45^\circ$ e $60^\circ$). A adoção do modelo polinomial NARX com seleção parcimoniosa FROLS/ERR permitiu capturar os termos dominantes de segunda ordem na entrada e dinâmicas com atraso compatíveis com a resposta do atuador, com a estrutura sendo validada em simulação livre (\textit{free-run}) antes da etapa de síntese preditiva.
-
-\subsection{Restrições de Memória e Recursos de Hardware no STM32}
-
-O microcontrolador STM32 Nucleo-F446RE dispõe de limites rígidos de armazenamento e memória de execução (512\,KB de memória Flash e 128\,KB de SRAM). Redes neurais superdimensionadas poderiam acarretar sobrecarga de memória ou fazer com que o tempo de inferência excedesse o intervalo de amostragem de $T_s = 10$\,ms.
-
-Como medida preventiva, a arquitetura da MLP foi dimensionada com topologia enxuta e eficiente ($130 \to 128 \to 128 \to 1$), contemplando 15 amostras passadas de ângulo, 15 de controle e o horizonte de 100 passos da referência futura, demandando $130{,}50$\,KiB (cerca de $133{,}6$\,kB) de memória Flash dos pesos em precisão \texttt{float32} e menos de 2\,KB de SRAM. As rotinas vetoriais nativas em C compiladas com instruções FPU de hardware alcançaram tempo de inferência determinístico em torno de $2{,}07$\,ms por ciclo a 180\,MHz (ocupação de $20{,}7\%$ da janela de amostragem de 10\,ms, garantindo folga de CPU de $79{,}3\%$; na compilação \texttt{-Os} isolada, conforme a Tabela~\ref{tab:benchmark_compilador_xcube}, registrou-se $2{,}08$\,ms, ou $20{,}8\%$ de ocupação com $79{,}2\%$ de folga).
-
-\subsection{Estabilidade do Controlador Neural e Dados Fora da Distribuição}
-
-Por se tratar de um aproximador universal orientado a dados, redes neurais não fornecem garantias analíticas de estabilidade assintótica para estados que estejam substancialmente fora da distribuição (\textit{out-of-distribution}) vista durante o treinamento supervisionado.
-
-Para mitigar esse comportamento:
-\begin{enumerate}
-    \item A referência do NMPC para geração do \textit{dataset} foi projetada com alta riqueza temporal cobrindo de $12^\circ$ a $110^\circ$, expondo a rede a uma ampla distribuição de estados transitórios e estacionários;
-    \item A saída da rede neural foi submetida à saturação de segurança rígida no firmware ($0 \leq u \leq 100\%$);
-    \item Implementou-se no firmware uma rotina de monitoramento de integridade (\textit{watchdog} angular) com comutação automática para o controlador PID clássico em caso de desvios angulares anômalos fora dos limites operacionais da bancada.
-\end{enumerate}

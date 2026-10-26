@@ -1,0 +1,66 @@
+{
+  "version": "v8_generalized_power_thrust_p162",
+  "description": "Modelo Grey-box v8 com curva de empuxo generalizada (u - u0)^p com p=1.623, arrasto de momento de duto c4 e aerodinamica assimetrica",
+  "provenance": {
+    "protocol": "2-fold cross-validation com single shooting RK4",
+    "identification_folds": {
+      "fold_1": {
+        "train": "TRAIN",
+        "p_identified": 1.623,
+        "c3_identified": 0.01792,
+        "c4_identified": 0.050,
+        "ca_fwd": 0.70,
+        "ca_bwd": 0.95,
+        "tau_dec": 0.22
+      },
+      "fold_2": {
+        "train": "VAL",
+        "p_identified": 1.622,
+        "c3_identified": 0.01785,
+        "c4_identified": 0.051,
+        "ca_fwd": 0.70,
+        "ca_bwd": 0.95,
+        "tau_dec": 0.22
+      }
+    }
+  },
+  "parameters": {
+    "c1": -8.209674,
+    "c2": -0.1190365,
+    "c3": 0.017920,
+    "c4": 0.0500,
+    "Fc": 0.1347141,
+    "c_aero_fwd": 0.7000,
+    "c_aero_bwd": 0.9500,
+    "tau_dec": 0.2200,
+    "u0": 11.26,
+    "tau_acc": 0.050,
+    "p_thrust": 1.623
+  },
+  "physics": {
+    "J": 0.03404958,
+    "b_passivo": 0.00405314,
+    "Tc": 0.00458696,
+    "p_thrust": 1.623,
+    "u0": 11.26,
+    "tau_acc": 0.05,
+    "tau_dec": 0.22,
+    "c4_inflow_damping": 0.050,
+    "c_aero_fwd": 0.70,
+    "c_aero_bwd": 0.95,
+    "c3_ratio_to_static_target": 0.932
+  },
+  "evaluation_metrics": {
+    "discriminative_metrics": {
+      "replay_u_stable_regime_sub90_mean_fit": 62.8,
+      "gain_over_baseline_sub90_pts": 13.7,
+      "finite_horizon_window_2s_mean_fit": 63.8
+    },
+    "functional_validation_closed_loop": {
+      "sil_pid_mean_fit": 64.8,
+      "reference_tracking_floor_fit": 44.8,
+      "sil_gain_over_floor_pts": 20.0,
+      "pid_replica_accuracy_fit_u": 98.4
+    }
+  }
+}

@@ -4,15 +4,15 @@
 
 Este capítulo apresenta e discute os resultados experimentais obtidos em todas as etapas de desenvolvimento do projeto. A metodologia é validada através de uma tríade comparativa composta por: (i)~a simulação ideal em ambiente Python (com modelo NARX, controle NMPC ótimo via CasADi e rede neural MLP via PyTorch); (ii)~a execução em \textit{Software-in-the-Loop} (SIL) no microcontrolador STM32F446RE, avaliando o determinismo e a fidelidade numérica do código compilado em C nativo; e (iii)~a validação experimental em tempo real na bancada física do aeropêndulo instrumentado.
 
-A estrutura deste capítulo segue rigorosamente a progressão lógica e experimental da pesquisa:
+A estrutura deste capítulo segue a progressão experimental da pesquisa:
 \begin{enumerate}
-    \item \textbf{Modelagem Dinâmica e Síntese da Política Ótima (Seção~\ref{sec:res_modelagem}):} Identificação e validação em simulação livre do modelo dinâmico NARX, comprovação do custo computacional proibitivo do NMPC no CasADi e treinamento da rede neural MLP;
-    \item \textbf{Validação em Simulação e Comparação SIL vs. Simulador (Seção~\ref{sec:res_sil_vs_sim}):} Comparação direta entre a simulação em Python e a execução em \textit{Software-in-the-Loop} (SIL) no microcontrolador STM32F446RE sob controle da rede neural;
-    \item \textbf{Validação Experimental na Bancada Física (Bancada vs. SIL) (Seção~\ref{sec:res_bancada_vs_sil}):} Desempenho da política nominal na bancada física e diagnóstico aprofundado do \textit{Sim-to-Real gap} (atrito estático \textit{stick-slip} e desvios de sustentação estática);
-    \item \textbf{Aprimoramento em Malha Fechada: Controlador Neural Híbrido (Seção~\ref{sec:res_hibrido}):} Formulação e embarque do compensador integrador residual paralelo para anulação do erro estacionário e superação do travamento mecânico;
-    \item \textbf{Comparação de Desempenho com o Controle Clássico PID (Seção~\ref{sec:res_comparacao_pid}):} Ensaios espelhados diretos da Rodada 7 na bancada real, comparando o controle preditivo neural contra o PID linear clássico;
-    \item \textbf{Estudo de Otimização e Compressão da Rede Neural (TinyML) (Seção~\ref{sec:res_otimizacao_xcube}):} Avaliação de flags do GCC versus o framework ST X-CUBE-AI (CMSIS-NN), acompanhada do estudo de compressão de memória Flash e seu impacto no rastreamento dinâmico em SIL;
-    \item \textbf{Síntese Quantitativa e Discussão Consolidada (Seção~\ref{sec:res_discussao}):} Tabela geral consolidada de desempenho e balanço global do projeto.
+    \item \textbf{Modelagem Dinâmica e Síntese Ótima (Seção~\ref{sec:res_modelagem}):} Identificação do modelo NARX, custo computacional do NMPC e treinamento da rede neural MLP;
+    \item \textbf{Validação em Simulação e SIL (Seção~\ref{sec:res_sil_vs_sim}):} Comparação entre simulação e execução em \textit{Software-in-the-Loop} no microcontrolador STM32F446RE;
+    \item \textbf{Validação Experimental na Bancada (Seção~\ref{sec:res_bancada_vs_sil}):} Desempenho sob o controlador nominal e diagnóstico do \textit{Sim-to-Real gap};
+    \item \textbf{Controlador Neural Híbrido (Seção~\ref{sec:res_hibrido}):} Formulação e embarque do compensador integrador residual;
+    \item \textbf{Comparação com o Controle Clássico PID (Seção~\ref{sec:res_comparacao_pid}):} Ensaios espelhados diretos na bancada física;
+    \item \textbf{Otimização e Compressão TinyML (Seção~\ref{sec:res_otimizacao_xcube}):} Avaliação de flags do GCC, framework ST X-CUBE-AI e impacto da compressão em SIL;
+    \item \textbf{Síntese Quantitativa e Discussão (Seção~\ref{sec:res_discussao}):} Tabela geral consolidada e balanço do projeto.
 \end{enumerate}
 
 % ============================================================
@@ -20,18 +20,14 @@ A estrutura deste capítulo segue rigorosamente a progressão lógica e experime
 \label{sec:res_modelagem}
 % ============================================================
 
-\subsection{Identificação e Validação do Modelo Dinâmico NARX}
+\subsection{Modelo Dinâmico NARX}
 \label{sec:res_narx}
 
-A identificação do aeropêndulo baseou-se em dados de entrada e saída coletados com a planta operando em malha fechada estabilizada por um controlador PID. Foram realizados seis ensaios de excitação dinâmica para treinamento (combinando sinais multisseno com fases aleatórias, \textit{swept sine} e sequências de degraus de amplitude variada do tipo APRBS) distribuídos em dois pontos de operação fundamentais: $45^\circ$ e $60^\circ$. Para validação independente, utilizaram-se três ensaios adicionais coletados em $45^\circ$.
-
-Todos os sinais foram amostrados à taxa nativa de $f_s = 100$\,Hz ($T_s = 10$\,ms). O pré-processamento consistiu no descarte dos instantes iniciais (10\,s) e finais (13\,s) de cada ensaio para eliminar os transitórios de partida e parada da telemetria serial, sem aplicação de decimação adicional para preservar a dinâmica de alta frequência da hélice e da IMU.
-
-A estrutura candidata foi definida como um modelo NARX (\textit{Nonlinear AutoRegressive with eXogenous inputs}) polinomial de segundo grau ($\ell = 2$) com ordens de memória máxima $n_y = 15$ e $n_u = 15$ (correspondendo a uma janela temporal de 150\,ms). Essa formulação gerou um espaço de 496 regressores candidatos, composto por 1 termo constante, 30 termos lineares e 465 termos quadráticos. Para selecionar os regressores mais representativos sem induzir superparametrização, aplicou-se o algoritmo FROLS (\textit{Forward Regression Orthogonal Least Squares}) baseado no critério da Razão de Redução do Erro (\textit{Error Reduction Ratio} - ERR) \cite{chen1989, billings2013}. Com o critério de parada fixado em 10 componentes (\texttt{n\_components = 10}), o algoritmo selecionou um modelo estritamente parcimonioso, cujos termos e coeficientes estimados estão consolidados na Tabela~\ref{tab:narx_termos}.
+A partir dos dados de excitação dinâmica em malha fechada e do pré-processamento estabelecido na Seção~\ref{subsec:divisao_dados}, aplicou-se o algoritmo FROLS sobre o espaço de 496 regressores candidatos. O critério ERR convergiu para um modelo estritamente parcimonioso de 10 componentes, cujos termos e coeficientes estimados estão consolidados na Tabela~\ref{tab:narx_termos}.
 
 \begin{table}[H]
     \centering
-    \caption{Termos e coeficientes estimados do modelo NARX identificado via algoritmo FROLS/ERR.}
+    \caption{Termos e coeficientes estimados do modelo NARX.}
     \label{tab:narx_termos}
     \begin{tabular}{lr}
         \toprule
@@ -50,13 +46,15 @@ A estrutura candidata foi definida como um modelo NARX (\textit{Nonlinear AutoRe
     \sourceTab{o autor, 2026.}
 \end{table}
 
-\subsubsection{Propriedades Dinâmicas e Implicações para o Controle}
+\subsubsection{Propriedades Dinâmicas do Modelo}
 
-A estrutura matemática resultante do modelo NARX impõe consequências diretas para a formulação do controle preditivo. Em relação à ação de controle, os regressores associados à entrada $u$ foram selecionados exclusivamente como produtos de segunda ordem em $u$ (com atrasos temporais distintos), o que é compatível com a relação aerodinâmica de empuxo proporcional ao quadrado da rotação da hélice ($T \propto \omega^2$), com a ressalva de que a faixa operacional restrita dos ensaios em malha fechada limita generalizações fenomenológicas mais amplas. Fundamentalmente, a presença exclusiva desses termos faz com que a função de predição do modelo apresente simetria par em relação ao controle ($F(y, -u) = F(y, u)$), de modo que comandos de controle negativos produziriam matematicamente o mesmo empuxo positivo que comandos de módulo equivalente. Para evitar a convergência para soluções espúrias e fisicamente inviáveis na planta real, torna-se indispensável impor a restrição rígida de saturação inferior $u \geq 0$ no problema de controle ótimo do NMPC que gera o \textit{dataset} de treinamento da rede neural.
+A estrutura identificada do modelo NARX impõe duas diretrizes diretas para o controle:
 
-No que concerne à dinâmica autorregressiva da saída $y$, as raízes do polinômio característico formado estritamente pelos termos lineares em $y$ revelam um par de polos dominantes complexos conjugados com magnitude $|z| \approx 0{,}998$ e frequência de oscilação natural próxima a 0,50\,Hz (valores calculados sem considerar o termo não linear $y(k-1)^2$; ao linearizar em torno de $45^\circ$, o par desloca-se ligeiramente para $|z| \approx 0{,}997$ e cerca de 0,40\,Hz). Essa característica expressa uma dinâmica fracamente amortecida em malha aberta, na qual erros de predição e perturbações decaem lentamente. Esse comportamento sugere a necessidade de realimentação em malha fechada para amortecer o modo oscilatório, rejeitar perturbações e corrigir desvios estacionários de rastreamento.
+Em relação à ação de controle, os regressores de entrada são compostos exclusivamente por produtos de segunda ordem com atraso ($u(k-i)u(k-j)$), o que é compatível com a relação de empuxo da hélice ($T \propto \omega^2$). Essa formulação confere ao preditor uma simetria par ($F(y, -u) = F(y, u)$). Para evitar soluções inautênticas com comandos negativos no otimizador, impõe-se a restrição de saturação inferior $u \geq 0$ na formulação do NMPC.
 
-\subsubsection{Validação em Simulação Livre (\textit{Free-Run})}
+Em relação à dinâmica da saída $y$, a linearização do modelo em torno de $45^\circ$ indica um par de polos dominantes complexos conjugados com $|z| \approx 0{,}997$ e frequência natural de oscilação de $0{,}40$\,Hz. Essa dinâmica fracamente amortecida em malha aberta evidencia a necessidade de realimentação em malha fechada para atenuar oscilações e assegurar a eliminação do erro em regime permanente.
+
+\subsubsection{Simulação Livre (\textit{Free-Run})}
 
 A qualificação da capacidade preditiva do modelo NARX foi realizada por meio de simulação livre (\textit{free-run}), na qual nenhuma medida experimental passada de $y$ é realimentada durante a integração temporal. O modelo é inicializado apenas nos primeiros instantes e calcula recursivamente toda a trajetória angular futura $\hat{y}(k)$ utilizando unicamente o histórico de comandos $u(k)$ e as suas próprias predições passadas $\hat{y}(k-i)$.
 
@@ -72,13 +70,13 @@ A Figura~\ref{fig:narx_freerun} apresenta a comparação entre a trajetória sim
 
 O modelo alcançou uma Raiz do Erro Quadrático Médio de simulação livre igual a $\text{RMSE} = 4{,}685^\circ$. Trata-se de uma marca expressiva para uma propagação recursiva de 13.000 passos temporais consecutivos sem realimentação de estado. Conforme observado na Figura~\ref{fig:narx_freerun}, a sincronia de fase é precisa: os picos, vales e inversões de direção do modelo sobrepõem-se exatamente aos instantes experimentais.
 
-Entretanto, observa-se que o modelo tende a sobrestimar a amplitude do movimento nos extremos de deflexão (por exemplo, no instante 53\,s o modelo atinge $88^\circ$ contra $78^\circ$ medidos; no instante 105\,s atinge $12^\circ$ contra $20^\circ$ medidos). Esse comportamento decorre do fato de o modelo NARX apresentar amortecimento ligeiramente inferior ao da planta real. Na síntese do controle preditivo, isso implica que o controlador foi sintetizado para uma planta discretamente mais rápida e menos amortecida do que a estrutura mecânica física, o que justifica a necessidade de realimentação em malha fechada para absorver essa discreta incerteza de ganho.
+Entretanto, observa-se que o modelo tende a sobrestimar a amplitude do movimento nos extremos de deflexão. Esse comportamento decorre do fato de o modelo NARX apresentar amortecimento ligeiramente inferior ao da planta real. Na síntese do controle preditivo, isso implica que o controlador foi sintetizado para uma planta discretamente mais rápida e menos amortecida do que a estrutura mecânica física, o que justifica a necessidade de realimentação em malha fechada para absorver essa discreta incerteza de ganho.
 
 % ------------------------------------------------------------
-\subsection{Síntese e Custo Computacional do NMPC Nominal}
+\subsection{NMPC Nominal e Custo Computacional}
 \label{sec:res_mpc}
 
-\subsubsection{Rastreamento Nominal e Geração do Dataset}
+\subsubsection{Rastreamento e Geração do Dataset}
 
 Com o modelo NARX validado, formulou-se o Problema de Controle Ótimo em tempo discreto implementado no ambiente CasADi \cite{andersson2019} com o solucionador não-linear IPOPT. Para gerar uma política rica de controle para o treinamento supervisionado subsequente, definiu-se um sinal de referência multivariado com duração de 187\,s, combinando trechos com multisseno de frequências até $f_{\max} = 0{,}5$\,Hz e transições em degrau que cobrem amplitudes de $12^\circ$ até $110^\circ$. A Figura~\ref{fig:mpc_treino} ilustra a resposta do NMPC nominal rastreando essa referência em simulação.
 
@@ -90,9 +88,9 @@ Com o modelo NARX validado, formulou-se o Problema de Controle Ótimo em tempo d
     \sourceFig{o autor, 2026.}
 \end{figure}
 
-O rastreamento do NMPC nominal é rigorosamente preciso em praticamente todo o envelope de operação. Pequenas oscilações transitórias manifestam-se apenas nos patamares mais elevados ($90^\circ$ a $110^\circ$, entre os instantes 145 e 185\,s), intervalo no qual o modelo dinâmico opera em regime de extrapolação relativa aos dados de treino originais ($45^\circ$ e $60^\circ$). Esse comportamento nominal forneceu o banco de dados ótimo composto por pares de entrada de estado/referência e ações de controle ideais $u^*(k)$.
+O rastreamento do NMPC nominal é rigorosamente preciso em praticamente todo o envelope de operação. Pequenas oscilações transitórias manifestam-se apenas nos patamares mais elevados ($90^\circ$ a $110^\circ$), intervalo no qual o modelo dinâmico opera em regime de extrapolação relativa aos dados de treino originais. Esse comportamento nominal forneceu o banco de dados ótimo composto por pares de entrada de estado/referência e ações de controle ideais $u^*(k)$.
 
-\subsubsection{Inviabilidade da Otimização Online no Hardware Embarcado}
+\subsubsection{Inviabilidade da Otimização Online}
 
 Embora o desempenho do NMPC em simulação seja elevado, a sua implantação direta em tempo real no microcontrolador esbarra em limites computacionais intransponíveis. Para quantificar esse obstáculo, monitorou-se o tempo gasto pelo solucionador não-linear (IPOPT) para convergir a cada período de amostragem ($T_s = 10$\,ms). A Figura~\ref{fig:mpc_tempo} ilustra os tempos de solução registrados ao longo dos 25\,s iniciais de controle ótimo (2.500 passos).
 
@@ -104,12 +102,12 @@ Embora o desempenho do NMPC em simulação seja elevado, a sua implantação dir
     \sourceFig{o autor, 2026.}
 \end{figure}
 
-O tempo de convergência típico do otimizador concentrou-se entre 90 e 120\,ms, apresentando um pico inicial de 458\,ms no primeiro passo (devido à inicialização a frio, ou \textit{cold-start}, do solucionador) e picos transitórios de 220 a 333\,ms durante as transições de referência e inversões de aceleração, nas quais o solucionador demanda mais iterações para encontrar a trajetória viável sob restrições ativas.
+O tempo de convergência típico do otimizador concentrou-se entre 90 e 120\,ms, apresentando um pico inicial de 458\,ms no primeiro passo (devido à inicialização a frio do solucionador) e picos transitórios de 220 a 333\,ms durante as transições de referência e inversões de aceleração, nas quais o solucionador demanda mais iterações para encontrar a trajetória viável sob restrições ativas.
 
-Considerando que a dinâmica angular do aeropêndulo impõe um período de amostragem máximo de $T_s = 10$\,ms ($100$\,Hz), o tempo de processamento exigido pelo NMPC nominal foi de 10 a 45 vezes maior do que o período de controle disponível, mesmo em ambiente de computação de mesa. A execução desse algoritmo em um microcontrolador causaria esgotamento instantâneo de recursos e violações críticas de \textit{deadline}. Essa demonstração experimental justifica a proposta central deste trabalho: transferir a inteligência do controle ótimo para uma rede neural do tipo MLP, cuja inferência matricial ocorre em tempo de execução determinístico de cerca de $2{,}07$\,ms a $2{,}08$\,ms (consumindo $20{,}7\%$ a $20{,}8\%$ do período de amostragem de 10\,ms, garantindo folga de CPU superior a $79\%$).
+Considerando que a dinâmica angular do aeropêndulo impõe um período de amostragem máximo de $T_s = 10$\,ms, o tempo de processamento exigido pelo NMPC nominal foi de 10 a 45 vezes maior do que o período de controle disponível, mesmo em ambiente de computação de mesa. A execução desse algoritmo em um microcontrolador causaria esgotamento instantâneo de recursos e violações críticas de \textit{deadline}. Essa demonstração experimental justifica a proposta central deste trabalho: transferir a inteligência do controle ótimo para uma rede neural do tipo MLP.
 
 % ------------------------------------------------------------
-\subsection{Treinamento e Convergência da Rede Neural (MLP)}
+\subsection{Treinamento da Rede Neural}
 \label{sec:res_mlp}
 
 A aproximação da política de controle do NMPC foi implementada por meio de uma rede neural \textit{Multilayer Perceptron} (MLP) desenvolvida no \textit{framework} PyTorch \cite{paszke2019}. A rede foi projetada com camadas ocultas lineares dotadas de funções de ativação do tipo ReLU (\textit{Rectified Linear Unit}) e uma camada de saída linear simples. As entradas da rede consistem no vetor concatenado de saídas passadas da planta ($n_y=15$), entradas passadas ($n_u=15$) e nas referências angulares futuras ao longo do horizonte de predição do controlador ($N=100$ passos, totalizando 130 entradas com \textit{preview}), enquanto a saída é o comando escalar ótimo de controle $\hat{u}(k)$.
@@ -120,13 +118,13 @@ O treinamento foi conduzido com o otimizador Adam, adotando como função de cus
     \centering
     \caption{Resultados do treinamento da rede neural MLP: convergência de aprendizado e dispersão.}
     \label{fig:ann_treino}
-    \begin{minipage}{0.40\textwidth}
+    \begin{minipage}{0.55\textwidth}
         \centering
         \includegraphics[width=\textwidth]{img/resultados/ann_loss.png}\\[2pt]
         {\small (a) Curva de perda MSE por época.}
     \end{minipage}
     \hfill
-    \begin{minipage}{0.57\textwidth}
+    \begin{minipage}{0.95\textwidth}
         \centering
         \includegraphics[width=\textwidth]{img/resultados/ann_r2.png}\\[2pt]
         {\small (b) Dispersão de predição ($u_{\text{predito}} \times u_{\text{ótimo}}$).}
@@ -139,11 +137,11 @@ O treinamento foi conduzido com o otimizador Adam, adotando como função de cus
 A convergência foi atingida em menos de 5 épocas, com as curvas de treino e validação mantendo-se estritamente sobrepostas, o que descarta qualquer indício de sobreajuste (\textit{overfitting}). O coeficiente de determinação atingiu $\mathbf{R^2 = 0{,}999}$ de forma idêntica nos conjuntos de treino, validação e teste. A dispersão concentra-se sobre a linha de identidade com espalhamento perceptível apenas abaixo de $u < 10\%$, região de baixíssimo empuxo associada à partida ou frenagem passiva do aeropêndulo.
 
 % ============================================================
-\section{Validação em Simulação e Comparação SIL vs. Simulador}
+\section{Validação em Simulação e SIL}
 \label{sec:res_sil_vs_sim}
 % ============================================================
 
-\subsection{Simulação em Malha Fechada no Ambiente Python}
+\subsection{Simulação em Malha Fechada}
 
 Apesar de o coeficiente $R^2 = 0{,}999$ atestar alta precisão na predição estática da ação de controle, a garantia de estabilidade em sistemas dinâmicos exige a validação da rede operando em malha fechada, na qual erros residuais de controle se propagam e afetam os estados seguintes. Para essa análise, definiu-se um protocolo experimental padronizado de 75\,s de duração:
 \begin{itemize}
@@ -155,93 +153,99 @@ Apesar de o coeficiente $R^2 = 0{,}999$ atestar alta precisão na predição est
 O protocolo foi aplicado a três cenários de teste independentes:
 \begin{enumerate}
     \item \textbf{Validação 1:} Sinal multisseno sobreposto a patamares de degrau, com trecho de alta frequência (\textit{chirp}) entre 40 e 50\,s;
-    \item \textbf{Validação 2:} Sequência de múltiplos degraus aleatórios em amplitudes de $37^\circ$ a $100{,}5^\circ$;
+    \item \textbf{Validação 2:} Sequência de múltiplos degraus aleatórios em amplitudes variadas.
     \item \textbf{Validação 3:} Perfil senoidal suave com inversões graduais de aceleração.
 \end{enumerate}
 
-A Figura~\ref{fig:py_val} exibe as respostas temporais simuladas em Python, acoplando a rede neural ao modelo dinâmico NARX.
+As Figuras~\ref{fig:py_val1}, \ref{fig:py_val2} e \ref{fig:py_val3} exibem as respostas temporais simuladas em Python, acoplando a rede neural ao modelo dinâmico NARX para os três cenários de validação.
 
 \begin{figure}[H]
     \centering
-    \caption{Simulação em Python da rede neural em malha fechada: Validação~1 (topo), Validação~2 (inferior esquerdo) e Validação~3 (inferior direito).}
-    \label{fig:py_val}
-    \includegraphics[width=0.92\textwidth]{img/resultados/py_val1.png}\\[2pt]
-    {\small (a) Validação 1 (Multisseno + Degraus).}\\[6pt]
-    \begin{minipage}{0.485\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{img/resultados/py_val2.png}\\[2pt]
-        {\small (b) Validação 2 (Degraus aleatórios).}
-    \end{minipage}
-    \hfill
-    \begin{minipage}{0.485\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{img/resultados/py_val3.png}\\[2pt]
-        {\small (c) Validação 3 (Senoidal suave).}
-    \end{minipage}
-
-    \par\vspace{2.5ex}
+    \caption{Validação 1 (Multisseno + Degraus): resposta da rede neural em malha fechada na simulação em Python.}
+    \label{fig:py_val1}
+    \includegraphics[width=0.92\textwidth]{img/resultados/py_val1.png}
     \sourceFig{o autor, 2026.}
 \end{figure}
 
-Na Validação~1, sob a janela ativa de atuação da rede neural ($5{,}0$\,s a $70{,}0$\,s, que desconsidera o transitório de partida a cargo do controlador PID de segurança, conforme padronizado na Tabela~\ref{tab:desempenho_rmse}), obteve-se $\text{RMSE} = 1{,}49^\circ$ (elevando-se para $1{,}56^\circ$ ao se considerar a extensão do ensaio com flutuações transitórias). No trecho de dinâmica rápida (\textit{chirp}), a rede neural replicou a política do NMPC com elevada concordância de fase e amplitude. Na Validação~3 (trajetória senoidal suave), o erro na janela ativa foi de $\text{RMSE} = 1{,}34^\circ$ ($1{,}37^\circ$ na janela estendida de 0 a 75\,s), com ligeira atenuação nos picos (cerca de $2^\circ$ abaixo da crista teórica), comportamento característico de controladores preditivos que penalizam a taxa de variação da ação de controle ($\Delta u$).
+\begin{figure}[H]
+    \centering
+    \caption{Validação 2 (Degraus Aleatórios): resposta da rede neural em malha fechada na simulação em Python.}
+    \label{fig:py_val2}
+    \includegraphics[width=0.92\textwidth]{img/resultados/py_val2.png}
+    \sourceFig{o autor, 2026.}
+\end{figure}
 
-Na Validação~2 (degraus aleatórios), o erro na janela ativa de 5 a 70\,s foi de $\text{RMSE} = 3{,}63^\circ$ (registrando $4{,}31^\circ$ ao incluir o transitório inicial a partir do repouso). O aumento do erro é explicado pela natureza dos degraus abruptos, nos quais a descontinuidade geométrica momentânea eleva o valor do erro quadrático no instante da troca de referência. Destaca-se a presença da característica de \textit{preview} (visão futura da referência): o sinal de controle $u$ e a haste angular começam a se mover frações de segundo antes de o degrau ocorrer formalmente, indicando que a rede neural aprendeu a compensar preventivamente a inércia do aeropêndulo. Observa-se também um erro estacionário de regime nos degraus mais altos (para referência de $95^\circ$, o sistema estabiliza em $93^\circ$), motivado pelo fato de a MLP operar sem integrador explícito em uma faixa angular próxima aos limites da distribuição de treino.
+\begin{figure}[H]
+    \centering
+    \caption{Validação 3 (Senoidal Suave): resposta da rede neural em malha fechada na simulação em Python.}
+    \label{fig:py_val3}
+    \includegraphics[width=0.92\textwidth]{img/resultados/py_val3.png}
+    \sourceFig{o autor, 2026.}
+\end{figure}
 
-\subsection{Execução em Software-in-the-Loop (SIL) no Microcontrolador STM32}
+Na Validação~1, sob a janela ativa de atuação da rede neural ($5{,}0$\,s a $70{,}0$\,s, que desconsidera o transitório de partida a cargo do controlador PID de segurança, conforme padronizado na Tabela~\ref{tab:desempenho_rmse}), obteve-se $\text{RMSE} = 1{,}49^\circ$. No trecho de dinâmica rápida (\textit{chirp}), a rede neural replicou a política do NMPC com elevada concordância de fase e amplitude. Na Validação~3, o erro na janela ativa foi de $\text{RMSE} = 1{,}34^\circ$, com ligeira atenuação nos picos (cerca de $2^\circ$ abaixo da crista teórica), comportamento característico de controladores preditivos que penalizam a taxa de variação da ação de controle ($\Delta u$).
+
+Na Validação~2, o erro na janela ativa de 5 a 70\,s foi de $\text{RMSE} = 3{,}63^\circ$. O aumento do erro é explicado pela natureza dos degraus abruptos, nos quais a descontinuidade geométrica momentânea eleva o valor do erro quadrático no instante da troca de referência. Destaca-se a presença da característica de \textit{preview}: o sinal de controle $u$ e a haste angular começam a se mover frações de segundo antes de o degrau ocorrer formalmente, indicando que a rede neural aprendeu a compensar preventivamente a inércia do aeropêndulo. Observa-se também um erro estacionário de regime nos degraus mais altos (para referência de $95^\circ$, o sistema estabiliza em $93^\circ$), motivado pelo fato de a MLP operar sem integrador explícito em uma faixa angular próxima aos limites da distribuição de treino.
+
+\subsection{Execução em SIL no STM32}
 \label{sec:res_sil}
 
-A transição da inteligência computacional para o sistema embarcado foi executada exportando os pesos e vieses treinados no PyTorch diretamente para um arquivo de cabeçalho em linguagem C (\texttt{ann\_weights.h}). Optou-se por implementar rotinas de inferência vetorial nativas em C utilizando aritmética de ponto flutuante de precisão simples (\texttt{float32}), explorando diretamente as instruções da Unidade de Ponto Flutuante (FPU) em hardware Cortex-M4 a 180\,MHz. Essa escolha evitou a opacidade de conversores proprietários externos, garantindo controle estrito do código-fonte e determinismo temporal.
+A transição da inteligência computacional para o sistema embarcado foi executada exportando os pesos e vieses treinados no PyTorch diretamente para um arquivo de cabeçalho em linguagem C. Optou-se por implementar rotinas de inferência vetorial nativas em C utilizando aritmética de ponto flutuante de precisão simples (\texttt{float32}), explorando diretamente as instruções da Unidade de Ponto Flutuante (FPU) em hardware Cortex-M4. Essa escolha evitou a opacidade de conversores proprietários externos, garantindo controle estrito do código-fonte e determinismo temporal.
 
-Para a validação em \textit{Software-in-the-Loop} (SIL), o firmware foi compilado com o modelo NARX rodando em conjunto com a rede no laço de temporização da interrupção periódica de 10\,ms. A Figura~\ref{fig:sil_res} apresenta as curvas de resposta angular e esforço de controle registradas via telemetria serial durante a execução do SIL para os três cenários de validação.
+Para a validação em \textit{Software-in-the-Loop} (SIL), o firmware foi compilado com o modelo NARX rodando em conjunto com a rede no laço de temporização da interrupção periódica de 10\,ms. As Figuras~\ref{fig:sil_val1}, \ref{fig:sil_val2} e \ref{fig:sil_val3} apresentam as curvas de resposta angular e esforço de controle registradas via telemetria serial durante a execução do SIL para os três cenários de validação.
 
 \begin{figure}[H]
     \centering
-    \caption{Respostas dinâmicas em SIL executando no microcontrolador STM32F446RE: Validação~1 (topo), Validação~2 (inferior esquerdo) e Validação~3 (inferior direito).}
-    \label{fig:sil_res}
-    \includegraphics[width=0.92\textwidth]{img/resultados/sil_val1.png}\\[2pt]
-    {\small (a) Validação 1 (Multisseno + Degraus).}\\[6pt]
-    \begin{minipage}{0.485\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{img/resultados/sil_val2.png}\\[2pt]
-        {\small (b) Validação 2 (Degraus aleatórios).}
-    \end{minipage}
-    \hfill
-    \begin{minipage}{0.485\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{img/resultados/sil_val3.png}\\[2pt]
-        {\small (c) Validação 3 (Senoidal suave).}
-    \end{minipage}
-
-    \par\vspace{2.5ex}
+    \caption{Validação 1 (Multisseno + Degraus): resposta dinâmica em SIL no microcontrolador STM32F446RE.}
+    \label{fig:sil_val1}
+    \includegraphics[width=0.92\textwidth]{img/resultados/sil_val1.png}
     \sourceFig{o autor, 2026.}
 \end{figure}
 
-\subsection{Fidelidade Numérica Sim-to-SIL e Determinismo de Tempo Real}
+\begin{figure}[H]
+    \centering
+    \caption{Validação 2 (Degraus Aleatórios): resposta dinâmica em SIL no microcontrolador STM32F446RE.}
+    \label{fig:sil_val2}
+    \includegraphics[width=0.92\textwidth]{img/resultados/sil_val2.png}
+    \sourceFig{o autor, 2026.}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \caption{Validação 3 (Senoidal Suave): resposta dinâmica em SIL no microcontrolador STM32F446RE.}
+    \label{fig:sil_val3}
+    \includegraphics[width=0.92\textwidth]{img/resultados/sil_val3.png}
+    \sourceFig{o autor, 2026.}
+\end{figure}
+
+
+\subsection{Fidelidade Numérica e Determinismo Temporal}
 
 A análise comparativa entre as simulações em Python e os registros de SIL evidenciou resultados de alto valor de engenharia:
 \begin{enumerate}
-    \item \textbf{Concordância numérica da exportação:} Durante toda a janela de atuação da rede neural (5 a 70\,s), as trajetórias angulares geradas pelo microcontrolador em \texttt{float32} sobrepuseram-se de forma consistente às obtidas em Python com \texttt{float64}. O coeficiente de correlação de Pearson entre as trajetórias simuladas e embarcadas superou $r > 0{,}998$ em todos os cenários, indicando que a transição de precisão e a execução na FPU Cortex-M4 preservaram a integridade do algoritmo de controle.
+    \item \textbf{Concordância numérica da exportação:} Durante toda a janela de atuação da rede neural (5 a 70\,s), as trajetórias angulares geradas pelo microcontrolador em \texttt{float32} sobrepuseram-se de forma consistente às obtidas em Python com \texttt{float64}. O coeficiente de correlação de Pearson superou $r > 0{,}998$ em todos os cenários, indicando que a transição de precisão e a execução na FPU Cortex-M4 preservaram a integridade da política de controle.
     
-    \item \textbf{Atendimento ao requisito de tempo real e perfil de execução:} A telemetria de perfil temporal integrada ao firmware (utilizando o registrador de contagem de ciclos DWT do Cortex-M4 operando a 180\,MHz) registrou um tempo de inferência matricial da rede MLP determinístico de $\mathbf{2{,}07}$\,ms (com média de $2{,}065$\,ms e desvio padrão desprezível nos ensaios práticos). O tempo de inferência consome $20{,}7\%$ da janela disponível de $10$\,ms ($100$\,Hz), garantindo uma folga temporal de $79{,}3\%$ para as rotinas de amostragem da IMU via I2C, cálculo do integrador residual e transmissão serial dos dados (resultado em estreita concordância com a medição sob a flag \texttt{-Os} isolada na Tabela~\ref{tab:benchmark_compilador_xcube}, que registrou $2{,}08$\,ms, ou $20{,}8\%$ de ocupação e $79{,}2\%$ de folga). Não houve perda de amostras: ao longo de todo o ensaio contínuo, a taxa de 100\,Hz foi mantida sem violações de \textit{deadline}.
+    \item \textbf{Determinismo de tempo real e cumprimento de \textit{deadlines}:} Ao longo de todos os ensaios de SIL, a taxa de amostragem de 100\,Hz ($T_s = 10$\,ms) foi mantida rigorosamente estável, sem perda de amostras ou violações de \textit{deadline}. A inferência matricial da rede neural consumiu apenas uma fração do período de controle disponível, garantindo ampla folga de CPU para as rotinas de comunicação e sensoriamento. A caracterização aprofundada dos tempos de inferência e o estudo comparativo de otimizações de compilação são detalhados na Seção~\ref{sec:res_otimizacao_xcube}.
     
-    \item \textbf{Isolamento das causas de erro:} Os pequenos desvios estacionários observados nos degraus de $95^\circ$ (onde a resposta atinge $93^\circ$) repetiram-se de modo idêntico no SIL. Isso sugere que esses desvios decorrem da estrutura da rede e das características do modelo na região limítrofe de treino, afastando suspeitas de instabilidade numérica ou falha no firmware do microcontrolador.
+    \item \textbf{Isolamento das causas de erro:} Os pequenos desvios estacionários observados nos degraus de $95^\circ$ (onde a resposta atinge $93^\circ$) repetiram-se de modo idêntico no SIL. Isso confirma que esses desvios decorrem da estrutura da rede na região limítrofe de treino, afastando suspeitas de instabilidade numérica ou falha no firmware do microcontrolador.
 \end{enumerate}
 
+
 % ============================================================
-\section{Validação Experimental na Bancada Física (Bancada vs. SIL)}
+\section{Validação Experimental na Bancada}
 \label{sec:res_bancada_vs_sil}
 % ============================================================
 
-\subsection{Comparação Direta da Tríade sob o Controlador Nominal}
+\subsection{Comparação sob o Controlador Nominal}
 \label{sec:res_bancada}
 
-A prova de conceito do projeto consistiu inicialmente em carregar o firmware validado em SIL diretamente na bancada física do aeropêndulo operando sob a política nominal da rede neural. Nesse cenário experimental, o microcontrolador aciona o motor \textit{brushless} via modulação por largura de pulso (PWM) no ESC e recebe os ângulos estimados em tempo real pela IMU ICM-20948 por meio do filtro complementar sintonizado.
+A prova de conceito do projeto consistiu inicialmente em carregar o firmware validado em SIL diretamente na bancada física do aeropêndulo operando sob a política nominal da rede neural. Nesse cenário experimental, o microcontrolador aciona o motor \textit{brushless} via modulação PWM no ESC e recebe os ângulos estimados em tempo real por meio do filtro complementar sintonizado.
 
-As Figuras~\ref{fig:cmp_val1}, \ref{fig:cmp_val2} e \ref{fig:cmp_val3} exibem a sobreposição temporal comparativa entre os três ambientes avaliados sob o controlador nominal: a simulação ideal em Python, o SIL no STM32 e a resposta física da bancada real.
+As Figuras~\ref{fig:cmp_val1}, \ref{fig:cmp_val2} e \ref{fig:cmp_val3} exibem a sobreposição temporal comparativa entre o SIL no STM32 e a resposta física da bancada real.
 
 \begin{figure}[H]
     \centering
-    \caption{Validação 1 (Multisseno + Degraus): comparação direta entre Python, SIL no STM32 e a bancada real sob o controlador nominal.}
+    \caption{Validação 1: comparação direta entre SIL e bancada real.}
     \label{fig:cmp_val1}
     \includegraphics[width=0.95\textwidth]{img/resultados/comparacao_plot_0.png}
     \sourceFig{o autor, 2026.}
@@ -249,7 +253,7 @@ As Figuras~\ref{fig:cmp_val1}, \ref{fig:cmp_val2} e \ref{fig:cmp_val3} exibem a 
 
 \begin{figure}[H]
     \centering
-    \caption{Validação 2 (Degraus Aleatórios): comparação direta entre Python, SIL no STM32 e a bancada real sob o controlador nominal.}
+    \caption{Validação 2: comparação direta entre SIL e bancada real.}
     \label{fig:cmp_val2}
     \includegraphics[width=0.95\textwidth]{img/resultados/comparacao_plot_1.png}
     \sourceFig{o autor, 2026.}
@@ -257,43 +261,44 @@ As Figuras~\ref{fig:cmp_val1}, \ref{fig:cmp_val2} e \ref{fig:cmp_val3} exibem a 
 
 \begin{figure}[H]
     \centering
-    \caption{Validação 3 (Senoidal Suave): comparação direta entre Python, SIL no STM32 e a bancada real sob o controlador nominal.}
+    \caption{Validação 3: comparação direta entre SIL e bancada real.}
     \label{fig:cmp_val3}
     \includegraphics[width=0.95\textwidth]{img/resultados/comparacao_plot_2.png}
     \sourceFig{o autor, 2026.}
 \end{figure}
 
-\subsection{Diagnóstico dos Fenômenos Dinâmicos e do Sim-to-Real Gap}
+\subsection{Diagnóstico do Gap Sim-to-Real}
 
-A inspeção detalhada das curvas experimentais na bancada física revela o comportamento do sistema e as interações mecânicas não modeladas:
+A inspeção das curvas experimentais na bancada física revela o comportamento do sistema e as interações mecânicas não modeladas:
 
-\subsubsection{Ensaio 1: Resposta a Frequências Rápidas e Transição Suave de Partida}
+\subsubsection{Ensaio 1: Frequências Rápidas}
 No primeiro cenário (Figura~\ref{fig:cmp_val1}), o ensaio experimental comprova a estabilidade do acoplamento dinâmico e a fidelidade da aproximação neural frente a estímulos multivariados.
 
 No intervalo inicial (0 a 5\,s), governado pelo controlador de segurança clássico, a planta realizou uma elevação suave (\textit{soft-start}) a partir do repouso ($0^\circ$) até alcançar a referência nominal de $45^\circ$, atingindo $43{,}9^\circ$ no instante $t = 5$\,s sem qualquer sobressinal, oscilação ou saturação do atuador (com esforço de controle contido estritamente abaixo de $47\%$). No instante exato $t = 5{,}0$\,s, a rede neural MLP assumiu o controle de malha fechada de forma contínua e transparente, sem introduzir descontinuidades no comando PWM ou choques mecânicos na haste.
 
-Na faixa temporal de 40 a 50\,s, correspondente à excitação em alta frequência do \textit{chirp}, a bancada real acompanhou a trajetória de referência com notável sincronismo de fase e precisão de crista, reproduzindo com fidelidade o comportamento simulado em Python e em SIL. Esse resultado confirma que a política aprendida pela MLP preservou a agilidade reativa do NMPC para sinais dinâmicos rápidos.
+Na faixa temporal de 40 a 50\,s, correspondente à excitação em alta frequência do \textit{chirp}, a bancada real acompanhou a trajetória de referência com sincronismo de fase e precisão de crista, reproduzindo com fidelidade o comportamento simulado em Python e em SIL. Esse resultado confirma que a política aprendida pela MLP preservou a agilidade reativa do NMPC para sinais dinâmicos rápidos.
 
-Entre os instantes 28 e 34\,s (descida gradual da referência), observa-se que a bancada real estabilizou-se ligeiramente acima da referência teórica ($2^\circ$ a $4^\circ$ mais alta). Esse desvio persistente reflete a ausência de ação integradora na rede MLP nominal em regime de descida com atrito mecânico.
+Entre os instantes 28 e 34\,s (descida gradual da referência), observa-se que a bancada real estabilizou-se ligeiramente acima da referência teórica ($2^\circ$ a $4^\circ$ mais alta). Esse desvio persistente reflete a ausência de ação integradora na rede MLP nominal em regime de descida.
 
-\subsubsection{Ensaio 2: Degraus Aleatórios e Efeito de Extrapolação}
+\subsubsection{Ensaio 2: Degraus Aleatórios}
 No ensaio com degraus múltiplos (Figura~\ref{fig:cmp_val2}), a resposta física demonstrou elevada estabilidade estrutural: transições limpas, rápida acomodação nos novos patamares e ausência de ciclo-limite ou oscilações sustentadas. 
 
-Entretanto, nos degraus de magnitude elevada ($> 90^\circ$), observou-se uma inversão do erro de regime permanente entre a simulação e a realidade: enquanto o modelo em SIL estabilizou em $93^\circ$ para a referência de $95^\circ$ (subestimando a amplitude), a bancada física estabilizou em $97{,}5^\circ$ (superestimando a amplitude em cerca de $2{,}5^\circ$). Esse desvio ocorre porque essa faixa angular situa-se substancialmente além dos pontos nos quais o modelo dinâmico foi identificado ($45^\circ$ e $60^\circ$). Na extrapolação em ângulos próximos à vertical ($90^\circ$ a $100^\circ$), o centro de massa do aeropêndulo e o arrasto gerado pela esteira da hélice apresentam não-linearidades geométricas que alteram o ganho local da planta real. Como a rede neural opera como um mapeador puramente estático das predições do NMPC, sem possuir um termo integrador puro, qualquer descasamento entre o ganho estático da planta e o do modelo manifesta-se sob a forma de erro persistente de regime permanente (\textit{offset}).
+Entretanto, nos degraus de magnitude elevada ($> 90^\circ$), observou-se uma inversão do erro de regime permanente entre a simulação e a realidade: enquanto o modelo em SIL estabilizou em $93^\circ$ para a referência de $95^\circ$ (subestimando a amplitude), a bancada física estabilizou em $97{,}5^\circ$ (superestimando a amplitude em cerca de $2{,}5^\circ$). Esse desvio ocorre porque essa faixa angular situa-se substancialmente além dos pontos nos quais o modelo dinâmico foi identificado ($45^\circ$ e $60^\circ$).
+Como a rede neural opera como um mapeador puramente estático das predições do NMPC, sem possuir um termo integrador puro, qualquer descasamento entre o ganho estático da planta e o do modelo manifesta-se sob a forma de erro persistente de regime permanente (\textit{offset}).
 
-\subsubsection{Ensaio 3: Senoidal Suave e Atrito Estático (\textit{Stick-Slip})}
-A Validação~3 (Figura~\ref{fig:cmp_val3}) trouxe à tona a evidência física mais relevante da bancada nominal. Ao contrário da intuição inicial que sugere que um sinal suave senoidal seria o mais fácil de ser rastreado, a bancada real exibiu nesse ensaio o maior desvio relativo em relação ao simulador.
+\subsubsection{Ensaio 3: Senoidal Suave e Atrito Estático}
+A Validação~3 (Figura~\ref{fig:cmp_val3}) apresentou a evidência física mais relevante da bancada nominal. Ao contrário da intuição inicial que sugere que um sinal suave senoidal seria o mais fácil de ser rastreado, a bancada real exibiu nesse ensaio o maior desvio relativo em relação ao simulador.
 
-Observa-se um atraso de fase de 0,5 a 1,0\,s na bancada real em relação à trajetória simulada, notadamente durante os instantes de inversão de sentido de rotação (trechos de 25 a 28\,s e 38 a 42\,s). Mais evidente ainda são os \textbf{patamares horizontais planos} que surgem na resposta angular nos momentos em que a velocidade angular cruza o zero (por exemplo, aos 15\,s, 37\,s e 57\,s). O pêndulo físico permanece temporariamente travado nesses pontos, até que o sinal de controle acumule empuxo aerodinâmico suficiente para vencer o torque resistente do mancal.
+Observa-se um atraso de fase de 0,5 a 1,0\,s na bancada real em relação à trajetória simulada, notadamente durante os instantes de inversão de sentido de rotação. Mais evidente ainda são os atamares horizontais planos que surgem na resposta angular nos momentos em que a velocidade angular cruza o zero (por exemplo, aos 15\,s, 37\,s e 57\,s). O pêndulo permanece temporariamente travado nesses pontos, até que o sinal de controle acumule empuxo aerodinâmico suficiente para vencer o torque resistente do mancal.
 
-Esse fenômeno é a assinatura clássica do \textbf{atrito estático (\textit{stick-slip})} presente nos rolamentos de esferas do eixo de rotação. Como o modelo polinomial NARX foi treinado sem termos dependentes do sinal da velocidade $\text{sign}(\dot{\theta})$, o atrito estático não foi mapeado pelo modelo matemático e, por conseguinte, a política ótima do NMPC não foi capaz de antecipar a sua compensação. A malha fechada atua para contornar essa perturbação apenas de forma reativa, o que explica o aumento do ruído de alta frequência no comando $u$ nesses instantes e justifica tecnicamente o atraso dinâmico registrado.
+Como o modelo polinomial NARX foi treinado sem termos dependentes do sinal da velocidade $\text{sign}(\dot{\theta})$, o atrito estático não foi mapeado pelo modelo matemático e, por conseguinte, a política ótima do NMPC não foi capaz de antecipar a sua compensação. A malha fechada atua para contornar essa perturbação apenas de forma reativa, o que explica o aumento do ruído de alta frequência no comando $u$ nesses instantes e justifica tecnicamente o atraso dinâmico registrado.
 
 % ============================================================
-\section{Aprimoramento em Malha Fechada: Controlador Neural Híbrido}
+\section{Controlador Neural Híbrido}
 \label{sec:res_hibrido}
 % ============================================================
 
-\subsection{Formulação do Compensador Integrador Residual}
+\subsection{Compensador Integrador Residual}
 \label{subsec:controlador_hibrido}
 
 Os fenômenos identificados na Seção anterior, notadamente o erro estacionário decorrente da ausência de ação integradora na rede neural e o atraso mecânico por atrito estático de rolamento, motivaram o desenvolvimento e a implantação de uma arquitetura aprimorada: o \textbf{Controlador Neural Híbrido}.
@@ -318,7 +323,7 @@ A lei de controle total aplicada ao atuador passa a ser definida por:
 
 A fixação de $U_{i,\max} = 10{,}0\%$ assegura que a rede neural retenha no mínimo $90\%$ da autoridade dinâmica sobre a planta em qualquer instante de tempo, enquanto o integrador fornece a compensação de empuxo necessária e suficiente para vencer o atrito de mancal e compensar desvios de ganho estático.
 
-\subsection{Resultados Experimentais com o Controlador Híbrido na Bancada}
+\subsection{Resultados Experimentais na Bancada}
 
 As Figuras~\ref{fig:cmp_hibrido_val1}, \ref{fig:cmp_hibrido_val2} e \ref{fig:cmp_hibrido_val3} ilustram as respostas temporais obtidas na bancada real com o controlador neural híbrido para os três cenários padronizados de validação.
 
@@ -353,26 +358,27 @@ A análise comparativa do controlador híbrido frente ao controlador nominal rev
     
     \item \textbf{Atenuação do Atrito Estático (\textit{Stick-Slip}) na Senoide:} Na Validação~3 (Figura~\ref{fig:cmp_hibrido_val3}), os patamares horizontais de travamento mecânico foram substancialmente atenuados. O integrador residual acumulou suavemente torque propulsivo nos instantes de velocidade nula, auxiliando a vencer o atrito estático do rolamento sem ocasionar sobressinais expressivos. Como resultado direto, o RMSE na trajetória senoidal caiu de $3{,}55^\circ$ para $\mathbf{1{,}75^\circ}$, o que representa uma redução de $\mathbf{50{,}8\%}$.
     
-    \item \textbf{Redução Global do Erro de Rastreamento:} Na Validação~1 (multisseno com chirp), o RMSE angular foi reduzido de $3{,}13^\circ$ para $\mathbf{2{,}20^\circ}$ (melhoria de $\mathbf{29{,}8\%}$). Na Validação~2, o RMSE caiu de $4{,}61^\circ$ para $\mathbf{3{,}60^\circ}$ (melhoria de $\mathbf{21{,}8\%}$), atenuando desvios nos degraus de amplitude intermediária.
+    \item \textbf{Redução Global do Erro de Rastreamento:} Na Validação~1, o RMSE angular foi reduzido de $3{,}13^\circ$ para $\mathbf{2{,}20^\circ}$ (melhoria de $\mathbf{29{,}8\%}$). Na Validação~2, o RMSE caiu de $4{,}61^\circ$ para $\mathbf{3{,}60^\circ}$ (melhoria de $\mathbf{21{,}8\%}$), atenuando desvios nos degraus de amplitude intermediária.
     
-    \item \textbf{Preservação da Suavidade de Controle:} A taxa média de variação da ação de controle ($\Delta u = \frac{1}{N}\sum |u[k] - u[k-1]|$) permaneceu contida entre $0{,}04\%$ e $0{,}11\%$/passo, patamar indistinguível do ensaio puramente nominal. Isso sugere que o ganho $K_{i,\text{res}} = 0{,}20$ operou em regime estável e amortecido, sem introduzir comutações de alta frequência (\textit{chattering}) ou degradar a integridade do atuador eletromecânico.
+    \item \textbf{Preservação da Suavidade de Controle:} A taxa média de variação da ação de controle permaneceu contida entre $0{,}04\%$ e $0{,}11\%$/passo, patamar indistinguível do ensaio puramente nominal. Isso sugere que o ganho $K_{i,\text{res}} = 0{,}20$ operou em regime estável e amortecido, sem introduzir comutações de alta frequência ou degradar a integridade do atuador.
+    
 \end{enumerate}
 
 % ============================================================
-\section{Comparação de Desempenho com o Controle Clássico PID}
+\section{Comparação com o Controle Clássico PID}
 \label{sec:res_comparacao_pid}
 % ============================================================
 
-\subsection{Ensaios Espelhados da Rodada 7 na Bancada Real}
+\subsection{Ensaios Espelhados na Bancada}
 \label{subsec:rodada7_espelhados}
 
-Para estabelecer uma comparação experimental direta com o controle linear clássico (sintonizado e operado na bancada de ensaios), realizou-se uma série de ensaios espelhados na bancada física: os mesmos sinais de excitação dinâmica utilizados durante a campanha de identificação de sistemas da ``Rodada 7'', na qual a planta foi estabilizada e operada pelo controlador PID linear sintonizado, foram reproduzidos sob comando da política preditiva neural.
+Para estabelecer uma comparação experimental direta com o controle linear clássico (sintonizado e operado na bancada de ensaios), realizou-se uma série de ensaios espelhados na bancada física: os mesmos sinais de excitação dinâmica utilizados durante a campanha de identificação de sistemas, na qual a planta foi estabilizada e operada pelo controlador PID linear sintonizado, foram reproduzidos sob comando da política preditiva neural.
 
-As Figuras~\ref{fig:cmp_r7_multiseno} e \ref{fig:cmp_r7_chirp} ilustram a comparação temporal entre o controle PID clássico (da Rodada 7) e a rede neural na bancada física.
+As Figuras~\ref{fig:cmp_r7_multiseno} e \ref{fig:cmp_r7_chirp} ilustram a comparação temporal entre o controle PID clássico e a rede neural na bancada física.
 
 \begin{figure}[H]
     \centering
-    \caption{Comparação experimental na bancada real para o sinal multisseno em $45^\circ$ ($f_{\max} = 0{,}50$\,Hz): PID Linear (Rodada 7) vs. 100\% Rede Neural (ANN).}
+    \caption{Comparação experimental na bancada real para o sinal multisseno em $45^\circ$ ($f_{\max} = 0{,}50$\,Hz): PID vs. 100\% Rede Neural (ANN).}
     \label{fig:cmp_r7_multiseno}
     \includegraphics[width=0.95\textwidth]{img/resultados/comparacao_rodada7_multiseno45.png}
     \sourceFig{o autor, 2026.}
@@ -380,7 +386,7 @@ As Figuras~\ref{fig:cmp_r7_multiseno} e \ref{fig:cmp_r7_chirp} ilustram a compar
 
 \begin{figure}[H]
     \centering
-    \caption{Comparação experimental na bancada real para o sinal \textit{chirp} em $60^\circ$ (amplitude $\pm 50^\circ$): PID Linear (Rodada 7) vs. 100\% Rede Neural (ANN).}
+    \caption{Comparação experimental na bancada real para o sinal \textit{chirp} em $60^\circ$ (amplitude $\pm 50^\circ$): PID vs. 100\% Rede Neural (ANN).}
     \label{fig:cmp_r7_chirp}
     \includegraphics[width=0.95\textwidth]{img/resultados/comparacao_rodada7_chirp60.png}
     \sourceFig{o autor, 2026.}
@@ -408,7 +414,7 @@ A Tabela~\ref{tab:desempenho_rodada7} consolida os índices estatísticos de ras
     \sourceTab{o autor, 2026.}
 \end{table}
 
-\subsection{Análise Comparativa de Atraso de Fase, Antecipação e Não-Linearidade}
+\subsection{Atraso de Fase e Não-Linearidade}
 
 A análise desses ensaios espelhados expõe as limitações da aproximação linear em regime dinâmico rápido e indica o ganho de desempenho proporcionado pelo controle preditivo neural:
 
@@ -421,7 +427,7 @@ A análise desses ensaios espelhados expõe as limitações da aproximação lin
 \end{enumerate}
 
 % ============================================================
-\section{Estudo de Otimização e Compressão da Rede Neural (TinyML)}
+\section{Otimização e Compressão TinyML}
 \label{sec:res_otimizacao_xcube}
 % ============================================================
 
@@ -479,7 +485,7 @@ A análise da Tabela~\ref{tab:benchmark_compilador_xcube} e da Figura~\ref{fig:b
     \item \textbf{Compressão Severa com Preservação de Velocidade:} A configuração com compressão alta (\textit{High Compression}) reduziu o consumo de memória \textit{Flash} dos pesos de 130,50\,KiB para apenas $\mathbf{17{,}75}$\,KiB, uma economia de $\mathbf{86{,}4\%}$ no espaço de armazenamento do microcontrolador. Devido à necessidade de descompactação e decodificação dos pesos em tempo de execução, houve um acréscimo temporal de apenas 0,13\,ms (de 1,69 para 1,82\,ms). Notavelmente, mesmo com essa sobrecarga de descompressão, a inferência a 1,82\,ms ainda superou em $\mathbf{8{,}1\%}$ o código C nativo compilado sob \texttt{-O3} (1,98\,ms).
 \end{enumerate}
 
-\subsection{Impacto da Alta Compressão no Desempenho em Malha Fechada (SIL)}
+\subsection{Impacto da Compressão em Malha Fechada}
 
 Embora a compressão reduza drasticamente o uso de memória, é indispensável verificar se a perda de precisão numérica decorrente da quantização afeta a estabilidade e a qualidade do controle em malha fechada. Para responder a essa questão, foram executados dois ensaios completos de SIL sob a trajetória de Validação~1 no microcontrolador STM32F446RE: o primeiro utilizando a rede X-CUBE-AI sem compressão e o segundo sob compressão alta.
 
@@ -527,11 +533,11 @@ A comparação direta entre os dados temporais confirma a viabilidade da compres
 \end{enumerate}
 
 % ============================================================
-\section{Síntese Quantitativa e Discussão Consolidada}
+\section{Síntese Quantitativa e Discussão}
 \label{sec:res_discussao}
 % ============================================================
 
-\subsection{Tabela Comparativa de Desempenho da Tríade e Fechamento do Gap Sim-to-Real}
+\subsection{Desempenho da Tríade e Fechamento do Gap}
 
 Para garantir rigor acadêmico e comparabilidade direta entre os experimentos, estabeleceu-se um critério homogêneo para o cálculo da Raiz do Erro Quadrático Médio, RMSE (\textit{Root Mean Square Error}). O erro foi calculado estritamente na janela temporal em que a rede neural esteve no comando ativo do sistema, isto é, entre \textbf{5,0\,s e 70,0\,s}, eliminando completamente os transitórios de partida e parada governados pelo controlador PID de base.
 
@@ -563,7 +569,7 @@ A análise aprofundada da Tabela~\ref{tab:desempenho_rmse} esclarece pontos esse
     \item \textbf{Fechamento do Gap pelo Controlador Híbrido:} A inclusão em paralelo do integrador residual de baixa autoridade ($K_{i,\text{res}} = 0{,}20$, saturação anti-windup em $\pm 10\%$) reduziu expressivamente o erro persistente de sustentação: o viés médio caiu em mais de $96\%$ a $98\%$, situando-se entre $\mathbf{+0{,}03^\circ}$ e $\mathbf{+0{,}08^\circ}$. Simultaneamente, a atenuação do atrito estático (\textit{stick-slip}) reduziu o erro na trajetória senoidal pela metade ($1{,}75^\circ$ frente a $3{,}55^\circ$), aproximando a resposta da bancada física da dinâmica observada no ambiente virtual.
 \end{enumerate}
 
-\subsection{Balanço Global do Projeto}
+\subsection{Balanço Global}
 
 Em termos globais, os resultados experimentais indicam a viabilidade da metodologia proposta e sugerem vantagens expressivas frente ao controle puramente linear.
 

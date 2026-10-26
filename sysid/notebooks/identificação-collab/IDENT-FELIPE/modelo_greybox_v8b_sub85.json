@@ -1,0 +1,95 @@
+{
+  "version": "v8b_sub85_retrained_open_damping",
+  "date": "2026-10-25",
+  "description": "Modelo Grey-box v8b retreinado exclusivamente em segmentos contínuos com y < 85° com limites de amortecimento abertos",
+  "provenance": {
+    "fold_selected": "Fold 1 (treinado exclusivamente em TRAIN_SEGS, avaliado cegamente em VAL e MALHA-ABERTA)",
+    "segmentation_criteria": {
+      "angle_threshold_deg": 85.0,
+      "min_segment_duration_s": 8.0,
+      "decimation_training": 2,
+      "total_training_segments": 15,
+      "total_training_duration_s": 370.2
+    },
+    "solver": "IPOPT via CasADi com Hessian approximation limited-memory",
+    "bounds_used": {
+      "c3": [0.005, 0.050],
+      "c4": [0.005, 0.060],
+      "ca_fwd": [0.10, 1.20],
+      "ca_bwd": [0.20, 1.40],
+      "tau_dec": [0.06, 0.35],
+      "tau_acc": [0.015, 0.10],
+      "p_thrust": [1.10, 2.20]
+    },
+    "fold_results": {
+      "fold_1": {
+        "dataset_train": "TRAIN_SEGS",
+        "p": 1.627,
+        "c3": 0.017587,
+        "c4": 0.0089,
+        "ca_fwd": 0.100,
+        "ca_bwd": 0.200,
+        "tau_dec": 0.1389,
+        "tau_acc": 0.0816
+      },
+      "fold_2": {
+        "dataset_train": "VAL_SEGS",
+        "p": 1.660,
+        "c3": 0.015784,
+        "c4": 0.0119,
+        "ca_fwd": 0.200,
+        "ca_bwd": 0.200,
+        "tau_dec": 0.1401,
+        "tau_acc": 0.1000
+      }
+    }
+  },
+  "parameters": {
+    "c1": -8.209674,
+    "c2": -0.1190365,
+    "c3": 0.017587,
+    "c4": 0.0089,
+    "Fc": 0.1347141,
+    "c_aero_fwd": 0.100,
+    "c_aero_bwd": 0.200,
+    "tau_dec": 0.1389,
+    "u0": 11.26,
+    "tau_acc": 0.0816,
+    "p_thrust": 1.627
+  },
+  "physics": {
+    "J": 0.03404958,
+    "b_passivo": 0.00405314,
+    "Tc": 0.00458696,
+    "p_thrust": 1.627,
+    "u0": 11.26,
+    "tau_acc": 0.0816,
+    "tau_dec": 0.1389,
+    "c4_inflow_damping": 0.0089,
+    "c_aero_fwd": 0.100,
+    "c_aero_bwd": 0.200
+  },
+  "benchmark_results": {
+    "pure_open_loop_degraus_17_09_2026": {
+      "description": "14 ensaios de degrau puro sem PID, outro dia (17/09/2026), transientes nunca vistos pelo otimizador",
+      "operating_range_u_35_to_49_mean_fit": 81.2,
+      "operating_range_u_35_to_49_mean_rmse_deg": 3.42,
+      "gain_over_baseline_v7_pts": 25.1
+    },
+    "free_run_45deg_VAL_100Hz": {
+      "multi_seno_45": 78.8,
+      "chirp_45": 70.4,
+      "seq_degraus_45": 82.5,
+      "mean_fit": 77.2
+    },
+    "amplitude_ratio_chirp_45": {
+      "full_signal_std_ratio": 0.887,
+      "high_freq_window_30_to_45s_std_ratio": 0.821
+    },
+    "closed_loop_sil_pid_VAL": {
+      "sil_y_mean_fit": 71.6,
+      "sil_u_mean_fit": 22.3,
+      "stability_all_VAL_trials": "100% estavel"
+    }
+  }
+}
