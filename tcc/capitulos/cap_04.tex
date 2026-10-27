@@ -354,7 +354,7 @@ As Figuras~\ref{fig:cmp_hibrido_val1}, \ref{fig:cmp_hibrido_val2} e \ref{fig:cmp
 A análise comparativa do controlador híbrido frente ao controlador nominal revelou ganhos expressivos em todos os quesitos de avaliação:
 
 \begin{enumerate}
-    \item \textbf{Atenuação Expressiva do Erro Estacionário (\textit{Bias}):} Na Validação~2 (degraus aleatórios), o erro médio persistente de regime permanente reduziu-se de $+2{,}67^\circ$ no controlador nominal para apenas $\mathbf{+0{,}07^\circ}$ no controlador híbrido, correspondendo a uma redução de $\mathbf{97{,}5\%}$. Na Validação~1, o viés médio diminuiu de $+2{,}29^\circ$ para $\mathbf{+0{,}03^\circ}$ ($\mathbf{98{,}8\%}$ de redução). Nos patamares de degrau, o braço do aeropêndulo aproximou-se da linha de referência, indicando que o integrador compensou eficazmente os desvios estáticos de sustentação e pequenas assimetrias aerodinâmicas da planta.
+    \item \textbf{Atenuação Expressiva do Erro Estacionário (\textit{Bias}):} Na Validação~2 (degraus aleatórios), o erro médio persistente de regime permanente reduziu-se de $+2{,}67^\circ$ no controlador nominal para apenas $\mathbf{+0{,}07^\circ}$ no controlador híbrido, correspondendo a uma redução de $\mathbf{97{,}5\%}$. Na Validação~1, o viés médio diminuiu de $+2{,}29^\circ$ para $\mathbf{+0{,}03^\circ}$ ($\mathbf{98{,}8\%}$ de redução). Nos patamares de degrau, o braço do aeropêndulo aproximou-se da linha de referência, indicando que o integrador compensou os desvios estáticos de sustentação e pequenas assimetrias aerodinâmicas da planta.
     
     \item \textbf{Atenuação do Atrito Estático (\textit{Stick-Slip}) na Senoide:} Na Validação~3 (Figura~\ref{fig:cmp_hibrido_val3}), os patamares horizontais de travamento mecânico foram substancialmente atenuados. O integrador residual acumulou suavemente torque propulsivo nos instantes de velocidade nula, auxiliando a vencer o atrito estático do rolamento sem ocasionar sobressinais expressivos. Como resultado direto, o RMSE na trajetória senoidal caiu de $3{,}55^\circ$ para $\mathbf{1{,}75^\circ}$, o que representa uma redução de $\mathbf{50{,}8\%}$.
     
@@ -378,7 +378,7 @@ As Figuras~\ref{fig:cmp_r7_multiseno} e \ref{fig:cmp_r7_chirp} ilustram a compar
 
 \begin{figure}[H]
     \centering
-    \caption{Comparação experimental na bancada real para o sinal multisseno em $45^\circ$ ($f_{\max} = 0{,}50$\,Hz): PID vs. 100\% Rede Neural (ANN).}
+    \caption{Comparação experimental na bancada real para o sinal multisseno em $45^\circ$ ($f_{\max} = 0{,}50$\,Hz): PID Linear (Rodada 7) vs. 100\% Rede Neural (ANN).}
     \label{fig:cmp_r7_multiseno}
     \includegraphics[width=0.95\textwidth]{img/resultados/comparacao_rodada7_multiseno45.png}
     \sourceFig{o autor, 2026.}
@@ -386,7 +386,7 @@ As Figuras~\ref{fig:cmp_r7_multiseno} e \ref{fig:cmp_r7_chirp} ilustram a compar
 
 \begin{figure}[H]
     \centering
-    \caption{Comparação experimental na bancada real para o sinal \textit{chirp} em $60^\circ$ (amplitude $\pm 50^\circ$): PID vs. 100\% Rede Neural (ANN).}
+    \caption{Comparação experimental na bancada real para o sinal \textit{chirp} em $60^\circ$ (amplitude $\pm 50^\circ$): PID Linear (Rodada 7) vs. 100\% Rede Neural (ANN).}
     \label{fig:cmp_r7_chirp}
     \includegraphics[width=0.95\textwidth]{img/resultados/comparacao_rodada7_chirp60.png}
     \sourceFig{o autor, 2026.}
@@ -433,8 +433,8 @@ A análise desses ensaios espelhados expõe as limitações da aproximação lin
 
 A implantação de redes neurais profundas em microcontroladores de baixo custo impõe um compromisso crítico entre latência de processamento e restrição de memória de programa (\textit{Flash}). Para quantificar o impacto de diferentes níveis de otimização de código e de ferramentas especializadas em \textit{TinyML}, realizou-se uma campanha experimental no microcontrolador STM32F446RE (ARM Cortex-M4 a 180\,MHz com FPU). Foram confrontadas duas abordagens principais:
 \begin{enumerate}
-    \item \textbf{Código C Nativo (\textit{Handwritten}):} A rotina matricial da MLP (duas camadas ocultas de 128 neurônios com ativações ReLU e camada de saída linear) foi compilada diretamente pelo GCC ARM (\texttt{arm-none-eabi-gcc} 14.3.rel1) sob quatro níveis de otimização: \texttt{-O0} (sem otimização), \texttt{-O1} (otimização básica), \texttt{-Os} (otimização para tamanho de binário) e \texttt{-O3} (otimização agressiva de velocidade com desenrolamento de laços e vetorização).
-    \item \textbf{Framework ST X-CUBE-AI (CMSIS-NN):} O modelo ONNX exportado do PyTorch foi processado pelo gerador ST Edge AI (versão 2.2.0), que sintetiza operadores otimizados explorando instruções SIMD intrínsecas da arquitetura ARM Cortex-M. Foram avaliadas duas configurações: (i)~ponto flutuante puro em precisão simples (\texttt{float32}) sem compressão; e (ii)~compressão alta (\textit{High Compression}), na qual os tensores de pesos passam por quantização não-linear com tabela de dispersão, reduzindo drasticamente a pegada em memória \textit{Flash}.
+    \item \textbf{Código C Nativo: A rotina matricial da MLP (duas camadas ocultas de 128 neurônios com ativações ReLU e camada de saída linear) foi compilada diretamente pelo GCC ARM sob quatro níveis de otimização: \texttt{-O0} (sem otimização), \texttt{-O1} (otimização básica), \texttt{-Os} (otimização para tamanho de binário) e \texttt{-O3} (otimização agressiva de velocidade com desenrolamento de laços e vetorização).
+    \item \textbf{Framework ST X-CUBE-AI:} O modelo ONNX exportado do PyTorch foi processado pelo gerador ST Edge AI, que sintetiza operadores otimizados explorando instruções SIMD intrínsecas da arquitetura ARM Cortex-M. Foram avaliadas duas configurações: (i)~ponto flutuante puro em precisão simples (\texttt{float32}) sem compressão; e (ii)~compressão alta (\textit{High Compression}), na qual os tensores de pesos passam por quantização não-linear com tabela de dispersão, reduzindo drasticamente a pegada em memória \textit{Flash}.
 \end{enumerate}
 
 O perfil temporal de cada configuração foi medido no microcontrolador através do registrador de ciclos DWT da CPU a 180\,MHz ao longo de 8.365 ciclos de amostragem na trajetória de validação ($T_s = 10$\,ms). A Tabela~\ref{tab:benchmark_compilador_xcube} consolida as métricas de tempo de inferência, ocupação percentual da janela de tempo real, pegada de memória e ganho relativo frente à compilação base \texttt{-O0}.
@@ -447,20 +447,20 @@ O perfil temporal de cada configuração foi medido no microcontrolador através
     \resizebox{\textwidth}{!}{
     \begin{tabular}{lcccccc}
         \toprule
-        \textbf{Implementação / Flag} & \textbf{Tempo ($t_{\text{ann}}$)} & \textbf{Ocupação} & \textbf{Ganho vs. \texttt{-O0}} & \textbf{Flash Pesos} & \textbf{Redução Flash} & \textbf{RAM Ativ.} \\
+        \textbf{Implementação / Configuração} & \textbf{Tempo ($t_{\text{ann}}$)} & \textbf{Ocupação CPU} & \textbf{Ganho vs. \texttt{-O0}} & \textbf{Flash Pesos} & \textbf{Flash Total FW} & \textbf{RAM Total} \\
         \midrule
-        C Nativo (\texttt{-O0}) & 4,96\,ms & 49,6\% & --- & 130,50\,KiB & --- & 1,01\,KiB \\
-        C Nativo (\texttt{-O1}) & 2,46\,ms & 24,6\% & 2,02$\times$ & 130,50\,KiB & 0,0\% & 1,01\,KiB \\
-        C Nativo (\texttt{-Os}) & 2,08\,ms & 20,8\% & 2,38$\times$ & 130,50\,KiB & 0,0\% & 1,01\,KiB \\
-        C Nativo (\texttt{-O3}) & 1,98\,ms & 19,8\% & 2,51$\times$ & 130,50\,KiB & 0,0\% & 1,01\,KiB \\
+        C Nativo (\texttt{-O0}) & 4,96\,ms & 49,6\% & 1,00$\times$ (Ref.) & 130,50\,KiB & 183,05\,KB & 1,01\,KiB \\
+        C Nativo (\texttt{-O1}) & 2,46\,ms & 24,6\% & 2,02$\times$ & 130,50\,KiB & 173,70\,KB & 1,01\,KiB \\
+        C Nativo (\texttt{-Os}) & 2,08\,ms & 20,8\% & 2,38$\times$ & 130,50\,KiB & 174,14\,KB & 1,01\,KiB \\
+        C Nativo (\texttt{-O3}) & 1,98\,ms & 19,8\% & 2,51$\times$ & 130,50\,KiB & 175,63\,KB & 1,01\,KiB \\
         \midrule
-        X-CUBE-AI (Sem Compressão) & \textbf{1,69\,ms} & \textbf{16,9\%} & \textbf{2,93$\times$} & 130,50\,KiB & 0,0\% & 1,01\,KiB \\
-        X-CUBE-AI (\textit{High Compression}) & \textbf{1,82\,ms} & \textbf{18,2\%} & \textbf{2,73$\times$} & \textbf{17,75\,KiB} & \textbf{-86,4\%} & 1,01\,KiB \\
+        X-CUBE-AI (Sem Compressão) & \textbf{1,69\,ms} & \textbf{16,9\%} & \textbf{2,93$\times$} & 130,50\,KiB & 182,25\,KB & 2,78\,KiB \\
+        X-CUBE-AI (\textit{High Compression}) & \textbf{1,82\,ms} & \textbf{18,2\%} & \textbf{2,73$\times$} & \textbf{17,75\,KiB} & \textbf{69,51\,KB} & 2,78\,KiB \\
         \bottomrule
     \end{tabular}
     }
     \par\vspace{1ex}
-    {\footnotesize \textit{Nota:} Período de controle $T_s = 10$\,ms (100\,Hz). Memória Flash dos pesos calculada para 33.409 parâmetros. A RAM de ativações (1.032 bytes) é alocada estaticamente para os \textit{buffers} intermediários das camadas.}
+    {\footnotesize \textit{Nota:} Período de amostragem e controle $T_s = 10$\,ms ($f_s = 100$\,Hz). O microcontrolador STM32F446RE dispõe de 512\,KB de memória Flash e 128\,KB de SRAM. A memória Flash dos pesos armazena os 33.409 parâmetros do modelo MLP (em \texttt{float32} de precisão simples nas primeiras cinco configurações e quantizados em 4\,bits com tabela de dispersão na versão comprimida). A coluna \textit{Flash Total FW} reflete o tamanho real do binário final gerado pelo GCC ARM gravado no chip (contendo aplicação de controle, FreeRTOS, \textit{drivers} HAL, \textit{runtime} de IA e os parâmetros). A coluna \textit{RAM Total} engloba os \textit{buffers} estáticos de ativação intermediária (1.032 bytes) somados aos contextos internos do motor de inferência (no caso do X-CUBE-AI).}
     \par\vspace{1.5ex}
     \sourceTab{o autor, 2026.}
 \end{table}
@@ -478,11 +478,11 @@ A Figura~\ref{fig:benchmark_inferencia_flash} ilustra a relação direta entre o
 
 A análise da Tabela~\ref{tab:benchmark_compilador_xcube} e da Figura~\ref{fig:benchmark_inferencia_flash} revela aspectos fundamentais para a engenharia de sistemas embarcados:
 \begin{enumerate}
-    \item \textbf{Impacto das Flags do GCC:} A simples transição de \texttt{-O0} para \texttt{-O3} no código C nativo reduziu o tempo de inferência de 4,96\,ms para 1,98\,ms (um ganho de $2{,}51\times$). A flag \texttt{-Os}, comumente adotada em ambientes industriais para equilibrar pegada de binário e velocidade, atingiu 2,08\,ms, consumindo cerca de $20{,}8\%$ da janela de amostragem.
+    \item \textbf{Impacto das Flags do GCC:} A simples transição de \texttt{-O0} para \texttt{-O3} no código C nativo reduziu o tempo de inferência de 4,96\,ms para 1,98\,ms (um ganho de $2{,}51\times$). A flag \texttt{-Os}, comumente adotada em ambientes industriais para equilibrar pegada de binário e velocidade, atingiu 2,08\,ms, consumindo cerca de $20{,}8\%$ da janela de amostragem. Ademais, nota-se que a variação de código executável entre os níveis de compilação (\texttt{-O1} a \texttt{-O3}) oscilou entre 43,20\,KB e 45,13\,KB, demonstrando que o código compilado responde por apenas uma fração modesta da Flash total frente à tabela de pesos.
     
-    \item \textbf{Aceleração Algorítmica via CMSIS-NN:} O motor do X-CUBE-AI em ponto flutuante superou a compilação mais agressiva do GCC (\texttt{-O3}), diminuindo a latência para $\mathbf{1{,}69}$\,ms (ganho adicional de $14{,}6\%$). Esse avanço decorre da reorganização matricial em blocos (\textit{tiling}) e do emprego de instruções SIMD dedicadas da arquitetura Cortex-M4, que realizam operações de multiplicação-acumulação (\textit{MAC}) em ciclos de clock reduzidos.
+    \item \textbf{Aceleração Algorítmica via CMSIS-NN:} O motor do X-CUBE-AI em ponto flutuante superou a compilação mais agressiva do GCC (\texttt{-O3}), diminuindo a latência para $\mathbf{1{,}69}$\,ms (ganho de $2{,}93\times$ frente a \texttt{-O0} e adicional de $14{,}6\%$ sobre \texttt{-O3}). Esse avanço decorre da reorganização matricial em blocos (\textit{tiling}) e do emprego de rotinas otimizadas com instruções SIMD dedicadas da arquitetura Cortex-M4, que realizam operações de multiplicação-acumulação (\textit{MAC}) em ciclos de \textit{clock} reduzidos.
     
-    \item \textbf{Compressão Severa com Preservação de Velocidade:} A configuração com compressão alta (\textit{High Compression}) reduziu o consumo de memória \textit{Flash} dos pesos de 130,50\,KiB para apenas $\mathbf{17{,}75}$\,KiB, uma economia de $\mathbf{86{,}4\%}$ no espaço de armazenamento do microcontrolador. Devido à necessidade de descompactação e decodificação dos pesos em tempo de execução, houve um acréscimo temporal de apenas 0,13\,ms (de 1,69 para 1,82\,ms). Notavelmente, mesmo com essa sobrecarga de descompressão, a inferência a 1,82\,ms ainda superou em $\mathbf{8{,}1\%}$ o código C nativo compilado sob \texttt{-O3} (1,98\,ms).
+    \item \textbf{Compressão Severa com Preservação de Velocidade:} A configuração com compressão alta (\textit{High Compression}) reduziu a memória Flash dos pesos de 130,50\,KiB para apenas $\mathbf{17{,}75}$\,KiB, correspondendo a uma expressiva economia de $\mathbf{86{,}4\%}$ no armazenamento dos parâmetros via quantização não-linear em 4 bits (\texttt{smul\_f32\_f4}). Sob a perspectiva do binário completo gravado no microcontrolador, o \textit{firmware} total contraiu de 182,25\,KB para $\mathbf{69{,}51}$\,KB (redução global de $\mathbf{61{,}8\%}$), viabilizando a incorporação do controlador preditivo com rede neural até mesmo em microcontroladores de custo reduzido dotados de apenas 128\,KB ou 64\,KB de Flash. Devido à decodificação dos pesos em tempo de execução, houve uma sobrecarga temporal de apenas 0,13\,ms (de 1,69\,ms para 1,82\,ms). Notavelmente, mesmo com essa etapa de descompressão, a inferência a 1,82\,ms permaneceu $\mathbf{8{,}1\%}$ mais rápida do que o código C nativo otimizado sob \texttt{-O3} (1,98\,ms), ocupando apenas $18{,}2\%$ do período de amostragem de 10\,ms.
 \end{enumerate}
 
 \subsection{Impacto da Compressão em Malha Fechada}
@@ -578,6 +578,7 @@ Foi possível transpor a política de Controle Preditivo Não-Linear (cuja solu�
 Mais do que isso, a transição para a bancada física permitiu evidenciar as limitações de uma abordagem puramente baseada em dados: a ausência de mapeamento explícito do atrito de mancal e a inexistência de ação integral na rede geraram pequenos atrasos e erros de regime. A formulação da arquitetura híbrida, integrando a MLP com um integrador residual moderado em firmware, atenuou essas deficiências práticas, alcançando valores de RMSE na bancada entre $1{,}75^\circ$ e $3{,}60^\circ$.
 
 Por fim, os ensaios espelhados diretos frente ao controle clássico linear da Rodada 7 sugerem que a abordagem neural preditiva proporciona uma redução no erro quadrático médio de rastreamento na ordem de \textbf{69\% a 81\%} sobre sinais rápidos e de grande amplitude. Essa constatação consolida uma metodologia fundamentada para a implantação de controladores preditivos neurais em sistemas mecatrônicos com restrições computacionais rígidas.
+
 
 % ------------------------------------------------------------
 \subsection{Análise Comparativa Final}
