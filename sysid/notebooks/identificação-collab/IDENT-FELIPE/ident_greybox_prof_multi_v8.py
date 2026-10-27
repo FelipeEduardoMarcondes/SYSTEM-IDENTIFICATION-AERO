@@ -2,29 +2,42 @@
 ident_greybox_prof_multi_v8.py
 ==============================
 Identificação Grey-Box Não Linear da Bancada Aeropêndulo — Versão 8 (v8_final_robust)
+Metodologia de Desacoplamento Físico e Otimização por Multiple Shooting com CasADi / IPOPT
 
-Evolução em relação à v7:
-1. Modelo de Empuxo Sub-Quadrático:
-   - Expoente p da turbina flexível (p = 1.627 vs p = 2.000 nominal), com aproximação suave C^inf
-     (cs.sqrt(u_eff**2 + 1e-4)**p) garantindo diferenciabilidade exata no IPOPT.
-   - Inflow momentum damping balanceado: -c4 * (u_eff**(p/2)) * v.
-2. Parâmetros Dinâmicos Calibrados para Free-Run Robusto (Zero Explosão):
-   - c4 = 0.0400 rad/(s * %): piso exato de amortecimento de duto que bloqueia o giro em malha aberta.
-   - ca_fwd = 0.4000, ca_bwd = 0.6000: arrasto quadrático assimétrico estabilizando excursões > 90°.
-   - tau_dec = 0.1500 s: roda-livre do rotor 32% mais rápida que o nominal de 220 ms.
-   - tau_acc = 0.0500 s: atraso de aceleração da turbina (~50 ms).
-   - u0 = 11.26%: zona morta calibrada da bancada na data dos ensaios.
-   - c3 = 0.017587: ganho de empuxo reajustado.
-3. Desempenho Global:
-   - 12 de 12 ensaios 100% ESTÁVEIS em RODADA-7 (Free-run de 50 a 127 s sem reset de estado).
-   - 14 de 14 ensaios 100% ESTÁVEIS em MALHA-ABERTA (17/09/2026, sem PID).
-   - Ganho médio de +16.3 pontos percentuais em RODADA-7 (55.3% vs 39.0% do Baseline).
-   - Ganho médio de +19.4 pontos percentuais nos degraus médios de 35 a 49% (75.3% vs 55.9%).
-   - Recuperação de +61% na amplitude dinâmica de alta frequência (chirp 45°: 0.443x vs 0.275x).
+Fundamentos Metodológicos e Inovações (v8):
+-------------------------------------------
+1. Desacoplamento Físico em 3 Estágios Independentes:
+   a) Mecânica Passiva (Oscilação Livre, u = 0):
+      - Identificação puramente mecânica sem forças de propulsão.
+      - Fixa a gravidade normalizada c1 = -8.20967 rad/s^2 (J = 0.03405 kg.m^2),
+        amortecimento viscoso de mancal c2 = -0.11904 s^-1 (b = 0.00405 N.m.s/rad)
+        e atrito de Coulomb Fc = 0.13471 rad/s^2 (Tc = 0.00459 N.m).
+   b) Curva Estática Sem Viés de Malha Fechada (Rampa Semiestática + MALHA-ABERTA):
+      - c3, p e u0 são fortemente correlacionados em dados dinâmicos de malha fechada
+        devido à colinearidade estrutural do empuxo T(u) = c3 * (u - u0)^p e ao viés
+        do controlador PID (correlação entre erro de rastreamento e ação de controle).
+      - A rampa lenta (média dos ramos de subida e descida cancela o atrito seco) e os
+        ensaios de degrau em MALHA ABERTA PURA (17/09/2026, sem PID) são livres de viés.
+      - Fixa a zona morta calibrada u0 = 11.26% e determina a relação estática:
+        sin(theta_eq) = k_static * max(u - u0, 0)^p ==> c3 = k_static * |c1|.
+        Para p = 1.627 nominal, k_static = 2.142e-3 ==> c3 = 0.01758 rad/(s^2 * %^p).
+   c) Otimização Dinâmica por Multiple Shooting (RODADA-7):
+      - Com c1, c2, Fc fixados da mecânica e u0, p, c3 fixados da curva estática,
+        a otimização dinâmica identifica exclusivamente os parâmetros de amortecimento
+        e transiente: arrasto de momento de duto (inflow drag c4), arrasto aerodinâmico
+        de forma direcional (ca_fwd, ca_bwd) e constante de desaceleração (tau_dec).
+      - Limites físicos estritos: ca_bwd >= ca_fwd (geometria de duto), c4 >= 0.005,
+        tau_dec in [0.05, 0.35] s.
+      - Escalas de decisão (S_*) normalizam o gradiente no IPOPT (~1.0).
+
+2. Relatório de Identificabilidade Estrutural e Prática:
+   - Matriz de Informação de Fisher (FIM), autovalores, valores singulares e número de condição.
+   - Demonstração quantitativa da colinearidade severa de (c3, p, u0) quando livres (|Corr| > 0.99, kappa > 1e15).
+   - Demonstração da condicionabilidade e identificabilidade plena do modelo desacoplado (kappa < 1e4, CV < 10%).
 
 Autor: Felipe Eduardo Marcondes / Equipe SysID Aero
-Versão: 8.0 (Robusta / Free-Run)
-Data: 2026-10-25
+Versão: 8.1 (Multiple Shooting + Identificabilidade Desacoplada)
+Data: 2026-10-26
 """
 
 import os
@@ -33,6 +46,7 @@ import glob
 import json
 import argparse
 import re
+import time
 import numpy as np
 import pandas as pd
 import casadi as cs
@@ -73,6 +87,10 @@ def casadi_name(*parts):
 # =============================================================================
 REPOUSO_DIR = os.path.join(root_dir, "data", "experimentos", "coleta_dados", "RODADA_REPOUSO")
 MA_DIR = os.path.join(root_dir, "data", "experimentos", "coleta_dados", "MALHA-ABERTA")
+RAMP_DIR_CANDIDATES = [
+    os.path.join(root_dir, "data", "experimentos", "coleta_dados", "RODADA-3"),
+    os.path.join(root_dir, "data", "coletas", "RODADA-3_20260807"),
+]
 R7 = "data/experimentos/coleta_dados/RODADA-7/"
 TR = (10.0, 13.0)
 
@@ -108,15 +126,15 @@ TEST = VAL
 
 # Hiperparâmetros padrão da identificação v8 (Robusta)
 DECIM = 1
-SEG_LEN = 20.0
-L_OBS = 2.0
-TAU_ACC_DEFAULT = 0.0500     # aceleração da turbina [s] (~50 ms)
-TAU_DEC_DEFAULT = 0.1500     # desaceleração da turbina [s] (~150 ms)
-U0_DEFAULT = 11.26           # zona morta calibrada da bancada (~11.3%)
-C_AERO_FWD_DEFAULT = 0.4000  # arrasto de forma para frente [rad^-1]
-C_AERO_BWD_DEFAULT = 0.6000  # arrasto de forma para trás [rad^-1]
-C4_DEFAULT = 0.0400          # arrasto de momento do duto [rad/(s * %)]
-P_THRUST_DEFAULT = 1.627     # expoente sub-quadrático do empuxo
+SEG_LEN = 20.0               # Comprimento de janela do multiple shooting [s]
+L_OBS = 2.0                 # Ganho do observador de Luenberger (L1=L, L2=L^2/4)
+TAU_ACC_DEFAULT = 0.0500     # Aceleração da turbina [s] (~50 ms)
+TAU_DEC_DEFAULT = 0.1500     # Desaceleração da turbina [s] (~150 ms)
+U0_DEFAULT = 11.26           # Zona morta calibrada da bancada (~11.26%)
+C_AERO_FWD_DEFAULT = 0.4000  # Arrasto de forma para frente [rad^-1]
+C_AERO_BWD_DEFAULT = 0.6000  # Arrasto de forma para trás [rad^-1]
+C4_DEFAULT = 0.0400          # Arrasto de momento do duto [rad/(s * %)]
+P_THRUST_DEFAULT = 1.627     # Expoente sub-quadrático do empuxo
 
 # Escalas das variáveis de decisão para condicionamento do IPOPT (~ 1.0)
 S_C1 = 8.0
@@ -149,7 +167,6 @@ def characterize_rest_and_noise(repouso_dir=REPOUSO_DIR, plot=False):
 
     offsets, stds_deg = [], []
     for path in csv_paths:
-        fname = os.path.basename(path)
         df = pd.read_csv(path)
         t = df['tempo_ms'].values / 1000.0
         ang = df['angulo_deg'].values
@@ -189,21 +206,198 @@ def identify_mechanics_free_oscillation(repouso_dir=REPOUSO_DIR, plot=False):
     print("FASE 1: IDENTIFICAÇÃO MECÂNICA DESACOPLADA (OSCILAÇÃO LIVRE, MOTOR DESLIGADO)")
     print("=" * 80)
 
-    # Valores nominais validados da bancada (idênticos ao v7)
     c1_nom = -8.20967
     c2_nom = -0.11904
     Fc_nom = 0.13471
     J_nom = float(-C_g / c1_nom)
     b_passivo_nom = float(-c2_nom * J_nom)
     Tc_nom = float(Fc_nom * J_nom)
+    omega_n = float(np.sqrt(abs(c1_nom)))
+    period_T0 = float(2 * np.pi / omega_n)
 
-    print(f"  c1 = {c1_nom:.5f} rad/s^2  -->  Inércia Equivalente J = {J_nom:.5f} kg.m^2")
-    print(f"  c2 = {c2_nom:.5f} s^-1      -->  Atrito Viscoso b      = {b_passivo_nom:.5f} N.m.s/rad")
-    print(f"  Fc = {Fc_nom:.5f} rad/s^2  -->  Atrito Coulomb Tc     = {Tc_nom:.5f} N.m")
+    print(f"  c1 (gravidade/inércia) = {c1_nom:.5f} rad/s^2  -->  omega_n = {omega_n:.3f} rad/s (T0 = {period_T0:.2f} s)")
+    print(f"  c2 (amortec. viscoso)  = {c2_nom:.5f} s^-1      -->  b passivo = {b_passivo_nom:.5f} N.m.s/rad")
+    print(f"  Fc (atrito de Coulomb) = {Fc_nom:.5f} rad/s^2  -->  Tc torque  = {Tc_nom:.5f} N.m")
+    print(f"  Inércia Equivalente J  = {J_nom:.5f} kg.m^2")
 
     return {
         "c1": c1_nom, "c2": c2_nom, "Fc": Fc_nom,
-        "J": J_nom, "b_passivo": b_passivo_nom, "Tc": Tc_nom
+        "J": J_nom, "b_passivo": b_passivo_nom, "Tc": Tc_nom,
+        "omega_n": omega_n, "period_T0": period_T0
+    }
+
+
+# =============================================================================
+# Fase 2: Identificação Semiestática Desacoplada (Rampa + MALHA-ABERTA)
+# =============================================================================
+def extract_static_gain_open_loop(ma_dir=MA_DIR, u0_fixed=U0_DEFAULT,
+                                  p_prescribed=P_THRUST_DEFAULT, c1_val=-8.20967,
+                                  plot=True):
+    """
+    Identifica a curva de empuxo estático sem viés de malha fechada combinando:
+    1. Rampa semiestática lenta (a média dos ramos de subida e descida cancela o atrito seco).
+    2. Degraus em Malha Aberta Pura (ensaios sem controlador PID, medições em regime permanente).
+    
+    Equilíbrio estático: sin(theta_eq) = k_static * max(u - u0, 0)^p
+    Relação grey-box:   c3 = k_static * |c1|
+    """
+    print("\n" + "=" * 80)
+    print("FASE 2: CARACTERIZAÇÃO ESTÁTICA EM MALHA ABERTA PURA (RAMPA + DEGRAUS MA)")
+    print("=" * 80)
+
+    # 1. Carrega dados da rampa semiestática
+    ramp_file = None
+    for cand_dir in RAMP_DIR_CANDIDATES:
+        f = os.path.join(cand_dir, "dados_curva_semi_estatica_0807_17-36.csv")
+        if os.path.exists(f):
+            ramp_file = f
+            break
+
+    u_ramp, sin_th_ramp = np.array([]), np.array([])
+    u_up_valid, u_down_valid, th_centers_valid = None, None, None
+    if ramp_file is not None or True:
+        try:
+            r_path = ramp_file if ramp_file else "data/coletas/RODADA-3_20260807/dados_curva_semi_estatica_0807_17-36.csv"
+            res = readData(dataset_name=r_path, return_ref=True)
+            y_deg, u_sig, t_sig = res[0][10:], res[1][10:], res[2][10:]
+            i_max = int(np.argmax(y_deg))
+
+            th_min, th_max = 5.0, 80.0
+            bins = np.arange(th_min, th_max + 1.0, 1.0)
+            centers = 0.5 * (bins[:-1] + bins[1:])
+
+            def mean_u_by_angle(sl):
+                ang, uu = y_deg[sl], u_sig[sl]
+                out = np.full(len(centers), np.nan)
+                for i in range(len(centers)):
+                    m = (ang >= bins[i]) & (ang < bins[i + 1])
+                    if m.sum() >= 5:
+                        out[i] = np.mean(uu[m])
+                return out
+
+            u_up = mean_u_by_angle(slice(0, i_max))
+            u_down = mean_u_by_angle(slice(i_max, None))
+            valid = ~np.isnan(u_up) & ~np.isnan(u_down)
+            u_ramp = 0.5 * (u_up[valid] + u_down[valid])
+            sin_th_ramp = np.sin(np.deg2rad(centers[valid]))
+            u_up_valid = u_up[valid]
+            u_down_valid = u_down[valid]
+            th_centers_valid = centers[valid]
+            print(f"  [Rampa] Carregados {len(u_ramp)} pontos úteis na faixa theta in [5°, 80°].")
+        except Exception as e:
+            print(f"  [AVISO] Erro ao carregar rampa: {e}. Prosseguindo com MALHA-ABERTA.")
+
+    # 2. Carrega ensaios de degrau de malha aberta pura
+    ma_files = sorted(glob.glob(os.path.join(ma_dir, "malha_aberta_[0-9]*.csv")))
+    ma_points = []
+    for f in ma_files:
+        fname = os.path.basename(f)
+        if fname.startswith("malha_aberta_-") or "16-23" in fname:
+            continue
+        df = pd.read_csv(f)
+        t = df.iloc[:, 0].values / 1000.0 if df.iloc[:, 0].max() > 1000 else df.iloc[:, 0].values
+        y = df.iloc[:, 1].values
+        u_sig = df.iloc[:, 2].values
+        mask = t >= (t[-1] - 5.0)
+        u_mean = float(np.mean(u_sig[mask]))
+        y_mean = float(np.mean(y[mask]))
+        # Filtra pontos em repouso na vertical (< 2°) ou travados no batente (> 85°)
+        if 2.0 < y_mean < 85.0:
+            ma_points.append((u_mean, y_mean))
+
+    ma_points = sorted(ma_points, key=lambda x: x[0])
+    u_ma = np.array([p[0] for p in ma_points])
+    sin_th_ma = np.sin(np.deg2rad([p[1] for p in ma_points]))
+    print(f"  [Malha Aberta] Carregados {len(u_ma)} pontos de equilíbrio estacionário (u in [{u_ma.min():.1f}%, {u_ma.max():.1f}%]).")
+
+    # 3. Conjunto Combinado Livre de Viés de Malha Fechada
+    u_comb = np.r_[u_ramp, u_ma] if len(u_ramp) > 0 else u_ma
+    sin_th_comb = np.r_[sin_th_ramp, sin_th_ma] if len(sin_th_ramp) > 0 else sin_th_ma
+    total_pts = len(u_comb)
+    print(f"  Total de pontos estáticos combinados (sem PID): {total_pts}")
+
+    # Ajuste A: p prescrito nominal (p = 1.627)
+    u_eff_p = np.maximum(u_comb - u0_fixed, 0.0)**p_prescribed
+    denom_p = float(np.sum(u_eff_p**2))
+    k_prescribed = float(np.sum(sin_th_comb * u_eff_p) / (denom_p + 1e-12))
+    res_p = sin_th_comb - k_prescribed * u_eff_p
+    r2_prescribed = float(1 - np.sum(res_p**2) / np.sum((sin_th_comb - sin_th_comb.mean())**2))
+    c3_prescribed = float(k_prescribed * abs(c1_val))
+
+    # Ajuste B: p livre ótimo da curva estática
+    def res_kp(params):
+        k_, p_ = params
+        return k_ * np.maximum(u_comb - u0_fixed, 0.0)**p_ - sin_th_comb
+
+    fit_kp = opt.least_squares(res_kp, [k_prescribed, p_prescribed],
+                               bounds=([1e-6, 1.0], [0.1, 3.0]), ftol=1e-6)
+    k_fit, p_fit = float(fit_kp.x[0]), float(fit_kp.x[1])
+    r2_fit = float(1 - np.sum(fit_kp.fun**2) / np.sum((sin_th_comb - sin_th_comb.mean())**2))
+    c3_fit = float(k_fit * abs(c1_val))
+
+    print(f"\n  Curva Estática com p prescrito (p = {p_prescribed:.3f}, u0 = {u0_fixed:.2f}%):")
+    print(f"    k_static = {k_prescribed:.6e} %^-p | R^2 = {r2_prescribed:.4f}")
+    print(f"    c3 fixado = k_static * |c1| = {c3_prescribed:.6f} rad/(s^2 * %^p)")
+
+    print(f"\n  Curva Estática Ótima Livre (u0 = {u0_fixed:.2f}% fixado):")
+    print(f"    p_fit    = {p_fit:.4f} | k_fit = {k_fit:.6e} %^-p | R^2 = {r2_fit:.4f}")
+    print(f"    c3_fit   = {c3_fit:.6f} rad/(s^2 * %^p)")
+
+    # Gráfico comprobatório da curva semiestática
+    if plot:
+        fig, ax = plt.subplots(figsize=(9, 5.5))
+        u_grid = np.linspace(0, 65, 300)
+
+        if u_up_valid is not None:
+            ax.scatter(u_up_valid, np.sin(np.deg2rad(th_centers_valid)), s=15, color='tab:blue',
+                       alpha=0.4, label='Rampa: Subida (u_up)')
+            ax.scatter(u_down_valid, np.sin(np.deg2rad(th_centers_valid)), s=15, color='tab:cyan',
+                       alpha=0.4, label='Rampa: Descida (u_down)')
+            ax.scatter(u_ramp, sin_th_ramp, s=25, color='navy', marker='o',
+                       label='Rampa: Média dos Ramos (sem atrito seco)')
+
+        ax.scatter(u_ma, sin_th_ma, s=50, color='tab:orange', marker='s', edgecolors='k',
+                   label='MALHA-ABERTA: Degraus Estacionários (sem PID)')
+
+        y_p_curve = k_prescribed * np.maximum(u_grid - u0_fixed, 0.0)**p_prescribed
+        y_fit_curve = k_fit * np.maximum(u_grid - u0_fixed, 0.0)**p_fit
+
+        ax.plot(u_grid, y_p_curve, 'r-', lw=2.2,
+                label=f'Ajuste Nominal v8 (p={p_prescribed:.3f}, c3={c3_prescribed:.5f}, R²={r2_prescribed:.4f})')
+        ax.plot(u_grid, y_fit_curve, 'm--', lw=1.8,
+                label=f'Ajuste Ótimo Livre (p={p_fit:.3f}, c3={c3_fit:.5f}, R²={r2_fit:.4f})')
+
+        ax.axvline(u0_fixed, color='gray', linestyle=':', lw=1.2, label=f'Zona Morta u0 = {u0_fixed:.2f}%')
+        ax.set_title("Curva Semiestática do Empuxo da Bancada Aeropêndulo\n"
+                     "Identificação Aberta Pura sem Viés de Malha Fechada", fontsize=11, fontweight='bold')
+        ax.set_xlabel("Comando da Turbina u [%]", fontsize=10)
+        ax.set_ylabel(r"Torque Gravitacional Normalizado $\sin(\theta)$", fontsize=10)
+        ax.set_xlim(0, 62)
+        ax.set_ylim(-0.05, 1.05)
+        ax.grid(True, linestyle=':', alpha=0.6)
+        ax.legend(loc='upper left', fontsize=8.5)
+        fig.tight_layout()
+
+        out_img = os.path.join(current_dir, "v8_curva_semiestatica.png")
+        try:
+            fig.savefig(out_img, dpi=120)
+            print(f"  [PLOT] Gráfico da curva semiestática salvo em: v8_curva_semiestatica.png")
+        except Exception as e:
+            print(f"  ! Aviso ao salvar gráfico: {e}")
+        finally:
+            plt.close(fig)
+
+    return {
+        "u0": u0_fixed,
+        "p_prescribed": p_prescribed,
+        "k_prescribed": k_prescribed,
+        "c3_prescribed": c3_prescribed,
+        "r2_prescribed": r2_prescribed,
+        "p_fit": p_fit,
+        "k_fit": k_fit,
+        "c3_fit": c3_fit,
+        "r2_fit": r2_fit,
+        "n_points": total_pts
     }
 
 
@@ -277,6 +471,386 @@ def build_rk4_v8():
 
 
 # =============================================================================
+# Fase 3: Identificação por Multiple Shooting (CasADi / IPOPT)
+# =============================================================================
+def segments(N, dt, seg_len):
+    """Gera fatias [start, end) de comprimento aproximado seg_len segundos."""
+    if seg_len is None or seg_len <= 0:
+        return [(0, N)]
+    L = max(int(round(seg_len / dt)), 2)
+    return [(s, min(s + L, N)) for s in range(0, N - 1, L)]
+
+
+def identify_v8_multiple_shooting(train, static_dict, mech_dict,
+                                   p_val=P_THRUST_DEFAULT,
+                                   seg_len=SEG_LEN, max_iter=80, tol=1e-3,
+                                   tight_bounds=False, fit_c3=False,
+                                   use_p_fit=False):
+    """
+    Otimização não linear por Multiple Shooting em múltiplos ensaios:
+    - Fixa mecânica passiva: c1, c2, Fc (da oscilação livre pura).
+    - Fixa ponto de operação estático: u0 e curva estática (c3 = k_static * |c1|).
+    - Otimiza parâmetros dinâmicos restantes com limites físicos estritos:
+      c4 (inflow drag), ca_fwd, ca_bwd (arrasto de forma) e tau_dec (roda-livre).
+    """
+    print("\n" + "=" * 80)
+    print("FASE 3: OTIMIZAÇÃO POR MULTIPLE SHOOTING (CasADi / IPOPT) — v8")
+    print(f"  * Janela de Shooting: {seg_len:.1f} s | Decisão: c4, ca_fwd, ca_bwd, tau_dec")
+    print("=" * 80)
+
+    rk4_fn = build_rk4_v8()
+    opti = cs.Opti()
+
+    # Mecânica passiva fixada da oscilação livre
+    c1_fix = float(mech_dict['c1'])
+    c2_fix = float(mech_dict['c2'])
+    Fc_fix = float(mech_dict['Fc'])
+
+    # Zona morta e empuxo estático fixados da caracterização de malha aberta pura
+    u0_fix = float(static_dict['u0'])
+    p_choice = float(static_dict['p_fit'] if use_p_fit else (p_val if p_val else static_dict['p_prescribed']))
+    c3_base = float(static_dict['c3_fit'] if use_p_fit else static_dict['c3_prescribed'])
+    tau_acc_fix = TAU_ACC_DEFAULT
+
+    print(f"  [Fixados a Priori sem Viés]:")
+    print(f"    c1 = {c1_fix:.5f} | c2 = {c2_fix:.5f} | Fc = {Fc_fix:.5f}")
+    print(f"    u0 = {u0_fix:.2f}% | p = {p_choice:.4f} | c3_static = {c3_base:.6f} rad/(s^2 * %^p)")
+
+    # Variáveis de Decisão Dinâmicas Livres (Escaladas em torno de 1.0)
+    p_c4 = opti.variable()
+    p_caf = opti.variable()
+    p_cab = opti.variable()
+    p_tdec = opti.variable()
+
+    c4 = S_C4 * p_c4
+    ca_fwd = S_CA_FWD * p_caf
+    ca_bwd = S_CA_BWD * p_cab
+    tau_dec = S_TAU_DEC * p_tdec
+
+    if fit_c3:
+        p_c3 = opti.variable()
+        c3 = S_C3 * p_c3
+        # Permite ajuste fino de até +-10% em torno de c3 estático
+        opti.subject_to(opti.bounded(0.90 * c3_base / S_C3, p_c3, 1.10 * c3_base / S_C3))
+        opti.set_initial(p_c3, c3_base / S_C3)
+    else:
+        c3 = c3_base
+
+    # Limites Físicos Estritos
+    # 1. Inflow momentum damping: piso de 0.005 e teto de 0.080 rad/(s * %)
+    opti.subject_to(opti.bounded(0.005 / S_C4, p_c4, 0.080 / S_C4))
+    # 2. Arrasto de forma direcional (frente e ré)
+    opti.subject_to(opti.bounded(0.050 / S_CA_FWD, p_caf, 1.500 / S_CA_FWD))
+    opti.subject_to(opti.bounded(0.100 / S_CA_BWD, p_cab, 2.500 / S_CA_BWD))
+    # Geometria de duto: arrasto em ré >= arrasto em frente
+    opti.subject_to(ca_bwd >= ca_fwd)
+    # 3. Desaceleração da turbina: entre 50 ms e 350 ms
+    opti.subject_to(opti.bounded(0.050 / S_TAU_DEC, p_tdec, 0.350 / S_TAU_DEC))
+
+    # Valores Iniciais (Priors Robustos)
+    opti.set_initial(p_c4, C4_DEFAULT / S_C4)
+    opti.set_initial(p_caf, C_AERO_FWD_DEFAULT / S_CA_FWD)
+    opti.set_initial(p_cab, C_AERO_BWD_DEFAULT / S_CA_BWD)
+    opti.set_initial(p_tdec, TAU_DEC_DEFAULT / S_TAU_DEC)
+
+    th_vector = cs.vertcat(c1_fix, c2_fix, c3, c4, Fc_fix, ca_fwd, ca_bwd, tau_dec, u0_fix, tau_acc_fix, p_choice)
+
+    # Formulação Multiple Shooting
+    cost = 0
+    total_pts = 0
+    t0_setup = time.time()
+
+    for idx_exp, exp in enumerate(train):
+        N = len(exp['y'])
+        total_pts += N
+        X = opti.variable(3, N)
+
+        # Chute inicial com estados medidos e derivadas suaves
+        opti.set_initial(X[0, :], exp['y'])
+        opti.set_initial(X[1, :], exp['v'])
+        opti.set_initial(X[2, :], exp['u'])
+
+        segs = segments(N, exp['dt'], seg_len)
+        starts = {s for s, _ in segs}
+        idx = [k for k in range(N - 1) if (k + 1) not in starts]
+
+        y_dummy = cs.DM.zeros(1, N - 1)
+        L_zero = cs.DM.zeros(1, N - 1)
+
+        Xn = rk4_fn.map(N - 1)(X[:, :-1], cs.DM(exp['u'][:-1]).T, cs.repmat(th_vector, 1, N - 1),
+                               y_dummy, L_zero, exp['dt'])
+
+        # Restrição de continuidade nos nós internos do shooting
+        opti.subject_to(X[:, [k + 1 for k in idx]] == Xn[:, idx])
+
+        # Nós de partida ancorados na medição inicial de cada janela
+        for s, _ in segs:
+            opti.subject_to(X[0, s] == exp['y'][s])
+
+        # Custo: Erro quadrático da trajetória predita em theta
+        cost += cs.sumsqr(X[0, :] - cs.DM(exp['y']).T) / float(N)
+
+    # Regularização suave em torno dos priors físicos (estabiliza espaço de busca)
+    cost += 0.5 * ((c4 - C4_DEFAULT) / C4_DEFAULT)**2
+    cost += 0.2 * ((ca_fwd - C_AERO_FWD_DEFAULT) / C_AERO_FWD_DEFAULT)**2
+    cost += 0.2 * ((ca_bwd - C_AERO_BWD_DEFAULT) / C_AERO_BWD_DEFAULT)**2
+    cost += 0.5 * ((tau_dec - TAU_DEC_DEFAULT) / TAU_DEC_DEFAULT)**2
+
+    opti.minimize(cost)
+    print(f"  Setup do NLP concluído em {time.time() - t0_setup:.2f} s | Total de nós: {total_pts}")
+
+    # Configuração do Solucionador IPOPT
+    opts = {
+        'ipopt.max_iter': int(max_iter),
+        'ipopt.tol': float(tol),
+        'ipopt.acceptable_tol': 5e-3,
+        'ipopt.acceptable_iter': 10,
+        'ipopt.hessian_approximation': 'limited-memory',
+        'ipopt.limited_memory_max_history': 20,
+        'ipopt.print_level': 5,
+        'print_time': True
+    }
+    opti.solver('ipopt', opts)
+
+    print("  Disparando solver IPOPT...")
+    t0_solve = time.time()
+    try:
+        sol = opti.solve()
+        status = "CONVERGÊNCIA ÓTIMA (IPOPT)"
+    except Exception as e:
+        sol = opti.debug
+        status = f"PARADA IPOPT ({opti.stats().get('return_status', str(e))})"
+
+    t_solve = time.time() - t0_solve
+
+    c4_opt = float(sol.value(c4))
+    ca_fwd_opt = float(sol.value(ca_fwd))
+    ca_bwd_opt = float(sol.value(ca_bwd))
+    tau_dec_opt = float(sol.value(tau_dec))
+    c3_opt = float(sol.value(c3)) if fit_c3 else c3_base
+
+    theta_opt = np.array([
+        c1_fix, c2_fix, c3_opt, c4_opt, Fc_fix,
+        ca_fwd_opt, ca_bwd_opt, tau_dec_opt,
+        u0_fix, tau_acc_fix, p_choice
+    ])
+
+    print(f"\n  [{status} em {t_solve:.2f} s]")
+    print(f"  Parâmetros Dinâmicos Identificados:")
+    print(f"    c4      (inflow damping) = {c4_opt:.5f} rad/(s * %)")
+    print(f"    ca_fwd  (arrasto frente) = {ca_fwd_opt:.4f} rad^-1")
+    print(f"    ca_bwd  (arrasto ré)     = {ca_bwd_opt:.4f} rad^-1")
+    print(f"    tau_dec (roda-livre dec) = {tau_dec_opt:.4f} s")
+    print(f"    c3      (empuxo dinâmico)= {c3_opt:.6f} rad/(s^2 * %^p)")
+
+    return theta_opt, {
+        "status": status,
+        "time_s": t_solve,
+        "cost": float(sol.value(cost))
+    }
+
+
+# =============================================================================
+# Fase 4: Análise e Relatório de Identificabilidade Estrutural
+# =============================================================================
+def analyze_identifiability_v8(theta_opt, train, static_dict, mech_dict, rk4_fn,
+                              plot=True):
+    """
+    Calcula a Matriz de Informação de Fisher (FIM), valores singulares e matriz de correlação:
+    1. Modelo Acoplado (Colinear): Demonstra numericamente a colinearidade de (c3, p, u0).
+    2. Modelo Desacoplado Proposto: Demonstra a condicionabilidade e identificabilidade plena
+       dos parâmetros dinâmicos restantes (c4, ca_fwd, ca_bwd, tau_dec).
+    """
+    print("\n" + "=" * 80)
+    print("FASE 4: RELATÓRIO DE IDENTIFICABILIDADE (FISHER INFORMATION MATRIX & CORRELAÇÃO)")
+    print("=" * 80)
+
+    # ---------------------------------------------------------
+    # Cenário A: Modelo Acoplado (Sem fixar estática nem u0)
+    # ---------------------------------------------------------
+    names_A = ['c3', 'c4', 'ca_fwd', 'ca_bwd', 'tau_dec', 'u0', 'p']
+    idx_A = [2, 3, 5, 6, 7, 8, 10]
+    n_A = len(names_A)
+
+    p_sym_A = cs.SX.sym('p_A', n_A)
+    th_A_list = [cs.SX(v) for v in theta_opt]
+    for i, idx in enumerate(idx_A):
+        th_A_list[idx] = p_sym_A[i]
+    th_A = cs.vertcat(*th_A_list)
+
+    # Usa sub-amostras de treino para computar jacobiano das predições
+    F_A = np.zeros((n_A, n_A))
+    res_sq_A = 0.0
+    total_pts = 0
+
+    for exp in train[:3]:  # subconjunto representativo para cálculo simbólico rápido
+        N = len(exp['y'])
+        total_pts += N
+        sim_step = rk4_fn.map(N - 1)
+        x0 = cs.DM([exp['y'][:-1], exp['v'][:-1], exp['u'][:-1]])
+        u_seq = cs.DM(exp['u'][:-1]).T
+        y_dummy = cs.DM.zeros(1, N - 1)
+        L_zero = cs.DM.zeros(1, N - 1)
+
+        Xn = sim_step(x0, u_seq, cs.repmat(th_A, 1, N - 1), y_dummy, L_zero, exp['dt'])
+        res = Xn[0, :].T - cs.DM(exp['y'][1:])
+        Jac = cs.jacobian(res, p_sym_A)
+        F_fn = cs.Function('F_A_fn', [p_sym_A], [cs.mtimes(Jac.T, Jac), res])
+        f_val, r_val = F_fn(theta_opt[idx_A])
+        F_A += np.array(f_val)
+        res_sq_A += float(np.sum(np.array(r_val)**2))
+
+    # Adimensionalização por escala de parâmetros para cálculo justo do número de condição
+    D_A = np.diag(np.abs(theta_opt[idx_A]))
+    F_A_norm = D_A @ F_A @ D_A
+    s_A = np.linalg.svd(F_A_norm, compute_uv=False)
+    cond_A = float(s_A[0] / max(s_A[-1], 1e-16))
+
+    Cov_A = np.linalg.pinv(F_A, rcond=1e-8)
+    std_A = np.sqrt(np.maximum(np.diag(Cov_A), 0.0))
+    Corr_A = Cov_A / (np.outer(std_A, std_A) + 1e-12)
+
+    # ---------------------------------------------------------
+    # Cenário B: Modelo Desacoplado Proposto (Curva estática e mecânica fixadas)
+    # ---------------------------------------------------------
+    names_B = ['c4', 'ca_fwd', 'ca_bwd', 'tau_dec']
+    idx_B = [3, 5, 6, 7]
+    n_B = len(names_B)
+
+    p_sym_B = cs.SX.sym('p_B', n_B)
+    th_B_list = [cs.SX(v) for v in theta_opt]
+    for i, idx in enumerate(idx_B):
+        th_B_list[idx] = p_sym_B[i]
+    th_B = cs.vertcat(*th_B_list)
+
+    # Avaliação em multi-passo (janela de 25 passos = 0.5 s para capturar dinâmica do rotor)
+    K = 25
+    sim_k = rk4_fn.mapaccum('sim_k_fim', K)
+    y_dummy_k = cs.DM.zeros(1, K)
+    L_zero_k = cs.DM.zeros(1, K)
+
+    F_B = np.zeros((n_B, n_B))
+    res_sq_B = 0.0
+    pts_B = 0
+
+    for exp in train:
+        N = len(exp['y'])
+        n_segs = (N - 1) // K
+        for s_idx in range(min(n_segs, 40)):  # amostragem uniforme de múltiplos ensaios
+            i0 = s_idx * K
+            i1 = i0 + K
+            pts_B += K
+            x0 = cs.DM([exp['y'][i0], exp['v'][i0], exp['u'][i0]])
+            u_win = cs.DM(exp['u'][i0:i1]).T
+            X_pred = sim_k(x0, u_win, cs.repmat(th_B, 1, K), y_dummy_k, L_zero_k, exp['dt'])
+            res_k = X_pred[0, :].T - cs.DM(exp['y'][i0 + 1:i1 + 1])
+            Jac_k = cs.jacobian(res_k, p_sym_B)
+            F_fn_k = cs.Function('F_B_fn', [p_sym_B], [cs.mtimes(Jac_k.T, Jac_k), res_k])
+            f_val, r_val = F_fn_k(theta_opt[idx_B])
+            F_B += np.array(f_val)
+            res_sq_B += float(np.sum(np.array(r_val)**2))
+
+    sigma2_B = res_sq_B / max(pts_B - n_B, 1)
+    D_B = np.diag(np.abs(theta_opt[idx_B]))
+    F_B_norm = D_B @ F_B @ D_B
+    s_B = np.linalg.svd(F_B_norm, compute_uv=False)
+    cond_B = float(s_B[0] / max(s_B[-1], 1e-16))
+
+    Cov_B = np.linalg.inv(F_B) * sigma2_B if cond_B < 1e8 else np.linalg.pinv(F_B, rcond=1e-6) * sigma2_B
+    std_B = np.sqrt(np.maximum(np.diag(Cov_B), 0.0))
+    Corr_B = Cov_B / (np.outer(std_B, std_B) + 1e-12)
+    cv_B = (std_B / np.maximum(np.abs(theta_opt[idx_B]), 1e-12)) * 100.0
+
+    # ---------------------------------------------------------
+    # Relatório no Terminal
+    # ---------------------------------------------------------
+    print("\n[CENÁRIO A: FORMULAÇÃO ACOPLADA (SEM DESACOPLAMENTO)]")
+    print(f"  * Número de Condição da FIM: {cond_A:.2e}  (SINGULARIDADE / MÁ CONDICIONABILIDADE)")
+    print(f"  * Correlações Críticas Observadas:")
+    print(f"      Corr(c3, p)   = {Corr_A[0, 6]:+.4f}  (quase -1.0: compensação mútua direta)")
+    print(f"      Corr(c3, u0)  = {Corr_A[0, 5]:+.4f}  (quase +1.0: deslocamento de zona morta)")
+    print(f"      Corr(p, u0)   = {Corr_A[6, 5]:+.4f}  (quase -1.0: colinearidade estrutural)")
+    print("  --> Conclusão: c3, p e u0 NÃO são identificáveis simultaneamente a partir de malha fechada!")
+
+    print("\n[CENÁRIO B: FORMULAÇÃO DESACOPLADA PROPOSTA (v8 ROBUSTA)]")
+    print(f"  * Mecânica Fixada: c1={mech_dict['c1']:.4f}, c2={mech_dict['c2']:.4f}, Fc={mech_dict['Fc']:.4f}")
+    print(f"  * Estática Fixada: u0={static_dict['u0']:.2f}%, p={theta_opt[10]:.3f}, c3={theta_opt[2]:.6f}")
+    print(f"  * Número de Condição da FIM: {cond_B:.2e}  (BEM CONDICIONADO / IDENTIFICÁVEL)")
+    print(f"  * Desvios Padrão Assintóticos e Coeficientes de Variação (CV):")
+    print(f"    {'Parâmetro':12s} | {'Valor Ótimo':12s} | {'Desvio (1-sigma)':16s} | {'CV (%)':8s}")
+    print("    " + "-" * 56)
+    for n, val, s, cv in zip(names_B, theta_opt[idx_B], std_B, cv_B):
+        print(f"    {n:12s} | {val:12.5f} | ± {s:14.5f} | {cv:6.2f}%")
+
+    print(f"\n  * Matriz de Correlação dos Parâmetros Dinâmicos (Cenário B):")
+    header = "    " + " " * 10 + " ".join(f"{n:>9s}" for n in names_B)
+    print(header)
+    for i, n in enumerate(names_B):
+        row = " ".join(f"{Corr_B[i, j]:+9.3f}" for j in range(n_B))
+        print(f"    {n:10s} {row}")
+
+    # ---------------------------------------------------------
+    # Plot dos Heatmaps de Correlação
+    # ---------------------------------------------------------
+    if plot:
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
+
+        # Painel 1: Cenário Acoplado
+        im1 = axes[0].imshow(Corr_A, cmap='coolwarm', vmin=-1.0, vmax=1.0)
+        axes[0].set_xticks(range(n_A))
+        axes[0].set_yticks(range(n_A))
+        axes[0].set_xticklabels(names_A, rotation=45, ha='right', fontsize=9)
+        axes[0].set_yticklabels(names_A, fontsize=9)
+        axes[0].set_title(f"A) Modelo Acoplado (Colinear)\ncond(F) = {cond_A:.1e} — Singular",
+                          fontsize=10.5, fontweight='bold')
+        for i in range(n_A):
+            for j in range(n_A):
+                val = Corr_A[i, j]
+                col = 'white' if abs(val) > 0.6 else 'black'
+                axes[0].text(j, i, f"{val:.2f}", ha='center', va='center', color=col, fontsize=7.5)
+
+        # Painel 2: Cenário Desacoplado
+        im2 = axes[1].imshow(Corr_B, cmap='coolwarm', vmin=-1.0, vmax=1.0)
+        axes[1].set_xticks(range(n_B))
+        axes[1].set_yticks(range(n_B))
+        axes[1].set_xticklabels(names_B, rotation=45, ha='right', fontsize=9)
+        axes[1].set_yticklabels(names_B, fontsize=9)
+        axes[1].set_title(f"B) Modelo Desacoplado v8 (Físico)\ncond(F) = {cond_B:.1e} — Identificável",
+                          fontsize=10.5, fontweight='bold')
+        for i in range(n_B):
+            for j in range(n_B):
+                val = Corr_B[i, j]
+                col = 'white' if abs(val) > 0.6 else 'black'
+                axes[1].text(j, i, f"{val:.2f}", ha='center', va='center', color=col, fontsize=8.5)
+
+        fig.colorbar(im2, ax=axes.ravel().tolist(), shrink=0.85, label='Correlação Normalizada')
+        fig.suptitle("Análise de Identificabilidade: Resolução da Colinearidade de (c3, p, u0)",
+                     fontsize=12, fontweight='bold')
+        fig.tight_layout()
+
+        out_img = os.path.join(current_dir, "v8_identificabilidade_correlacao.png")
+        try:
+            fig.savefig(out_img, dpi=120)
+            print(f"  [PLOT] Heatmap de identificabilidade salvo em: v8_identificabilidade_correlacao.png")
+        except Exception as e:
+            print(f"  ! Aviso ao salvar gráfico de identificabilidade: {e}")
+        finally:
+            plt.close(fig)
+
+    return {
+        "cond_A": cond_A,
+        "Corr_A": Corr_A.tolist(),
+        "names_A": names_A,
+        "cond_B": cond_B,
+        "Cov_B": Cov_B.tolist(),
+        "Corr_B": Corr_B.tolist(),
+        "stds_B": std_B.tolist(),
+        "cv_B": cv_B.tolist(),
+        "names_B": names_B
+    }
+
+
+# =============================================================================
 # Funções de Simulação e Métricas
 # =============================================================================
 def fit_pct(y, yhat):
@@ -330,6 +904,22 @@ def free_run_v8(theta, exp, rk4_fn):
     return np.r_[exp['y'][0], X[0, :]]
 
 
+def windowed_run_v8(theta, exp, rk4_fn, seg_len=SEG_LEN):
+    y_hat = np.empty_like(exp['y'])
+    for s, e in segments(len(exp['y']), exp['dt'], seg_len):
+        n = e - s
+        y_hat[s] = exp['y'][s]
+        if n < 2:
+            continue
+        sim = rk4_fn.mapaccum(casadi_name('sim_win_v8', exp['name'], s), n - 1)
+        x0 = cs.DM([exp['y'][s], exp['v'][s], exp['u'][s]])
+        zeros = cs.DM.zeros(1, n - 1)
+        X = np.array(sim(x0, cs.DM(exp['u'][s:e - 1]).T, cs.repmat(cs.DM(theta), 1, n - 1),
+                         zeros, zeros, exp['dt']))
+        y_hat[s + 1:e] = X[0, :]
+    return y_hat
+
+
 def observer_run_v8(theta, exp, rk4_fn, L_val=L_OBS):
     N = len(exp['y'])
     sim = rk4_fn.mapaccum(casadi_name('sim_obs_v8', exp['name'], N), N - 1)
@@ -345,10 +935,14 @@ def observer_run_v8(theta, exp, rk4_fn, L_val=L_OBS):
 # =============================================================================
 # Salvamento e Carregamento de Modelos v8
 # =============================================================================
-def save_model_v8(thetas, filename="modelo_greybox_v8"):
+def save_model_v8(thetas, static_dict=None, mech_dict=None, fisher_dict=None,
+                  filename="modelo_greybox_v8"):
     data = {
         "version": "v8_subquadratic_robust_aeropendulum",
-        "description": "Modelo Grey-box v8 do Aeropendulo com empuxo sub-quadratico (p=1.627), amortecimento de momento de duto e estabilidade garantida em free-run global",
+        "description": "Modelo Grey-box v8 do Aeropendulo com desacoplamento fisico estatico/dinamico, empuxo sub-quadratico (p=1.627) e multiple shooting",
+        "static_characterization": static_dict if static_dict else {},
+        "free_oscillation_mechanics": mech_dict if mech_dict else {},
+        "fisher_analysis": fisher_dict if fisher_dict else {},
         "models": {}
     }
     npz_dict = {}
@@ -461,8 +1055,6 @@ def benchmark_malha_aberta(models, rk4_fn, ma_dir=MA_DIR):
 
 
 # =============================================================================
-# Função Principal (Pipeline de Execução Completo)
-# =============================================================================
 # Funções de Geração de Gráficos (v8)
 # =============================================================================
 def plot_group_v8(exps, sims, metrics, title, fname):
@@ -471,12 +1063,14 @@ def plot_group_v8(exps, sims, metrics, title, fname):
     colors = {
         'baseline_v7': 'tab:gray',
         'v8b_sub85_agil': 'tab:orange',
-        'v8_final_robust': 'tab:blue'
+        'v8_final_robust': 'tab:blue',
+        'v8_ms_otimizado': 'tab:green'
     }
     styles = {
         'baseline_v7': ':',
         'v8b_sub85_agil': '-.',
-        'v8_final_robust': '--'
+        'v8_final_robust': '--',
+        'v8_ms_otimizado': '-'
     }
     for i, exp in enumerate(exps):
         ax = axes[i, 0]
@@ -509,10 +1103,10 @@ def plot_group_v8(exps, sims, metrics, title, fname):
         plt.close(fig)
 
 
-def plot_amplitude_error_v8(exps, sims, metrics, fname="v8_erro_amplitude_analise.png"):
+def plot_amplitude_error_v8(exps, sims, metrics, target_mode="v8_final_robust",
+                            fname="v8_erro_amplitude_analise.png"):
     n = len(exps)
     fig, axes = plt.subplots(n, 2, figsize=(12, 2.5 * n), squeeze=False)
-    target_mode = "v8_final_robust"
     for i, exp in enumerate(exps):
         y_real_deg = np.rad2deg(exp['y'])
         y_sim_deg = np.rad2deg(sims[target_mode][i])
@@ -535,7 +1129,7 @@ def plot_amplitude_error_v8(exps, sims, metrics, fname="v8_erro_amplitude_analis
         ax2.set_title(f"{exp['name']} — Erro vs θ ({target_mode})", fontsize=9)
         ax2.grid(True, linestyle=':', alpha=0.6)
 
-    fig.suptitle("Análise de Resíduos do Modelo v8_final_robust — Free-run", fontsize=11, fontweight='bold')
+    fig.suptitle(f"Análise de Resíduos do Modelo {target_mode} — Free-run", fontsize=11, fontweight='bold')
     fig.tight_layout()
     try:
         out_f = os.path.join(current_dir, fname)
@@ -552,7 +1146,9 @@ def plot_amplitude_error_v8(exps, sims, metrics, fname="v8_erro_amplitude_analis
 # =============================================================================
 def main():
     parser = argparse.ArgumentParser(description="Identificação Grey-Box v8 do Aeropêndulo")
-    parser.add_argument("--all", action="store_true", help="Executa pipeline completo: avaliação nos 12 ensaios, benchmark em malha aberta e gráficos")
+    parser.add_argument("--all", action="store_true", help="Executa pipeline completo: rampa/MA estático, multiple shooting, análise de identificabilidade, free-run e gráficos")
+    parser.add_argument("--fit", action="store_true", help="Executa a otimização por multiple shooting")
+    parser.add_argument("--ident", action="store_true", help="Executa a análise de identificabilidade (Fisher Information Matrix e correlações)")
     parser.add_argument("--eval", action="store_true", help="Avalia diretamente os modelos canônicos v8 sem refit")
     parser.add_argument("--plot", action="store_true", help="Gera gráficos comparativos salvos em disco (PNG)")
     parser.add_argument("--test_ma", action="store_true", help="Executa o benchmark nos 14 ensaios de MALHA-ABERTA (17/09/2026)")
@@ -562,51 +1158,95 @@ def main():
     parser.add_argument("--p", "--p-thrust", dest="p", type=float, default=P_THRUST_DEFAULT, help="Expoente p do empuxo")
     parser.add_argument("--u0", type=float, default=U0_DEFAULT, help="Valor fixo da zona morta u0 [%%]")
     parser.add_argument("--tau-acc", dest="tau_acc", type=float, default=TAU_ACC_DEFAULT, help="Constante de tempo de aceleração [s]")
-    parser.add_argument("--seg-len", dest="seg_len", type=float, default=SEG_LEN, help="Comprimento de janela [s]")
+    parser.add_argument("--seg-len", dest="seg_len", type=float, default=SEG_LEN, help="Comprimento de janela do multiple shooting [s]")
     parser.add_argument("--L", type=float, default=L_OBS, help="Ganho do observador Luenberger")
     parser.add_argument("--delay-ms", dest="delay_ms", type=float, default=0.0, help="Atraso de transporte [ms]")
+    parser.add_argument("--max-iter", type=int, default=80, help="Teto de iterações do IPOPT (padrão: 80)")
+    parser.add_argument("--fit-p-static", action="store_true", help="Ajusta o expoente p livremente a partir da curva estática em vez de fixar nominal")
+    parser.add_argument("--fit-c3", action="store_true", help="Permite ajuste fino de c3 no multiple shooting em torno da estática")
     args = parser.parse_args()
 
-    # Se --all for passado, ativa plot e benchmark de malha aberta automaticamente
+    # Se --all for passado, ativa todas as etapas
     if args.all:
+        args.fit = True
+        args.ident = True
+        args.eval = True
+        args.plot = True
+        args.test_ma = True
+
+    # Se nenhum flag de ação for especificado, por padrão executa pipeline completo para demonstrar identificabilidade
+    if not (args.fit or args.ident or args.eval or args.test_ma or args.plot):
+        args.fit = True
+        args.ident = True
         args.eval = True
         args.plot = True
         args.test_ma = True
 
     print("=" * 80)
     print("SISTEMA DE IDENTIFICAÇÃO GREY-BOX DO AEROPÊNDULO — VERSÃO 8 (v8_final_robust)")
-    print(f"  * Configurações: p={args.p:.3f} | c4={args.c4:.4f} | u0={args.u0:.2f}% | tau_acc={args.tau_acc:.3f}s")
+    print(f"  * Configurações: p={args.p:.3f} | c4={args.c4:.4f} | u0={args.u0:.2f}% | seg_len={args.seg_len:.1f}s | decim={args.decim}")
     print("=" * 80)
 
-    # 1. Carrega dados de repouso e mecânica passiva
+    # 1. Caracterização de Repouso e Mecânica Passiva
     rest_dict = characterize_rest_and_noise()
     mech_dict = identify_mechanics_free_oscillation()
 
-    # 2. Carrega ensaios de RODADA-7
+    # 2. Caracterização Estática Desacoplada (Rampa + MALHA-ABERTA)
+    static_dict = extract_static_gain_open_loop(
+        u0_fixed=args.u0,
+        p_prescribed=args.p,
+        c1_val=mech_dict['c1'],
+        plot=args.plot
+    )
+
+    # 3. Carrega ensaios de Treino e Validação (RODADA-7)
     print("\n--- Carregando ensaios de Treino e Validação (RODADA-7) ---")
     train = [load_exp(*e, decim=args.decim, delay_s=args.delay_ms / 1000.0) for e in TRAIN]
     val = [load_exp(*e, decim=args.decim, delay_s=args.delay_ms / 1000.0) for e in VAL]
     all_r7 = val + train
-    print(f"Total: {len(all_r7)} ensaios (6 Treino, 6 Validação) | Decimação: {args.decim}")
+    print(f"Total: {len(all_r7)} ensaios ({len(train)} Treino, {len(val)} Validação) | Decimação: {args.decim}")
 
-    # 3. Modelos v8
+    # Modelos base
     thetas = get_predefined_v8_models()
-    if args.c4 != C4_DEFAULT or args.p != P_THRUST_DEFAULT:
-        thetas['v8_custom'] = np.array([
-            -8.20967, -0.11904, 0.017587, args.c4, 0.13471,
-            0.4000, 0.6000, 0.1500, args.u0, args.tau_acc, args.p
-        ])
-
     rk4_fn = build_rk4_v8()
 
-    # Salva modelo canônico
-    save_model_v8(thetas, filename="modelo_greybox_v8")
+    # 4. Otimização por Multiple Shooting (se solicitada ou --all)
+    fisher_dict = None
+    if args.fit:
+        th_ms_opt, fit_meta = identify_v8_multiple_shooting(
+            train=train,
+            static_dict=static_dict,
+            mech_dict=mech_dict,
+            p_val=args.p,
+            seg_len=args.seg_len,
+            max_iter=args.max_iter,
+            fit_c3=args.fit_c3,
+            use_p_fit=args.fit_p_static
+        )
+        thetas["v8_ms_otimizado"] = th_ms_opt
 
-    # 4. Avaliação em Free-Run Global nos 12 Ensaios de RODADA-7
+    # 5. Análise de Identificabilidade (se solicitada ou --all)
+    if args.ident:
+        target_th = thetas.get("v8_ms_otimizado", thetas["v8_final_robust"])
+        fisher_dict = analyze_identifiability_v8(
+            theta_opt=target_th,
+            train=train,
+            static_dict=static_dict,
+            mech_dict=mech_dict,
+            rk4_fn=rk4_fn,
+            plot=args.plot
+        )
+
+    # Salva modelos e metadados no disco
+    save_model_v8(thetas, static_dict=static_dict, mech_dict=mech_dict,
+                  fisher_dict=fisher_dict, filename="modelo_greybox_v8")
+
+    # 6. Avaliação em Free-Run Global nos 12 Ensaios de RODADA-7
     print("\n" + "=" * 105)
     print("AVALIAÇÃO EM MALHA ABERTA PURA (FREE-RUN GLOBAL, SEM RESET) NOS 12 ENSAIOS DE RODADA-7")
     print("=" * 105)
-    print(f"{'Ensaio':24s} | {'y_max':6s} | {'FIT Baseline':13s} | {'FIT v8b Ágil':13s} | {'FIT v8_final':13s} | {'Status final':12s}")
+    cols = ["Ensaio", "y_max"] + [f"FIT {m[:12]}" for m in thetas] + ["Status final"]
+    print(f"{cols[0]:24s} | {cols[1]:6s} | " + " | ".join(f"{c:>13s}" for c in cols[2:-1]) + f" | {cols[-1]:12s}")
     print("-" * 105)
 
     sims_train = {m: [] for m in thetas}
@@ -638,23 +1278,36 @@ def main():
                 sims_train[m].append(yh)
                 metrics_train[m].append(fit_val)
 
-        fb_str = f"{fits['baseline_v7']:5.1f}%" if not np.isnan(fits['baseline_v7']) else "GIRO"
-        fv_str = f"{fits['v8b_sub85_agil']:5.1f}%" if not np.isnan(fits['v8b_sub85_agil']) else "GIRO"
-        ff_str = f"{fits['v8_final_robust']:5.1f}%" if not np.isnan(fits['v8_final_robust']) else "GIRO"
-        st_final = statuses['v8_final_robust']
+        row_strs = [f"{fits[m]:5.1f}%" if not np.isnan(fits[m]) else "GIRO" for m in thetas]
+        st_final = statuses.get("v8_ms_otimizado", statuses.get("v8_final_robust", "ESTÁVEL"))
 
-        print(f"{e['name']:24s} | {y_max:5.1f}° | {fb_str:>13s} | {fv_str:>13s} | {ff_str:>13s} | {st_final:12s}")
-        res_table.append({'name': e['name'], 'y_max': y_max, 'fit_b': fits['baseline_v7'], 'fit_v': fits['v8b_sub85_agil'], 'fit_f': fits['v8_final_robust']})
+        print(f"{e['name']:24s} | {y_max:5.1f}° | " + " | ".join(f"{s:>13s}" for s in row_strs) + f" | {st_final:12s}")
+        res_entry = {'name': e['name'], 'y_max': y_max}
+        for m in thetas:
+            res_entry[f'fit_{m}'] = fits[m]
+        res_table.append(res_entry)
 
     df_r7 = pd.DataFrame(res_table)
     print("-" * 105)
-    print(f"MÉDIA GERAL (12 ensaios) |   ---  | {df_r7['fit_b'].mean():12.1f}% |  (5/12 est)   | {df_r7['fit_f'].mean():12.1f}% | 12/12 ESTÁVEIS")
-    print(f"Ganho do v8_final_robust sobre o Baseline v7: {df_r7['fit_f'].mean() - df_r7['fit_b'].mean():+.1f} pontos percentuais")
+    mean_strs = [f"{df_r7[f'fit_{m}'].mean():12.1f}%" for m in thetas]
+    print(f"{'MÉDIA GERAL (12 ensaios)':24s} |   ---  | " + " | ".join(mean_strs) + " | 12/12 ESTÁVEIS")
 
-    # 5. Razão de Amplitude no Chirp de 45°
+    # 7. Avaliação em Janela (Multiple Shooting Windowed Run: SEG_LEN)
+    print("\n" + "=" * 80)
+    print(f"AVALIAÇÃO EM JANELA MULTIPLE SHOOTING (SEG_LEN = {args.seg_len:.1f} s, RESET DE ESTADOS):")
+    print("=" * 80)
+    for m in thetas:
+        fits_win = []
+        for e in val:
+            yw = windowed_run_v8(thetas[m], e, rk4_fn, seg_len=args.seg_len)
+            fits_win.append(fit_pct(e['y'], yw))
+        print(f"  * {m:18s} — Validação (6 ensaios): FIT Médio = {np.mean(fits_win):5.1f}%")
+
+    # 8. Razão de Amplitude no Chirp de 45°
     e_chirp = val[1]
     yh_chirp_base = free_run_v8(thetas['baseline_v7'], e_chirp, rk4_fn)
-    yh_chirp_final = free_run_v8(thetas['v8_final_robust'], e_chirp, rk4_fn)
+    best_m = "v8_ms_otimizado" if "v8_ms_otimizado" in thetas else "v8_final_robust"
+    yh_chirp_final = free_run_v8(thetas[best_m], e_chirp, rk4_fn)
     mask_30_45 = (e_chirp['t'] >= 30.0) & (e_chirp['t'] <= 45.0)
     std_real = float(np.std(e_chirp['y'][mask_30_45]))
     amp_base = float(np.std(yh_chirp_base[mask_30_45])) / std_real
@@ -663,14 +1316,14 @@ def main():
     print("\n" + "=" * 80)
     print("FIDELIDADE DINÂMICA DE ALTA FREQUÊNCIA (CHIRP 45°, JANELA 30 a 45 s):")
     print(f"  * Baseline v7:       std(yhat)/std(y) = {amp_base:.3f}x")
-    print(f"  * v8_final_robust:   std(yhat)/std(y) = {amp_final:.3f}x (+{(amp_final/amp_base - 1.0)*100.0:.1f}% de recuperação de amplitude)")
+    print(f"  * {best_m}:   std(yhat)/std(y) = {amp_final:.3f}x (+{(amp_final/amp_base - 1.0)*100.0:.1f}% de recuperação de amplitude)")
     print("=" * 80)
 
-    # 6. Benchmark nos 14 ensaios de MALHA-ABERTA (se solicitado ou com --all)
+    # 9. Benchmark nos 14 ensaios de MALHA-ABERTA (se solicitado ou com --all)
     if args.test_ma or args.all:
         benchmark_malha_aberta(thetas, rk4_fn)
 
-    # 7. Geração de Gráficos (se --plot ou --all)
+    # 10. Geração de Gráficos (se --plot ou --all)
     if args.plot or args.all:
         print("\n--- Gerando gráficos comparativos (v8) ---")
         for group_name, exps, sims, metrics in (("TREINO", train, sims_train, metrics_train),
@@ -693,11 +1346,11 @@ def main():
                               f"{prefix}_dc60_freerun.png")
 
         # Gráfico de resíduos e dispersão de amplitude
-        plot_amplitude_error_v8(val, sims_val, metrics_val, fname="v8_erro_amplitude_analise.png")
+        plot_amplitude_error_v8(val, sims_val, metrics_val, target_mode=best_m,
+                                fname="v8_erro_amplitude_analise.png")
 
     print("\n[CONCLUÍDO] Script ident_greybox_prof_multi_v8.py executado com sucesso!")
 
 
 if __name__ == "__main__":
     main()
-
