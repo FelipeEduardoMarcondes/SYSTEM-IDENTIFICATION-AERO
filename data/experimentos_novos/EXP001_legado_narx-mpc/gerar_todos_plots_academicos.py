@@ -292,10 +292,16 @@ ax.plot(t_extracted, dt_extracted * 1000.0, color='#1f77b4', linestyle='-', line
 ax.axhline(10.0, color='#d62728', linestyle='--', linewidth=1.4, 
            label=r'Período de Amostragem $T_s = 10$ ms (Deadline)')
 
-# Anotação com seta indicando os picos
-ax.annotate('Pico por transição\nde degrau (0,46 s)', 
-            xy=(9.5, 455), xytext=(12.0, 420),
-            arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=6),
+# Seta para o pico inicial de cold-start (t = 0 s, 458 ms)
+ax.annotate('Cold-start inicial\n(458 ms)', 
+            xy=(0.0, 458), xytext=(1.8, 420),
+            arrowprops=dict(facecolor='black', shrink=0.08, width=0.8, headwidth=5),
+            fontsize=8.5)
+
+# Seta para o pico de transição dinâmica (t = 9.17 s, 333 ms)
+ax.annotate('Pico em transição\nde degrau (333 ms)', 
+            xy=(9.17, 333), xytext=(11.5, 320),
+            arrowprops=dict(facecolor='black', shrink=0.08, width=0.8, headwidth=5),
             fontsize=8.5)
 
 ax.set_xlabel('Tempo [s]')

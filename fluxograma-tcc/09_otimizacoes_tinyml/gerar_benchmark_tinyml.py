@@ -1,7 +1,7 @@
 """
 Script de Geração do Benchmark de Otimização e TinyML (GCC vs X-CUBE-AI)
-Perspectiva Completa de Firmware Embarcado (Opção 2):
-- Painel (a): Latência de Inferência Determinística (t_ann) e Aceleração
+Perspectiva Completa de Firmware Embarcado (Opção 2 - Design Limpo):
+- Painel (a): Latência de Inferência Determinística (t_ann) e Limite de Tempo Real (Ts = 10 ms)
 - Painel (b): Pegada Total de Flash no Firmware STM32 (Pesos + Código/Runtime)
 
 Microcontrolador: STM32F446RE (ARM Cortex-M4 a 180 MHz, 512 KB Flash, 128 KB SRAM)
@@ -42,24 +42,18 @@ def gerar_benchmark_firmware_completo(save_paths):
         'X-CUBE-AI (Alta Comp.)'
     ]
 
-    tempos = [4.96, 2.46, 2.08, 1.98, 1.69, 1.82]
-    speedups = [1.00, 2.02, 2.38, 2.51, 2.93, 2.73]
-    ocupacoes = [49.6, 24.6, 20.8, 19.8, 16.9, 18.2]
+    tempos = [10.07, 2.46, 2.08, 1.98, 1.69, 1.82]
 
     # Dados medidos de Flash
     # Pesos da rede neural:
     pesos = [130.50, 130.50, 130.50, 130.50, 130.50, 17.75]
     # Flash total do binário do firmware STM32 (KB):
-    # GCC: 183.05, 173.70, 174.14, 175.63 KB
-    # X-CUBE-AI: base firmware (~43.20 KB) + modelo ST (139.05 KiB = 182.25 KB | 26.31 KiB = 69.51 KB)
     flash_totais = [183.05, 173.70, 174.14, 175.63, 182.25, 69.51]
     codigo_app = [tot - p for tot, p in zip(flash_totais, pesos)]
 
     # Inverter ordem para -O0 ficar no topo
     y_labels = labels[::-1]
     y_tempos = tempos[::-1]
-    y_speedups = speedups[::-1]
-    y_ocupacoes = ocupacoes[::-1]
     y_pesos = pesos[::-1]
     y_totais = flash_totais[::-1]
     y_codigo = codigo_app[::-1]
@@ -73,7 +67,7 @@ def gerar_benchmark_firmware_completo(save_paths):
         '#1d4ed8',  # C Nativo -O3
         '#2563eb',  # C Nativo -Os
         '#3b82f6',  # C Nativo -O1
-        '#64748b',  # C Nativo -O0 (Cinza ardósia - base)
+        '#ef4444',  # C Nativo -O0 (Vermelho alerta - estouro de deadline)
     ]
 
     bar_weights_colors = [
@@ -94,7 +88,7 @@ def gerar_benchmark_firmware_completo(save_paths):
         '#94a3b8',
     ]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9.8, 4.4), sharey=True)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10.0, 4.4), sharey=True)
 
     # Fundos sutis para identificação de blocos
     ax1.axhspan(2.15, 6.4, facecolor='#f8fafc', alpha=0.9, zorder=0)
@@ -106,33 +100,36 @@ def gerar_benchmark_firmware_completo(save_paths):
     ax1.axhline(2.15, color='#cbd5e1', linestyle='-', linewidth=1.0, zorder=1)
     ax2.axhline(2.15, color='#cbd5e1', linestyle='-', linewidth=1.0, zorder=1)
 
-    # --- SUBPLOT 1: TEMPO DE INFERÊNCIA ---
+    # --- SUBPLOT 1: TEMPO DE INFERÊNCIA LIMPO ---
     bars1 = ax1.barh(y_pos, y_tempos, height=0.60, color=time_colors,
                      edgecolor='#0f172a', linewidth=0.65, zorder=3)
+
+    # Linha limite de tempo real (Deadline Ts = 10 ms)
+    ax1.axvline(10.0, color='#dc2626', linestyle=':', linewidth=1.2, zorder=2)
+    ax1.text(10.0, 6.18, 'Limite $T_s = 10$ ms', color='#b91c1c', fontsize=8.0,
+             fontweight='bold', ha='center', va='bottom',
+             bbox=dict(boxstyle='round,pad=0.2', facecolor='#fee2e2', edgecolor='#f87171', linewidth=0.6))
+
     ax1.set_yticks(y_pos)
     ax1.set_yticklabels(y_labels, color='#0f172a')
     ax1.set_xlabel('Tempo de Inferência ($t_{\\mathrm{ann}}$) [ms]', fontweight='bold')
     ax1.set_title('(a) Tempo de Inferência por Passo ($t_{\\mathrm{ann}}$)', fontweight='bold', pad=10)
-    ax1.set_xlim(0, 6.6)
+    ax1.set_xlim(0, 12.2)
     ax1.set_ylim(-0.2, 6.5)
     ax1.grid(True, axis='x', zorder=2)
 
-    for b, t, sp, oc in zip(bars1, y_tempos, y_speedups, y_ocupacoes):
+    for b, t in zip(bars1, y_tempos):
         w = b.get_width()
-        is_best = (t == 1.69)
         y_mid = b.get_y() + b.get_height() / 2
-        if is_best:
-            txt = f" {t:.2f} ms ({sp:.2f}× | {oc:.1f}%) [Mais Rápido]"
-            ax1.text(w + 0.1, y_mid, txt, va='center', ha='left',
-                     fontsize=8.5, fontweight='bold', color='#0284c7', zorder=4)
-        elif sp == 1.0:
-            txt = f" {t:.2f} ms (1.00× Ref. | {oc:.1f}%)"
-            ax1.text(w + 0.1, y_mid, txt, va='center', ha='left',
-                     fontsize=8.5, color='#64748b', zorder=4)
+        if t == 1.69:
+            ax1.text(w + 0.18, y_mid, f"{t:.2f} ms", va='center', ha='left',
+                     fontsize=8.8, fontweight='bold', color='#0284c7', zorder=4)
+        elif t > 10.0:
+            ax1.text(w + 0.18, y_mid, f"{t:.2f} ms", va='center', ha='left',
+                     fontsize=8.8, fontweight='bold', color='#b91c1c', zorder=4)
         else:
-            txt = f" {t:.2f} ms ({sp:.2f}× | {oc:.1f}%)"
-            ax1.text(w + 0.1, y_mid, txt, va='center', ha='left',
-                     fontsize=8.5, color='#1e293b', zorder=4)
+            ax1.text(w + 0.18, y_mid, f"{t:.2f} ms", va='center', ha='left',
+                     fontsize=8.8, color='#1e293b', zorder=4)
 
     # --- SUBPLOT 2: FLASH TOTAL EMPILHADA ---
     b_pesos = ax2.barh(y_pos, y_pesos, height=0.60, color=bar_weights_colors,
