@@ -8,9 +8,10 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ── Serial ────────────────────────────────────────────────────────────────────
-BAUD           = 500_000
-SERIAL_TIMEOUT = 1.0          # s — timeout de readline em coleta normal
-WAVE_CHUNK     = 250         # amostras por bloco DATA= (limite ~250 para RX_BUF_LEN=2048)
+BAUD                 = 500_000
+SERIAL_TIMEOUT       = 1.0          # s — timeout de readline em coleta normal
+SERIAL_WRITE_TIMEOUT = 3.0          # s — timeout de escrita (evita travamento do driver Windows)
+WAVE_CHUNK           = 200          # amostras por bloco DATA= (margem segura para RX_BUF_LEN=2048)
 
 # ── Amostragem ────────────────────────────────────────────────────────────────
 FS             = 100.0        # Hz — deve bater com o firmware (INTERVALO_US=10000)

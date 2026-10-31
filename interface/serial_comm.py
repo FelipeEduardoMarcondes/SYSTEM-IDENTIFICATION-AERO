@@ -3,7 +3,7 @@ serial_comm.py — Camada de comunicação serial com o firmware do aeropêndulo
 """
 
 import time
-from config import BAUD, SERIAL_TIMEOUT, WAVE_CHUNK
+from config import BAUD, SERIAL_TIMEOUT, SERIAL_WRITE_TIMEOUT, WAVE_CHUNK
 
 try:
     import serial
@@ -41,20 +41,22 @@ def selecionar_porta() -> str | None:
 
 
 class SerialManager:
-    def __init__(self, porta: str, baud: int = BAUD, timeout: float = SERIAL_TIMEOUT):
-        self._porta   = porta
-        self._baud    = baud
-        self._timeout = timeout
-        self.ser      = None
+    def __init__(self, porta: str, baud: int = BAUD, timeout: float = SERIAL_TIMEOUT, write_timeout: float = SERIAL_WRITE_TIMEOUT):
+        self._porta         = porta
+        self._baud          = baud
+        self._timeout       = timeout
+        self._write_timeout = write_timeout
+        self.ser            = None
 
     def conectar(self) -> bool:
         if not SERIAL_OK:
             print("  [ERRO] pyserial não instalado.")
             return False
         try:
-            self.ser = serial.Serial(self._porta, self._baud, timeout=self._timeout)
-            time.sleep(1.0)
+            self.ser = serial.Serial(self._porta, self._baud, timeout=self._timeout, write_timeout=self._write_timeout)
+            time.sleep(0.5)
             self.ser.reset_input_buffer()
+            self.ser.reset_output_buffer()
             self.enviar("REBOOT")  # Força o auto-reset no STM32
             self.ser.flush()
             print(f"  Conectado em {self._porta} @ {self._baud} baud (rebootando STM32...)")
@@ -121,7 +123,19 @@ class SerialManager:
             ini = bloco_idx * chunk
             fim = min(ini + chunk, n)
             valores = ",".join(f"{v:.2f}" for v in u[ini:fim])
-            self.enviar(f"DATA={valores}")
+            try:
+
+                self.enviar(f"DATA={valores}")
+
+            except serial.SerialTimeoutException:
+
+                time.sleep(0.05)
+
+                if self.ser and self.ser.is_open:
+
+                    self.ser.reset_output_buffer()
+
+                self.enviar(f"DATA={valores}")
 
             token_esperado = f"DATA_ACK {bloco_idx}"
             if not self.aguardar_token(token_esperado, timeout_s=10.0, verbose=False):

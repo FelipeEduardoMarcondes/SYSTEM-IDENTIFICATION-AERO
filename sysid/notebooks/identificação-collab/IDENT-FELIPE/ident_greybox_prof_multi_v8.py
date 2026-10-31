@@ -483,6 +483,8 @@ def segments(N, dt, seg_len):
 
 def identify_v8_multiple_shooting(train, static_dict, mech_dict,
                                    p_val=P_THRUST_DEFAULT,
+                                   c4_prior=C4_DEFAULT,
+                                   fix_c4=False,
                                    seg_len=SEG_LEN, max_iter=80, tol=1e-3,
                                    tight_bounds=False, fit_c3=False,
                                    use_p_fit=False):
@@ -516,13 +518,22 @@ def identify_v8_multiple_shooting(train, static_dict, mech_dict,
     print(f"    c1 = {c1_fix:.5f} | c2 = {c2_fix:.5f} | Fc = {Fc_fix:.5f}")
     print(f"    u0 = {u0_fix:.2f}% | p = {p_choice:.4f} | c3_static = {c3_base:.6f} rad/(s^2 * %^p)")
 
-    # Variáveis de Decisão Dinâmicas Livres (Escaladas em torno de 1.0)
-    p_c4 = opti.variable()
+    c4_target = float(c4_prior) if c4_prior is not None else C4_DEFAULT
+
+    if fix_c4:
+        c4 = c4_target
+        p_c4 = c4 / S_C4
+        print(f"  * c4 fixado rigidamente em: {c4_target:.5f} rad/(s * %)")
+    else:
+        p_c4 = opti.variable()
+        c4 = S_C4 * p_c4
+        opti.subject_to(opti.bounded(0.005 / S_C4, p_c4, 0.080 / S_C4))
+        opti.set_initial(p_c4, c4_target / S_C4)
+
     p_caf = opti.variable()
     p_cab = opti.variable()
     p_tdec = opti.variable()
 
-    c4 = S_C4 * p_c4
     ca_fwd = S_CA_FWD * p_caf
     ca_bwd = S_CA_BWD * p_cab
     tau_dec = S_TAU_DEC * p_tdec
@@ -537,18 +548,15 @@ def identify_v8_multiple_shooting(train, static_dict, mech_dict,
         c3 = c3_base
 
     # Limites Físicos Estritos
-    # 1. Inflow momentum damping: piso de 0.005 e teto de 0.080 rad/(s * %)
-    opti.subject_to(opti.bounded(0.005 / S_C4, p_c4, 0.080 / S_C4))
-    # 2. Arrasto de forma direcional (frente e ré)
+    # Arrasto de forma direcional (frente e ré)
     opti.subject_to(opti.bounded(0.050 / S_CA_FWD, p_caf, 1.500 / S_CA_FWD))
     opti.subject_to(opti.bounded(0.100 / S_CA_BWD, p_cab, 2.500 / S_CA_BWD))
     # Geometria de duto: arrasto em ré >= arrasto em frente
     opti.subject_to(ca_bwd >= ca_fwd)
-    # 3. Desaceleração da turbina: entre 50 ms e 350 ms
+    # Desaceleração da turbina: entre 50 ms e 350 ms
     opti.subject_to(opti.bounded(0.050 / S_TAU_DEC, p_tdec, 0.350 / S_TAU_DEC))
 
     # Valores Iniciais (Priors Robustos)
-    opti.set_initial(p_c4, C4_DEFAULT / S_C4)
     opti.set_initial(p_caf, C_AERO_FWD_DEFAULT / S_CA_FWD)
     opti.set_initial(p_cab, C_AERO_BWD_DEFAULT / S_CA_BWD)
     opti.set_initial(p_tdec, TAU_DEC_DEFAULT / S_TAU_DEC)
@@ -591,7 +599,8 @@ def identify_v8_multiple_shooting(train, static_dict, mech_dict,
         cost += cs.sumsqr(X[0, :] - cs.DM(exp['y']).T) / float(N)
 
     # Regularização suave em torno dos priors físicos (estabiliza espaço de busca)
-    cost += 0.5 * ((c4 - C4_DEFAULT) / C4_DEFAULT)**2
+    if not fix_c4:
+        cost += 0.5 * ((c4 - c4_target) / c4_target)**2
     cost += 0.2 * ((ca_fwd - C_AERO_FWD_DEFAULT) / C_AERO_FWD_DEFAULT)**2
     cost += 0.2 * ((ca_bwd - C_AERO_BWD_DEFAULT) / C_AERO_BWD_DEFAULT)**2
     cost += 0.5 * ((tau_dec - TAU_DEC_DEFAULT) / TAU_DEC_DEFAULT)**2
@@ -1154,7 +1163,8 @@ def main():
     parser.add_argument("--test_ma", action="store_true", help="Executa o benchmark nos 14 ensaios de MALHA-ABERTA (17/09/2026)")
     parser.add_argument("--mode", type=str, default=None, help="Modo ou modelo específico a avaliar")
     parser.add_argument("--decim", type=int, default=DECIM, help="Fator de decimação dos dados")
-    parser.add_argument("--c4", type=float, default=C4_DEFAULT, help="Valor de c4 a ser testado")
+    parser.add_argument("--c4", type=float, default=C4_DEFAULT, help="Valor prior/alvo de c4 [rad/(s * %%)]")
+    parser.add_argument("--fix-c4", action="store_true", help="Fixa c4 rigidamente no valor de --c4 sem otimizar livremente")
     parser.add_argument("--p", "--p-thrust", dest="p", type=float, default=P_THRUST_DEFAULT, help="Expoente p do empuxo")
     parser.add_argument("--u0", type=float, default=U0_DEFAULT, help="Valor fixo da zona morta u0 [%%]")
     parser.add_argument("--tau-acc", dest="tau_acc", type=float, default=TAU_ACC_DEFAULT, help="Constante de tempo de aceleração [s]")
@@ -1218,6 +1228,8 @@ def main():
             static_dict=static_dict,
             mech_dict=mech_dict,
             p_val=args.p,
+            c4_prior=args.c4,
+            fix_c4=args.fix_c4,
             seg_len=args.seg_len,
             max_iter=args.max_iter,
             fit_c3=args.fit_c3,

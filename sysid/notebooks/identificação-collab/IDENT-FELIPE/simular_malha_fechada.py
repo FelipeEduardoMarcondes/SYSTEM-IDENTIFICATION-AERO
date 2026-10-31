@@ -77,46 +77,39 @@ class STM32PIDController:
 class AeropenduloSimulator:
     """
     Simulador contínuo-discreto do aeropêndulo não-linear.
-    Compatível tanto com v2 (3ª ordem com tau_m) quanto com v1 (2ª ordem instantânea).
+    Compatível com v1 (2ª ordem), v2-v5 (3ª ordem quadrático) e v8-v9 (com rigidez k_th,
+    arrasto ca e expoente p).
     """
     def __init__(self, params):
         self.c1 = float(params['c1'])
         self.c2 = float(params['c2'])
         self.c3 = float(params['c3'])
+        self.k_th = float(params.get('k_th', 0.0))    # Rigidez elástica do cabo elétrico (v8/v9)
         self.Fc = float(params.get('Fc', 0.0))
         self.Fs = float(params.get('Fs', 0.0))
         self.vs = float(params.get('vs', 0.5))
-        self.c_aero = float(params.get('c_aero', 0.0))
+        self.c_aero = float(params.get('ca', params.get('c_aero', 0.0)))
         self.tau_m = float(params.get('tau_m', 0.0))  # 0.0 indica modelo v1 (atuador instantâneo)
-        self.u0 = float(params.get('u0', 0.0))        # zona morta do empuxo (v3)
+        self.u0 = float(params.get('u0', 0.0))        # Zona morta do motor/ESC [%]
+        self.p_thrust = float(params.get('p', 2.0))   # Expoente do empuxo aerodinâmico (v9: ~1.759)
 
     def deriv(self, th, w, a, u):
         fric = -(self.Fc + self.Fs * np.exp(-(w / self.vs)**2)) * np.tanh(50.0 * w)
-        # Empuxo: quadrático com zona morta u0 se disponível (suporta bidirecional com np.sign), ou a*|a|
-        if self.u0 > 1e-4:
-            if self.tau_m > 1e-4:
-                thrust = np.sign(a) * np.maximum(np.abs(a) - self.u0, 0.0)**2
-            else:
-                thrust = np.sign(u) * np.maximum(np.abs(u) - self.u0, 0.0)**2
-        else:
-            thrust = a * np.abs(a) if self.tau_m > 1e-4 else u * np.abs(u)
+        
+        # Ativação do motor
+        val_act = a if self.tau_m > 1e-4 else u
+        eff = np.maximum(np.abs(val_act) - self.u0, 0.0)
+        thrust = np.sign(val_act) * (eff ** self.p_thrust)
 
-        if self.tau_m > 1e-4:
-            # Modelo v2 / v3 (3ª ordem com dinâmica de motor)
-            acc = (self.c1 * np.sin(th)
-                   + self.c2 * w
-                   - self.c_aero * w * np.abs(w)
-                   + self.c3 * thrust
-                   + fric)
-            a_dot = (u - a) / self.tau_m
-        else:
-            # Modelo v1 (2ª ordem com empuxo instantâneo)
-            acc = (self.c1 * np.sin(th)
-                   + self.c2 * w
-                   - self.c_aero * w * np.abs(w)
-                   + self.c3 * thrust
-                   + fric)
-            a_dot = 0.0
+        # Aceleração angular com rigidez de cabo e freio aerodinâmico quadrático
+        acc = (self.c1 * np.sin(th)
+               - self.k_th * th
+               + self.c2 * w
+               - self.c_aero * w * np.abs(w)
+               + self.c3 * thrust
+               + fric)
+
+        a_dot = (u - a) / self.tau_m if self.tau_m > 1e-4 else 0.0
         return w, acc, a_dot
 
     def rk4_step(self, th, w, a, u, dt):
@@ -259,53 +252,58 @@ def plotar_comparacao(res, out_png=None):
 # =============================================================================
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Simulação em Malha Fechada com PID do STM32")
-    parser.add_argument("--version", "--v", type=str, default="v3", choices=["v1", "v2", "v3", "v4", "v5"],
-                        help="Versão do modelo grey-box: 'v1' (2ª ordem), 'v2' (3ª ordem com arrasto), 'v3' (3ª ordem mínimo), 'v4' (desacoplado) ou 'v5' (arrasto + zona morta)")
-    parser.add_argument("--model", type=str, default="c3 livre",
-                        choices=["c3 livre", "c3 fixo", "mecanica fixada", "mecanica regularizada"],
-                        help="Modo a usar: 'c3 livre', 'c3 fixo', 'mecanica fixada' ou 'mecanica regularizada' (padrão: c3 livre)")
+    parser.add_argument("--version", "--v", type=str, default="v9",
+                        help="Versão do modelo grey-box (ex: 'v1', 'v2', 'v3', 'v8', 'v9'). Padrão: v9")
+    parser.add_argument("--model", type=str, default=None,
+                        help="Modo/chave do modelo no JSON (ex: 'v9_otimizado', 'v9_completo_r1', 'c3 livre', etc.)")
     parser.add_argument("--file", type=str, default=None,
                         help="Arquivo específico de experimento da RODADA-7 para simular")
     parser.add_argument("--all", action="store_true",
                         help="Simular todos os 24 ensaios da RODADA-7 e exibir tabela consolidada")
     args = parser.parse_args()
 
-    # 1. Carrega modelo identificado (v1, v2, v3, v4 ou v5)
+    # 1. Carrega modelo identificado (v1 a v9)
     json_filename = f"modelo_greybox_{args.version}.json"
     json_path = os.path.join(current_dir, json_filename)
     if not os.path.exists(json_path):
         print(f"Erro: arquivo do modelo não encontrado em {json_path}")
-        if args.version == "v1":
-            print("  -> Execute primeiro: python ident_greybox_prof_multi.py para identificar e gerar o modelo v1.")
-        elif args.version == "v2":
-            print("  -> Execute primeiro: python ident_greybox_prof_multi_v2.py para identificar e gerar o modelo v2.")
-        elif args.version == "v3":
-            print("  -> Execute primeiro: python ident_greybox_prof_multi_v3.py para identificar e gerar o modelo v3.")
-        elif args.version == "v4":
-            print("  -> Execute primeiro: python ident_greybox_prof_multi_v4.py para identificar e gerar o modelo v4.")
-        elif args.version == "v5":
-            print("  -> Execute primeiro: python ident_greybox_prof_multi_v5.py para identificar e gerar o modelo v5.")
         sys.exit(1)
 
     with open(json_path, "r", encoding="utf-8") as f:
         mod_data = json.load(f)
 
-    if args.model not in mod_data.get("models", {}):
-        print(f"Erro: modo '{args.model}' não encontrado no JSON {json_filename}.")
+    models_dict = mod_data.get("models", {})
+    if args.model is None:
+        if "v9_otimizado" in models_dict:
+            model_key = "v9_otimizado"
+        elif "v9_completo_r1" in models_dict:
+            model_key = "v9_completo_r1"
+        elif "c3 livre" in models_dict:
+            model_key = "c3 livre"
+        else:
+            model_key = list(models_dict.keys())[0]
+    else:
+        model_key = args.model
+
+    if model_key not in models_dict:
+        print(f"Erro: modo '{model_key}' não encontrado no JSON {json_filename}. Modos disponíveis: {list(models_dict.keys())}")
         sys.exit(1)
 
-    params = mod_data["models"][args.model]["params"]
+    params = models_dict[model_key]["params"]
     print("\n" + "=" * 78)
-    print(f"SIMULAÇÃO EM MALHA FECHADA — MODELO: {args.version.upper()} ('{args.model.upper()}') + PID STM32")
+    print(f"SIMULAÇÃO EM MALHA FECHADA — MODELO: {args.version.upper()} ('{model_key.upper()}') + PID STM32")
     print("=" * 78)
     print(f"Arquivo do Modelo: {json_filename}")
     print(f"Parâmetros Identificados:")
     print(f"  c1 = {params['c1']:.4f} | c2 = {params['c2']:.4f} | c3 = {params['c3']:.6e}")
-    print(f"  Fc = {params.get('Fc', 0.0):.4f} | Fs = {params.get('Fs', 0.0):.4f} | vs = {params.get('vs', 0.0):.4f} rad/s")
-    if args.version in ("v2", "v3", "v4", "v5"):
-        print(f"  tau_m = {params.get('tau_m', 0.0):.4f} s | c_aero = {params.get('c_aero', 0.0):.4f} | u0 = {params.get('u0', 0.0):.2f}%")
-    else:
-        print(f"  tau_m = 0.0000 s (Atuador instantâneo) | c_aero = 0.0000")
+    k_th_val = params.get('k_th', 0.0)
+    p_thrust_val = params.get('p', 2.0)
+    ca_val = params.get('ca', params.get('c_aero', 0.0))
+    tau_m_val = params.get('tau_m', 0.0)
+    u0_val = params.get('u0', 0.0)
+    Fc_val = params.get('Fc', 0.0)
+    print(f"  k_th = {k_th_val:.4f} rad/s^2 | p = {p_thrust_val:.4f} | ca = {ca_val:.5f} rad^-1")
+    print(f"  u0 = {u0_val:.2f}% | tau_m = {tau_m_val*1000:.1f} ms | Fc = {Fc_val:.4f} rad/s^2")
     print(f"\nParâmetros do PID do Firmware STM32:")
     print(f"  Kp = 0.5793 | Ki = 0.6647 | Kd = 0.2000 | Ts = 10 ms (100 Hz)")
     print("=" * 78)

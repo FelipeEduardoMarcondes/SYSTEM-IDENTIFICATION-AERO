@@ -516,7 +516,7 @@ static void resetar_controlador(void)
     was_ann_mode = (ctrl_mode == CTRL_MODE_ANN) ? 1 : 0;
     y_1 = y_atual;
 #ifdef SIL_MODE
-#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V5)
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V9) || defined(MODEL_TYPE_GREYBOX_V5)
     sil_th_rad = 0.0f;
     sil_v_rad  = 0.0f;
     sil_a_pct  = 0.0f;
@@ -532,7 +532,7 @@ static void resetar_controlador(void)
     sil_u_hist[0] = 0.0f;
 #endif
 #else
-#if defined(MODEL_TYPE_GREYBOX_V5) || defined(MODEL_TYPE_GREYBOX_V3)
+#if defined(MODEL_TYPE_GREYBOX_V9) || defined(MODEL_TYPE_GREYBOX_V5) || defined(MODEL_TYPE_GREYBOX_V3)
     sil_th_rad = 0.0f;
     sil_v_rad  = 0.0f;
     sil_a_pct  = 0.0f;
@@ -800,7 +800,7 @@ static void ciclo_controle(void)
                           + 0.02f * angulo_acel;
         y_med = angulo_filtrado + 90.0f;
 #else
-#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V5)
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V9) || defined(MODEL_TYPE_GREYBOX_V5)
         y_med = simulate_physical_plant(0.0f);
 #else
         y_med = sil_y_hist[0];
@@ -898,10 +898,14 @@ static void ciclo_controle(void)
         if (use_pid) {
             // PID
             if (was_ann_mode) {
-                // Bumpless transfer: RNA -> PID
+                // Bumpless transfer: RNA -> PID (Inicializacao suave no ponto de equilibrio estatico de r)
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V9)
+                u_i = u_equilibrium(r);
+#else
                 float u_p_tr = KP * e;
                 float u_d_tr = -(KD / TS) * (y_med - y_1);
                 u_i = u_anterior - u_p_tr - u_d_tr;
+#endif
                 was_ann_mode = 0;
             }
 
@@ -913,7 +917,7 @@ static void ciclo_controle(void)
             u = u_calc;
             /* Anti-windup por back-calculation */
             if (u > 80.0f) u = 80.0f;
-            if (u < -10.0f) u = -10.0f;
+            if (u < -80.0f) u = -80.0f;
             if (u_calc != u) u_i -= (u_calc - u);
         } else {
             // ANN (MPC)
@@ -923,7 +927,7 @@ static void ciclo_controle(void)
                 was_ann_mode = 1;
             }
 
-#if defined(MODEL_TYPE_GREYBOX_V5) || defined(MODEL_TYPE_GREYBOX_V3)
+#if defined(MODEL_TYPE_GREYBOX_V9) || defined(MODEL_TYPE_GREYBOX_V5) || defined(MODEL_TYPE_GREYBOX_V3)
             float nn_in[NN_INPUT_DIM];
             nn_in[0] = y_med;
             nn_in[1] = (y_med - y_1) / TS;
@@ -1006,7 +1010,7 @@ static void ciclo_controle(void)
 #endif
 
             if (u > 80.0f) u = 80.0f;
-            if (u < -10.0f) u = -10.0f;
+            if (u < -80.0f) u = -80.0f;
 
             // Mantém integrador PID rastreando em segundo plano para retorno suave
             float u_p_tr = KP * e;
@@ -1015,7 +1019,7 @@ static void ciclo_controle(void)
         }
     }
 
-#if !defined(MODEL_TYPE_GREYBOX_V5) && !defined(MODEL_TYPE_GREYBOX_V3)
+#if !defined(MODEL_TYPE_GREYBOX_V9) && !defined(MODEL_TYPE_GREYBOX_V5) && !defined(MODEL_TYPE_GREYBOX_V3)
     /* --- Atualiza historico (u) com controle aplicado --- */
     for (int i = NU_MODEL - 1; i > 0; i--) sil_u_hist[i] = sil_u_hist[i-1];
     sil_u_hist[0] = u;
@@ -1055,10 +1059,14 @@ static void ciclo_controle(void)
         if (use_pid) {
             // PID
             if (was_ann_mode) {
-                // Bumpless transfer: RNA -> PID
+                // Bumpless transfer: RNA -> PID (Inicializacao suave no ponto de equilibrio estatico de r)
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V9)
+                u_i = u_equilibrium(r);
+#else
                 float u_p_tr = KP * e;
                 float u_d_tr = -(KD / TS) * (y_med - y_1);
                 u_i = u_anterior - u_p_tr - u_d_tr;
+#endif
                 was_ann_mode = 0;
             }
 
@@ -1069,7 +1077,7 @@ static void ciclo_controle(void)
             
             u = u_calc;
             if (u > 80.0f) u = 80.0f;
-            if (u < -10.0f) u = -10.0f;
+            if (u < -80.0f) u = -80.0f;
             if (u_calc != u) u_i -= (u_calc - u);
         } else {
             // ANN
@@ -1079,7 +1087,7 @@ static void ciclo_controle(void)
                 was_ann_mode = 1;
             }
 
-#if defined(MODEL_TYPE_GREYBOX_V5) || defined(MODEL_TYPE_GREYBOX_V3)
+#if defined(MODEL_TYPE_GREYBOX_V9) || defined(MODEL_TYPE_GREYBOX_V5) || defined(MODEL_TYPE_GREYBOX_V3)
             float nn_in[NN_INPUT_DIM];
             nn_in[0] = y_med;
             nn_in[1] = (y_med - y_1) / TS;
@@ -1161,7 +1169,7 @@ static void ciclo_controle(void)
 #endif
 
             if (u > 80.0f) u = 80.0f;
-            if (u < -10.0f) u = -10.0f;
+            if (u < -80.0f) u = -80.0f;
 
             // Mantém variáveis do PID para transição suave
             float u_p_tr = KP * e;
@@ -1170,7 +1178,7 @@ static void ciclo_controle(void)
         }
     }
 
-#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V5)
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V9) || defined(MODEL_TYPE_GREYBOX_V5)
     // Apply control to virtual plant (Physical Model Grey-Box v5)
     uint32_t c_sim1 = DWT->CYCCNT;
     simulate_physical_plant(u);
@@ -1216,7 +1224,7 @@ static void ciclo_controle(void)
     static float sum_total = 0.0f;
     sil_calls++;
     sum_ann   += t_ann_ms;
-#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V5)
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V9) || defined(MODEL_TYPE_GREYBOX_V5)
     sum_sim   += t_sim_ms;
 #else
     sum_sim   += t_narx_ms;
@@ -1228,9 +1236,9 @@ static void ciclo_controle(void)
         fmt_float(s_a, sum_ann   / 100.0f);
         fmt_float(s_s, sum_sim   / 100.0f);
         fmt_float(s_t, sum_total / 100.0f);
-#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V5)
+#if defined(MODEL_PHYSICAL_H) || defined(MODEL_TYPE_GREYBOX_V9) || defined(MODEL_TYPE_GREYBOX_V5)
         snprintf(t_buf, sizeof(t_buf),
-                 "# PROFILE ANN=%s PHYS=%s TOTAL=%s ms", s_a, s_s, s_t);
+                 "# PROFILE ANN=%s PHYS_V9=%s TOTAL=%s ms", s_a, s_s, s_t);
 #else
         snprintf(t_buf, sizeof(t_buf),
                  "# PROFILE ANN=%s NARX=%s TOTAL=%s ms", s_a, s_s, s_t);
@@ -1268,6 +1276,22 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
     /* Reativa a interrupcao para o proximo byte */
     HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART2) {
+        __HAL_UART_CLEAR_OREFLAG(huart);
+        __HAL_UART_CLEAR_NEFLAG(huart);
+        __HAL_UART_CLEAR_FEFLAG(huart);
+        __HAL_UART_CLEAR_PEFLAG(huart);
+        volatile uint32_t dummy = huart->Instance->SR;
+        dummy = huart->Instance->DR;
+        (void)dummy;
+        huart->ErrorCode = HAL_UART_ERROR_NONE;
+        huart->RxState = HAL_UART_STATE_READY;
+        HAL_UART_Receive_IT(huart, &rx_byte, 1);
+    }
 }
 
 /*

@@ -1,0 +1,271 @@
+{
+  "version": "v9_complete_quadratic_drag_cable_stiffness_zero_loopovers",
+  "description": "Modelo Grey-Box v9 Completo (Opcao 3A + Rigidez Torsional do Cabo): Equacao diferencial do v3 acrescida do arrasto aerodinamico quadratico (-d_a*theta'*|theta'|) e da rigidez elastica torsional do chicote/cabo eletrico no pivo (-K_s*theta), parametrizada com a oscilacao livre e curva estatica. Zero giros (0/12 em RODADA-7) e FIT de Validacao 45° de 87.2% (Geral 75.8%), superando o NARX (69.7%).",
+  "equation_normalized": "omega' = c1*sin(theta) - k_th*theta + c2*omega - ca*omega*|omega| - Fc*tanh(50*omega) + c3*max(a - u0, 0)^p; a' = (u - a)/tau_m",
+  "equation_physical": "J*theta'' + b_ef*theta' + d_a*theta'*|theta'| + Tc*tanh(50*theta') + C_g*sin(theta) + K_s*theta = K_tau*max(a - u0, 0)^p",
+  "sensor_rest_characterization": {
+    "offset_mean_deg": 0.007499999999999979,
+    "noise_std_deg": 0.012772201203556108,
+    "noise_std_rad": 0.00022291696372923658,
+    "R_sensor": 4.969197271826178e-08
+  },
+  "free_oscillation_mechanics": {
+    "C_g": 0.27953595000000003,
+    "c1": -8.20967,
+    "c2_passivo": -0.11904,
+    "Fc": 0.13471,
+    "J": 0.034049596390597923,
+    "b_passivo": 0.004053263954336777,
+    "Tc": 0.004586821129777446,
+    "omega_n": 2.8652521704031564,
+    "period_T0": 2.192890863876567
+  },
+  "static_characterization": {
+    "u0": 11.26,
+    "p_prescribed": 1.627,
+    "k_prescribed": 0.0021417881373627275,
+    "c3_prescribed": 0.017583373817662663,
+    "r2_prescribed": 0.9776534128181847,
+    "k_p2": 0.0005565357150785778,
+    "c3_p2": 0.0045689745640091475,
+    "r2_p2": 0.9904927071545984,
+    "p_fit": 1.9155778572572753,
+    "k_fit": 0.0007557150338533958,
+    "c3_fit": 0.006204171041975207,
+    "r2_fit": 0.9915517810565944,
+    "n_points": 87
+  },
+  "fisher_analysis": {},
+  "metrics_summary": {
+    "v3_original_p2": {
+      "giros_total_12": 5,
+      "val45_freerun_fit": 58.49476629522576,
+      "val45_freerun_rmse_deg": 8.48931388580021,
+      "val60_freerun_fit": null,
+      "val60_freerun_rmse_deg": null,
+      "val_all_freerun_fit": null,
+      "val_all_freerun_rmse_deg": null,
+      "all12_freerun_fit": null,
+      "all12_freerun_rmse_deg": null,
+      "val_windowed_fit": -2043.2288190935876,
+      "val45_observer_fit": 67.52532573984882,
+      "val45_observer_rmse_deg": 6.586244303362515,
+      "val60_observer_fit": -526.105245981534,
+      "val60_observer_rmse_deg": 224.4357825692987
+    },
+    "v9_3a_sem_cabo": {
+      "giros_total_12": 0,
+      "val45_freerun_fit": 74.82730738022843,
+      "val45_freerun_rmse_deg": 5.256240292826,
+      "val60_freerun_fit": 57.470961759581165,
+      "val60_freerun_rmse_deg": 12.246608296344581,
+      "val_all_freerun_fit": 66.1491345699048,
+      "val_all_freerun_rmse_deg": 8.751424294585291,
+      "all12_freerun_fit": 65.90969025379373,
+      "all12_freerun_rmse_deg": 9.488526726346233,
+      "val_windowed_fit": 67.1639153411763,
+      "val45_observer_fit": 80.86676222560213,
+      "val45_observer_rmse_deg": 3.9560914305640655,
+      "val60_observer_fit": 68.2973617244553,
+      "val60_observer_rmse_deg": 9.445799445441962
+    },
+    "v9_completo_r1": {
+      "giros_total_12": 0,
+      "val45_freerun_fit": 87.73609945358776,
+      "val45_freerun_rmse_deg": 2.50887243119032,
+      "val60_freerun_fit": 63.85005353300226,
+      "val60_freerun_rmse_deg": 10.333214816392138,
+      "val_all_freerun_fit": 75.793076493295,
+      "val_all_freerun_rmse_deg": 6.42104362379123,
+      "all12_freerun_fit": 74.87096029799658,
+      "all12_freerun_rmse_deg": 7.372648948861749,
+      "val_windowed_fit": 76.63283813938149,
+      "val45_observer_fit": 91.24720555149632,
+      "val45_observer_rmse_deg": 1.787056003514902,
+      "val60_observer_fit": 75.4765740141969,
+      "val60_observer_rmse_deg": 7.33083145229181
+    },
+    "v9_otimizado": {
+      "giros_total_12": 0,
+      "val45_freerun_fit": 87.2700149234643,
+      "val45_freerun_rmse_deg": 2.6145389398461525,
+      "val60_freerun_fit": 64.51328478172718,
+      "val60_freerun_rmse_deg": 10.02151856979483,
+      "val_all_freerun_fit": 75.89164985259573,
+      "val_all_freerun_rmse_deg": 6.318028754820491,
+      "all12_freerun_fit": 73.84930960503334,
+      "all12_freerun_rmse_deg": 7.791268084037102,
+      "val_windowed_fit": 76.71619102465631,
+      "val45_observer_fit": 91.12709393184166,
+      "val45_observer_rmse_deg": 1.8137464183181942,
+      "val60_observer_fit": 76.13063227146117,
+      "val60_observer_rmse_deg": 7.081787876880253
+    }
+  },
+  "models": {
+    "v3_original_p2": {
+      "theta": [
+        -6.54116,
+        -0.44585,
+        0.003532,
+        0.0,
+        0.32383,
+        11.422,
+        0.08,
+        2.0,
+        0.0
+      ],
+      "params": {
+        "c1": -6.54116,
+        "c2": -0.44585,
+        "c3": 0.003532,
+        "ca": 0.0,
+        "Fc": 0.32383,
+        "u0": 11.422,
+        "tau_m": 0.08,
+        "p": 2.0,
+        "k_th": 0.0
+      },
+      "physics": {
+        "C_g": 0.27953595000000003,
+        "J": 0.04273492010591394,
+        "K_s": 0.0,
+        "omega_n_eff_rad_s": 2.5575691584002183,
+        "b_ef": 0.01905336412922173,
+        "b_passivo": 0.004053263954336777,
+        "b_aero": 0.015000100174884953,
+        "d_a": 0.0,
+        "Tc": 0.013838849177898111,
+        "Ktau": 0.00015093973781408804,
+        "u0": 11.422,
+        "tau_m": 0.08,
+        "p": 2.0,
+        "k_th": 0.0,
+        "k_dyn": 0.0005399653884020572
+      }
+    },
+    "v9_3a_sem_cabo": {
+      "theta": [
+        -8.541826,
+        -0.368049,
+        0.022161,
+        0.04295,
+        0.177478,
+        10.624496,
+        0.106281,
+        1.565856,
+        0.0
+      ],
+      "params": {
+        "c1": -8.541826,
+        "c2": -0.368049,
+        "c3": 0.022161,
+        "ca": 0.04295,
+        "Fc": 0.177478,
+        "u0": 10.624496,
+        "tau_m": 0.106281,
+        "p": 1.565856,
+        "k_th": 0.0
+      },
+      "physics": {
+        "C_g": 0.27953595000000003,
+        "J": 0.0327255495487733,
+        "K_s": 0.0,
+        "omega_n_eff_rad_s": 2.922640244710252,
+        "b_ef": 0.012044605785876464,
+        "b_passivo": 0.004053263954336777,
+        "b_aero": 0.007991341831539687,
+        "d_a": 0.001405562353119813,
+        "Tc": 0.005808065082817187,
+        "Ktau": 0.0007252309035503651,
+        "u0": 10.624496,
+        "tau_m": 0.106281,
+        "p": 1.565856,
+        "k_th": 0.0,
+        "k_dyn": 0.0025944101413444853
+      }
+    },
+    "v9_completo_r1": {
+      "theta": [
+        -6.903059,
+        -0.315352,
+        0.012466,
+        0.02104,
+        0.233892,
+        11.531358,
+        0.125374,
+        1.755476,
+        1.575768
+      ],
+      "params": {
+        "c1": -6.903059,
+        "c2": -0.315352,
+        "c3": 0.012466,
+        "ca": 0.02104,
+        "Fc": 0.233892,
+        "u0": 11.531358,
+        "tau_m": 0.125374,
+        "p": 1.755476,
+        "k_th": 1.575768
+      },
+      "physics": {
+        "C_g": 0.27953595000000003,
+        "J": 0.040494503958317614,
+        "K_s": 0.06380994351339023,
+        "omega_n_eff_rad_s": 2.9118425438199775,
+        "b_ef": 0.012770022812263377,
+        "b_passivo": 0.004053263954336777,
+        "b_aero": 0.0087167588579266,
+        "d_a": 0.0008520043632830026,
+        "Tc": 0.009471340519818823,
+        "Ktau": 0.0005048044863443874,
+        "u0": 11.531358,
+        "tau_m": 0.125374,
+        "p": 1.755476,
+        "k_th": 1.575768,
+        "k_dyn": 0.0018058660660440538
+      }
+    },
+    "v9_otimizado": {
+      "theta": [
+        -6.858314,
+        -0.331455,
+        0.012412,
+        0.01931,
+        0.25582,
+        11.852171,
+        0.113127,
+        1.759243,
+        1.565398
+      ],
+      "params": {
+        "c1": -6.858314,
+        "c2": -0.331455,
+        "c3": 0.012412,
+        "ca": 0.01931,
+        "Fc": 0.25582,
+        "u0": 11.852171,
+        "tau_m": 0.113127,
+        "p": 1.759243,
+        "k_th": 1.565398
+      },
+      "physics": {
+        "C_g": 0.27953595000000003,
+        "J": 0.040758698129015385,
+        "K_s": 0.06380358453376443,
+        "omega_n_eff_rad_s": 2.9023631750695844,
+        "b_ef": 0.013509674288352794,
+        "b_passivo": 0.004053263954336777,
+        "b_aero": 0.009456410334016018,
+        "d_a": 0.0007870504608712871,
+        "Tc": 0.010426890155364715,
+        "Ktau": 0.0005058969611773389,
+        "u0": 11.852171,
+        "tau_m": 0.113127,
+        "p": 1.759243,
+        "k_th": 1.565398,
+        "k_dyn": 0.0018097742389747682
+      }
+    }
+  }
+}
