@@ -496,6 +496,7 @@ A Tabela~\ref{tab:sil_tracking_comparacao} compara as métricas estatísticas de
     \caption{Métricas de desempenho em malha fechada (SIL) sob o framework X-CUBE-AI: sem compressão versus alta compressão.}
     \label{tab:sil_tracking_comparacao}
     \small
+    \resizebox{\textwidth}{!}{
     \begin{tabular}{lccc}
         \toprule
         \textbf{Métrica de Avaliação} & \textbf{X-CUBE-AI (Sem Compressão)} & \textbf{X-CUBE-AI (Alta Compressão)} & \textbf{Variação / Impacto} \\
@@ -510,6 +511,7 @@ A Tabela~\ref{tab:sil_tracking_comparacao} compara as métricas estatísticas de
         Memória Flash dos Pesos                                      & 130,50\,KiB & 17,75\,KiB & \textbf{-86,4\%} \\
         \bottomrule
     \end{tabular}
+    }
     \par\vspace{1ex}
     {\footnotesize \textit{Nota:} Ensaio executado em SIL no STM32F446RE com $T_s = 10$\,ms. A janela ativa ($5{,}0$\,s a $70{,}0$\,s) adota o critério homogêneo padronizado na Tabela~\ref{tab:desempenho_rmse}, desconsiderando o transitório inicial de partida a partir do repouso ($0^\circ \to 45^\circ$, responsável pelo erro máximo de $45{,}19^\circ$).}
     \par\vspace{1.5ex}
