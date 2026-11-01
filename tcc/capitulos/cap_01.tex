@@ -7,7 +7,7 @@
 % ------------------------------------------------------------
 O crescimento acelerado dos veículos aéreos não tripulados (VANTs) nas últimas décadas transformou setores como logística, monitoramento ambiental, agricultura de precisão e defesa. Plataformas de decolagem e aterrissagem vertical (VTOL), em particular os quadrotores, tornaram-se objetos de intensa investigação em razão de suas capacidades únicas de manobra, todavia impõem desafios igualmente expressivos de controle: dinâmica intrinsecamente não-linear, acoplamento entre eixos e forte sensibilidade a perturbações externas como rajadas de vento \cite{nguyen2020}. A operação segura e eficiente dessas plataformas exige algoritmos capazes de satisfazer simultaneamente requisitos de precisão de rastreamento, rejeição robusta a perturbações e execução em tempo real sob severas restrições computacionais dos microcontroladores embarcados.
 
-Nesse contexto, o aeropêndulo consolida-se como uma bancada de experimentação, no qual o sistema reproduz a dinâmica essencial de um rotor VTOL em um único grau de liberdade, permitindo a comparação controlada de estratégias de controle em laboratório. Sua dinâmica não-linear, determinada pelo torque aerodinâmico do conjunto motor-hélice e pela não-linearidade gravitacional intrínseca ao pêndulo, exige técnicas de controle além dos métodos lineares clássicos. A bancada utilizada neste trabalho foi originalmente projetada e construída por \citeonline{lima2025}, cujo sistema mecânico e eletrônico é reaproveitado e estendido com novos algoritmos de controle.
+Nesse contexto, o aeropêndulo consolida-se como uma bancada de experimentação, no qual o sistema reproduz a dinâmica essencial de um rotor VTOL em um único grau de liberdade, permitindo a comparação controlada de estratégias de controle em laboratório. Sua dinâmica não-linear, determinada pelo empuxo aerodinâmico da turbina fan dutada (EDF) e pela não-linearidade gravitacional intrínseca ao pêndulo, exige técnicas de controle além dos métodos lineares clássicos. A bancada utilizada neste trabalho foi originalmente projetada e construída por \citeonline{lima2025}, cujo sistema mecânico e eletrônico é reaproveitado e estendido com novos algoritmos de controle.
 
 % ------------------------------------------------------------
 % Motivação / Justificativa
@@ -23,7 +23,7 @@ A abordagem de MPC aproximado por redes neurais surge como alternativa promissor
 
 \subsection{Objetivo Geral}
 
-Desenvolver e validar experimentalmente um controlador neural embarcado que aproxima a política de controle ótima de um NMPC para rastreamento angular de um aeropêndulo instrumentado, demonstrando viabilidade de implantação em tempo real no microcontrolador com desempenho comparável ao controlador preditivo exato.
+Desenvolver e validar experimentalmente um controlador neural embarcado que aproxima a política de controle ótima de um NMPC para rastreamento angular de um aeropêndulo instrumentado, demonstrando viabilidade de implantação em tempo real no microcontrolador com alta fidelidade de imitação da política ótima e desempenho de rastreamento dinâmico superior à malha linear clássica.
 
 \subsection{Objetivos Específicos}
 
@@ -37,16 +37,3 @@ Os objetivos específicos do trabalho são:
     \item comparar experimentalmente os três controladores (PID, NMPC em simulação e MLP embarcada) em termos de desempenho de rastreamento, rejeição a perturbações e custo computacional em hardware embarcado.
 \end{enumerate}
 
-% ============================================================
-\section{Organização do Trabalho}
-\label{sec:intro_organizacao}
-% ============================================================
-
-O presente trabalho está estruturado em cinco capítulos, organizados da seguinte forma:
-
-\begin{itemize}
-    \item \textbf{Capítulo~\ref{cap:fundamentacao} (Fundamentação Teórica e Estado da Arte):} Apresenta os conceitos fundamentais de controle clássico, formulação matemática do NMPC, limitações do MPC explícito, princípios de aproximação por redes neurais, identificação de sistemas, fundamentos de TinyML e revisão dos trabalhos correlatos na literatura;
-    \item \textbf{Capítulo~\ref{cap:metodologia} (Metodologia e Desenvolvimento do Sistema):} Descreve a bancada experimental, a estratégia de excitação dinâmica rica em malha fechada, a identificação paramétrica do modelo dinâmico NARX e modelo físico, a síntese do NMPC no CasADi, a arquitetura e treinamento da MLP em PyTorch e a integração do firmware de controle em tempo real no STM32F446RE via X-CUBE-AI;
-    \item \textbf{Capítulo~\ref{cap:resultados} (Resultados Experimentais e Discussão):} Expõe a tríade comparativa de validação (Simulador Python vs. SIL no STM32 vs. Bancada Física Real), analisa o custo computacional do otimizador exato, detalha o diagnóstico do \textit{Sim-to-Real gap}, demonstra a eficácia do controlador neural híbrido com integrador residual e apresenta benchmarks de otimização de compilador e quantização;
-    \item \textbf{Capítulo~\ref{cap:conclusao} (Conclusão):} Discute o cumprimento dos objetivos propostos, as limitações identificadas, aspectos de sustentabilidade e eficiência energética, e delineia as propostas para trabalhos futuros.
-\end{itemize}

@@ -400,7 +400,7 @@ print("="*70)
 
 # %%
 def plot_single_validation(res, filename_base):
-    """Gera gráfico individual de validação com 2 subplots (Ângulo e Controle)."""
+    """Gera gráfico individual de validação com 2 subplots (Ângulo e Controle) com legenda compacta e headroom."""
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7.2, 4.3), sharex=True,
                                    gridspec_kw={'height_ratios': [2.2, 1.2]})
     
@@ -416,24 +416,37 @@ def plot_single_validation(res, filename_base):
         ax1.plot(t, res['ref'], color='#7f7f7f', ls=':', lw=0.9, alpha=0.7, label=r'Referência $r(k)$')
         
     ax1.set_ylabel(r'Ângulo $\theta$ [$^\circ$]')
-    ax1.grid(True)
-    ax1.legend(loc='upper right', framealpha=0.95)
+    ax1.grid(True, linestyle='--', alpha=0.5)
+    
+    # Legenda compacta (tamanho reduzido para não sobrepor a onda)
+    ax1.legend(loc='upper right', fontsize=7.5, framealpha=0.92,
+               borderpad=0.25, labelspacing=0.2, handlelength=1.2, handletextpad=0.35)
     ax1.set_xlim(0, t[-1])
     
-    # Caixa com métricas
-    metric_text = (f"RMSE = {res['rmse']:.3f}" + r"$^\circ$" + "\n"
-                   f"MAE = {res['mae']:.3f}" + r"$^\circ$" + "\n"
-                   f"FIT = {res['fit']:.1f}\\%")
+    # Margem superior (headroom) para a onda não sobrepor a legenda nem as métricas
+    y_peak = max(float(np.max(y_true)), float(np.max(y_fr)))
+    y_valley = min(float(np.min(y_true)), float(np.min(y_fr)))
+    margin_top = max(16.0, (y_peak - y_valley) * 0.20)
+    margin_bottom = max(5.0, (y_peak - y_valley) * 0.05)
+    ax1.set_ylim(y_valley - margin_bottom, y_peak + margin_top)
+    
+    # Caixa com métricas compacta
+    metric_text = f"RMSE = {res['rmse']:.3f}°\nMAE = {res['mae']:.3f}°\nFIT = {res['fit']:.1f}%"
     ax1.text(0.02, 0.95, metric_text, transform=ax1.transAxes,
-             verticalalignment='top', fontsize=8.5,
-             bbox=dict(boxstyle='round,pad=0.4', facecolor='white', edgecolor='0.8', alpha=0.92))
+             verticalalignment='top', fontsize=7.5,
+             bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='0.85', alpha=0.92))
     
     # Subplot Inferior: Controle
     ax2.plot(t, u, color='#1f77b4', lw=1.0, label=r'Excitação $u(k)$')
     ax2.set_xlabel('Tempo [s]')
-    ax2.set_ylabel(r'Controle $u$ [\%]')
-    ax2.grid(True)
-    ax2.legend(loc='upper right', framealpha=0.95)
+    ax2.set_ylabel(r'Controle $u$ [%]')
+    ax2.grid(True, linestyle='--', alpha=0.5)
+    ax2.legend(loc='upper right', fontsize=7.5, framealpha=0.92,
+               borderpad=0.25, labelspacing=0.2, handlelength=1.2)
+    
+    u_peak = float(np.max(u))
+    u_valley = float(np.min(u))
+    ax2.set_ylim(u_valley - 4.0, u_peak + max(12.0, (u_peak - u_valley) * 0.22))
     
     plt.tight_layout()
     save_academic_plot(fig, filename_base)
@@ -480,7 +493,7 @@ def plot_consolidated_validation(val_dict, keys, filename_base, suptitle):
             ax_y.legend(loc='upper right', fontsize=8)
             
         # Métricas na coluna
-        txt = f"RMSE = {res['rmse']:.2f}" + r"$^\circ$" + f"\nFIT = {res['fit']:.1f}\\%"
+        txt = f"RMSE = {res['rmse']:.2f}°\nFIT = {res['fit']:.1f}%"
         ax_y.text(0.03, 0.94, txt, transform=ax_y.transAxes,
                   verticalalignment='top', fontsize=8,
                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='0.85', alpha=0.9))
@@ -491,7 +504,7 @@ def plot_consolidated_validation(val_dict, keys, filename_base, suptitle):
         ax_u.grid(True)
         ax_u.set_xlim(0, t[-1])
         if col == 0:
-            ax_u.set_ylabel(r'Controle $u$ [\%]')
+            ax_u.set_ylabel(r'Controle $u$ [%]')
             
     plt.suptitle(suptitle, fontsize=11, fontweight='bold', y=0.995)
     plt.tight_layout()
@@ -528,7 +541,7 @@ def plot_consolidated_validation_all(val_dict, filename_base="narx_val_consolida
                 ax_y.set_ylabel(r'Ângulo $\theta$ [$^\circ$]')
                 ax_y.legend(loc='upper right', fontsize=7.5)
                 
-            txt = f"RMSE = {res['rmse']:.2f}" + r"$^\circ$" + f"\nFIT = {res['fit']:.1f}\\%"
+            txt = f"RMSE = {res['rmse']:.2f}°\nFIT = {res['fit']:.1f}%"
             ax_y.text(0.03, 0.94, txt, transform=ax_y.transAxes,
                       verticalalignment='top', fontsize=7.5,
                       bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='0.85', alpha=0.9))
@@ -538,7 +551,7 @@ def plot_consolidated_validation_all(val_dict, filename_base="narx_val_consolida
             ax_u.grid(True)
             ax_u.set_xlim(0, t[-1])
             if col == 0:
-                ax_u.set_ylabel(r'$u$ [\%]')
+                ax_u.set_ylabel(r'$u$ [%]')
                 
     plt.suptitle("Validação em Simulação Livre (Free-Run) nos Dois Pontos de Operação (45° e 60°)",
                  fontsize=11.5, fontweight='bold', y=0.995)

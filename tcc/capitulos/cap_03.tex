@@ -11,14 +11,14 @@ Este capítulo apresenta o detalhamento completo da fase experimental do projeto
     \label{fig:diagrama-blocos-projeto}
 \end{figure}
 
- A fase offline corresponde: (i)~a síntese e implantação do controlador PID em malha fechada, utilizado tanto para estabilizar a planta durante a coleta de dados quanto como referência de desempenho na comparação final (Seção~\ref{sec:pid}); (ii)~a aquisição dos dados de identificação em malha fechada com o PID ativo e a estimação dos parâmetros do modelo dinâmico via \textit{multiple shooting} (Seção~\ref{sec:identificacao}); (iii)~a formulação e resolução do NMPC via CasADi, a geração do \textit{dataset} e o treinamento da rede neural MLP (Seção~\ref{sec:sintese}). A fase de operação em tempo real, na parte inferior, corresponde à implantação do controlador embarcado no STM32 e sua atuação sobre a planta física (Seção~\ref{sec:embarcado}). A Seção~\ref{sec:descricao_fisica} descreve a bancada e os componentes de hardware que suportam ambas as fases.
+ A fase offline corresponde: (i)~a síntese e implantação do controlador PID em malha fechada, utilizado tanto para estabilizar a planta durante a coleta de dados quanto como referência de desempenho na comparação final (Seção~\ref{sec:pid}); (ii)~a aquisição dos dados de identificação em malha fechada com o PID ativo e a identificação dos parâmetros do modelo dinâmico discreto NARX via algoritmo FROLS (Seção~\ref{sec:identificacao}); (iii)~a formulação e resolução do NMPC via CasADi, a geração do \textit{dataset} e o treinamento da rede neural MLP (Seção~\ref{sec:sintese}). A fase de operação em tempo real, na parte inferior, corresponde à implantação do controlador embarcado no STM32 e sua atuação sobre a planta física (Seção~\ref{sec:embarcado}). A Seção~\ref{sec:descricao_fisica} descreve a bancada e os componentes de hardware que suportam ambas as fases.
  
 % ------------------------------------------------------------
 \section{Descrição do Sistema Físico}
 \label{sec:descricao_fisica}
-A infraestrutura física e mecânica da bancada do aeropêndulo utilizada neste trabalho foi originalmente projetada e construída por \citeonline{lima2025}. O sistema mecânico pré-existente e reaproveitado compreende a base de madeira, as torres de suporte, o eixo de alumínio instrumentado e a haste pendular contendo o motor \textit{brushless} (BLDC) acoplado.
+A infraestrutura física e mecânica da bancada do aeropêndulo utilizada neste trabalho foi originalmente projetada e construída por \citeonline{lima2025}. O sistema mecânico pré-existente e reaproveitado compreende a base de madeira, as torres de suporte, o eixo de alumínio instrumentado e a haste pendular contendo a unidade propulsora acoplada.
 
-O aeropêndulo atua como um sistema de um grau de liberdade, composto por esse braço rígido livre para rotacionar em torno do eixo horizontal fixo. A posição angular $\theta$ é medida em relação à horizontal, sendo $0^\circ$ definido quando o sistema está em repouso com o motor na posição inferior.
+O aeropêndulo atua como um sistema de um grau de liberdade, composto por esse braço rígido livre para rotacionar em torno de um eixo horizontal fixo. A posição angular $\theta$ é medida em relação à vertical descendente (fio de prumo), sendo $0^\circ$ definido quando o sistema está em repouso com o motor na posição inferior.
 
 % ------------------------------------------------------------
 \subsection{Estrutura Mecânica}
@@ -27,7 +27,7 @@ A estrutura física do aeropêndulo é montada sobre uma base de madeira compens
 
 Para fixar o eixo de alumínio às torres, é utilizado um cuboide retangular contendo um rolamento de esferas, permitindo que o eixo gire livremente. No centro do eixo foi usinado e rosqueado um furo para encaixe da haste do pêndulo.
 
-A haste rosqueada também permite a fixação e remoção facilitada de contrapesos, que foram usinados e rosqueados para se encaixar diretamente na haste. Um suporte impresso em 3D acopla o motor BLDC à extremidade da haste. A propulsão é gerada por uma hélice bipá de passo fixo. Um alojamento impresso em 3D para a Unidade de Medição Inercial (IMU) foi desenvolvido e fixado ao eixo de rotação, responsável por capturar o ângulo do sistema. A Figura~\ref{fig:montagem-bancada} ilustra o formato atual da bancada. Os principais parâmetros construtivos do sistema são resumidos na Tabela~\ref{tab:componentes_mecanicos}.
+A haste rosqueada também permite a fixação e remoção facilitada de contrapesos, que foram usinados e rosqueados para se encaixar diretamente na haste. Um suporte impresso em 3D acopla a unidade propulsora à extremidade da haste. A propulsão é gerada por uma turbina fan dutada (EDF, do inglês \textit{Electric Ducted Fan}) da fabricante FMS de 50\,mm de diâmetro (unidade \textit{FMS 50mm 11-Blade EDF Unit}), dotada de rotor de 11 pás e acionada por um motor elétrico \textit{brushless} outrunner 2627 de $4500$\,KV (compatível com alimentação LiPo de 3S a 4S). O confinamento do fluxo de ar pelo duto cilíndrico reduz perdas de vórtice de ponta de pá, assegura um empuxo colimado e rápido ao longo do plano pendular e confere maior segurança física durante os ensaios de bancada. Um alojamento impresso em 3D para a Unidade de Medição Inercial (IMU) foi desenvolvido e fixado ao eixo de rotação, responsável por capturar o ângulo do sistema. A Figura~\ref{fig:montagem-bancada} ilustra o formato atual da bancada. Os principais parâmetros construtivos do sistema são resumidos na Tabela~\ref{tab:componentes_mecanicos}.
 
 \begin{figure}[h]
     \centering
@@ -50,10 +50,10 @@ A haste rosqueada também permite a fixação e remoção facilitada de contrape
         Mancal                    & Rolamento de esferas                    \\
         Haste do pêndulo          & Haste rosqueada                         \\
         Contrapesos               & Peças rosqueadas (ajustáveis)           \\
-        Suporte do motor          & PLA (impressão 3D)                      \\
+        Suporte do propulsor      & PLA (impressão 3D)                      \\
         Alojamento da IMU         & PLA (impressão 3D)                      \\
-        Motor                     & EMAX RS2306                             \\
-        Hélice                    & Bipá, passo fixo                        \\
+        Unidade Propulsora (EDF)  & FMS 50\,mm, 11 pás (\textit{Ducted Fan}) \\
+        Motor Elétrico            & Brushless Outrunner 2627 KV4500 (3S--4S)\\
         \hline
     \end{tabular}
 \end{table}
@@ -140,9 +140,9 @@ alimentação lógica do microcontrolador.
 \section{Identificação do Modelo Dinâmico}
 \label{sec:identificacao}
 
-A síntese do Controle Preditivo Não-Linear (NMPC) exige um modelo matemático rigoroso, mas a modelagem puramente analítica do aeropêndulo impõe dificuldades práticas, visto que parâmetros físicos são de difícil mensuração isolada e o arranjo motor-hélice introduz não-linearidades que costumam ser ignoradas. Contudo, as abordagens clássicas de identificação baseadas em modelos lineares possuem restrições estruturais que as tornam insuficientes para representar os efeitos aerodinâmicos em todo o envelope operacional da planta \cite{jiang2022}. 
+A síntese do Controle Preditivo Não-Linear (NMPC) exige um modelo matemático rigoroso, mas a modelagem puramente analítica do aeropêndulo impõe dificuldades práticas, visto que parâmetros físicos são de difícil mensuração isolada e o arranjo propulsor (turbina EDF) introduz não-linearidades que costumam ser ignoradas. Contudo, as abordagens clássicas de identificação baseadas em modelos lineares possuem restrições estruturais que as tornam insuficientes para representar os efeitos aerodinâmicos em todo o envelope operacional da planta \cite{jiang2022}. 
 
-Diante dessas limitações, adota-se uma abordagem híbrida: a estrutura do modelo é derivada analiticamente a partir dos princípios físicos do sistema, enquanto os parâmetros de difícil mensuração são estimados por identificação experimental. Pela Segunda Lei de Newton aplicada à dinâmica rotacional, considerando  explicitamente a massa do conjunto motor-hélice $m_1$ posicionada à distância  $L_1$ do pivô e a massa do contrapeso $m_2$ posicionada à distância $L_2$ no  lado oposto, a equação de movimento do aeropêndulo é:
+Diante dessas limitações, para fundamentar conceitualmente a dinâmica rotacional do aeropêndulo e compreender as fontes dominantes de não-linearidade, parte-se dos princípios da física clássica. Pela Segunda Lei de Newton aplicada à dinâmica rotacional, considerando explicitamente a massa da unidade propulsora (turbina EDF) $m_1$ posicionada à distância $L_1$ do pivô e a massa do contrapeso $m_2$ posicionada à distância $L_2$ no lado oposto, a equação de movimento do aeropêndulo é:
 
 \begin{equation}
     J\ddot{\theta} + b\dot{\theta} + (m_1 L_1 - m_2 L_2)\,g\sin(\theta) = \tau(u),
@@ -160,7 +160,7 @@ Para o formalismo do NMPC, é necessário representar o sistema na forma de  esp
     \end{bmatrix},
     \label{eq:estadonl}
 \end{equation}
-\noindent forma exigida pelo NMPC para propagar os estados ao longo do horizonte de predição \cite{mayne2000}. Os parâmetros geométricos e de massa ($m_1$, $m_2$,  $L_1$ e $L_2$) são medidos fisicamente e fixados no modelo. Os parâmetros $J$,  $b$ e a constante de empuxo $K_\tau$, assumindo $\tau(u) = K_\tau u$, não são  diretamente mensuráveis de forma isolada e são estimados por identificação  experimental, conforme descrito nas subseções seguintes.
+\noindent forma exigida pelo formalismo de controle ótimo contínuo para propagar estados ao longo do horizonte de predição \cite{mayne2000}. Os parâmetros geométricos e de massa ($m_1$, $m_2$, $L_1$ e $L_2$) são medidos fisicamente e fixados no modelo. Contudo, parâmetros como o momento de inércia $J$, o coeficiente de amortecimento $b$ e a relação dinâmica de empuxo $\tau(u)$ sofrem fortes influências de histerese aerodinâmica e atrito seco de rolamento difíceis de quantificar de forma analítica pura. Por essa razão, a obtenção do modelo preditivo para controle foi conduzida diretamente por identificação experimental orientada a dados via formulação NARX, conforme detalhado nas subseções seguintes.
 
 % ------------------------------------------------------------
 \subsection{Ensaios e Estratégia de Excitação}
@@ -288,7 +288,7 @@ Os pacotes seriais foram capturados por um script Python dedicado utilizando a b
         \State Atualizar referência angular dinâmica: $\theta_{\text{ref}} \gets \text{avaliarSinalExcitacao}(t_{\text{atual}})$
         \State Ler acelerômetro ($a_x, a_z$) e giroscópio ($\omega_y$) da IMU via I$^2$C DMA
         \State Estimar ângulo atual $\theta(k)$ via filtro complementar de fusão sensorial
-        \State Calcular esforço de controle $u(k) \gets \text{PID}(\theta_{\text{ref}},\, \theta(k))$ com saturação $[0,\, 100]\%$
+        \State Calcular esforço de controle $u(k) \gets \text{PID}(\theta_{\text{ref}},\, \theta(k))$ com saturação $[-u_{\max},\, u_{\max}]$ ($[-100,\, 100]\%$)
         \State Atualizar comparador de captura do Timer de PWM para o ESC
         \State Enviar pacote binário de telemetria $(t_{\text{atual}},\, \theta(k),\, \theta_{\text{ref}},\, u(k))$ via UART DMA
     \EndWhile
@@ -360,7 +360,7 @@ A aderência quantitativa do modelo é avaliada por três métricas consolidadas
 \end{align}
 \noindent onde $y(k)$ é o ângulo experimental medido pela IMU, $\hat{y}(k)$ é a trajetória predita pelo modelo NARX e $\bar{y}$ é a média da saída experimental.
 
-Complementarmente, a formulação contínua da Equação~\eqref{eq:estadonl} também foi parametrizada pelo método \textit{grey-box} não-linear via \textit{multiple shooting} com diferenciação automática em JAX \cite{helonayala_ms}, servindo como termo comparativo de sensibilidade física. Conforme demonstrado no Capítulo~\ref{cap:resultados}, o modelo polinomial NARX sobressai-se em fidelidade de fase e aderência estática quadrática ao longo de longos horizontes temporais, consolidando-se como a base preditiva oficial do sistema preditivo ótimo.
+Dessa forma, o modelo polinomial NARX selecionado pelo algoritmo FROLS sobressai-se em fidelidade de fase e aderência estática quadrática ao longo de horizontes temporais estendidos, consolidando-se como a base preditiva oficial para a síntese do NMPC e permitindo avaliação algébrica direta no otimizador numérico.
  
  
 % ============================================================
@@ -477,7 +477,7 @@ A análise comparativa da Figura~\ref{fig:pid_degraus_consolidado} revela aspect
     
     \item \textbf{Assimetria e Variação de Ganho Estático ($30^\circ$ e $60^\circ$):} À medida que a referência se afasta do ponto nominal, manifesta-se a severa não-linearidade da planta. Em $30^\circ$, o empuxo contínuo exigido para equilíbrio é de $32{,}61\%$, enquanto o modelo linear prediz $26{,}98\%$ (discrepância de $5{,}63\%$ de duty cycle). Em $60^\circ$, onde a componente gravitacional restauradora $(m_1 L_1 - m_2 L_2)g\sin(\theta)$ impõe máxima resistência, o esforço real exigido atinge $42{,}74\%$, divergindo dos $53{,}97\%$ calculados linearmente (erro de ganho estático superior a $11\%$ de duty cycle);
     
-    \item \textbf{Diferenças de Dinâmica Transitória:} A resposta real em $60^\circ$ apresenta amortecimento superior ao previsto pelo modelo linear em virtude do aumento do arrasto aerodinâmico induzido pela hélice em altas rotações.
+    \item \textbf{Diferenças de Dinâmica Transitória:} A resposta real em $60^\circ$ apresenta amortecimento superior ao previsto pelo modelo linear em virtude do aumento do arrasto aerodinâmico induzido pelo rotor da turbina dutada em altas rotações.
 \end{itemize}
 
 Essa disparidade comprova experimentalmente que um modelo linear invariante no tempo e um controlador linear clássico (PID) são incapazes de garantir desempenho homogêneo ao longo de todo o envelope de voo do aeropêndulo. Esse resultado justifica plenamente a necessidade de adotar uma formulação preditiva não-linear (NMPC) baseada em modelo dinâmico NARX, apresentada a seguir.
@@ -485,150 +485,156 @@ Essa disparidade comprova experimentalmente que um modelo linear invariante no t
 \subsection{Formulação do NMPC}
 \label{subsec:nmpc_ocp}
 
-O NMPC fundamenta-se na resolução repetida, a cada período de amostragem $T_s$, de um Problema de Controle Ótimo (OCP) em horizonte finito \cite{rawlings2017}. A síntese offline desse controlador exige ferramentas capazes de (i)~expressar simbolicamente o modelo dinâmico não-linear, (ii)~transcrever o OCP em um Problema de Programação Não-Linear (NLP) e (iii)~calcular automaticamente as derivadas de primeira e segunda ordem exigidas pelo resolvedor numérico. O framework CasADi atende a esses três requisitos de forma integrada \cite{andersson2019}.
+O NMPC fundamenta-se na resolução repetida, a cada período de amostragem $T_s$, de um Problema de Controle Ótimo (OCP) em horizonte finito \cite{rawlings2017}. Diferentemente de abordagens analíticas contínuas que requerem discretização por integradores numéricos sobre equações diferenciais, o controlador preditivo desenvolvido neste trabalho utiliza diretamente como modelo interno o preditor polinomial discreto NARX identificado na Seção~\ref{sec:identificacao}. 
 
-\subsubsection*{Problema de Controle Ótimo em Horizonte Finito}
+A síntese e resolução offline do OCP foram estruturadas no framework CasADi \cite{andersson2019}, que constrói os grafos direcionados acíclicos (DAGs) da dinâmica polinomial, transcreve o problema em Programação Não-Linear (NLP) e computa derivadas analíticas de primeira e segunda ordem via diferenciação algorítmica para o solucionador IPOPT.
 
-Para o estado atual $x_k$ e a referência $x_{ref,k} = [\theta_{ref,k},\; 0]^\top$, define-se o conjunto de sequências de controle admissíveis
+\subsubsection*{Espaço de Estados Discreto do Preditor NARX}
+
+O modelo NARX selecionado via FROLS depende de $n_y = 15$ atrasos da saída angular e $n_u = 15$ atrasos do sinal de controle. Para formular o problema preditivo na forma canônica de espaço de estados discreto, define-se o vetor de estados interno $x_k \in \mathbb{R}^{30}$ no instante amostral $k$ ($T_s = 10$\,ms) como:
 \begin{equation}
-    \mathcal{U}_N(x_k) := \bigl\{U_k \mid
-        (x_{k+j|k},\, u_{k+j}) \in \mathcal{Z},\;
-        x_{k+N|k} \in \mathcal{X}_f,\;
-        j = 0,\ldots,N-1
-    \bigr\},
-    \label{eq:admissivel}
+    x_k = \begin{bmatrix}
+        y(k-1), & y(k-2), & \dots, & y(k-n_y), &
+        u(k-1), & u(k-2), & \dots, & u(k-n_u)
+    \end{bmatrix}^\top \in \mathbb{R}^{30}.
+    \label{eq:estado_narx}
 \end{equation}
-\noindent onde $\mathcal{Z} := \mathcal{X} \times \mathcal{U}$ é o conjunto admissível de pares estado-controle e $\mathcal{X}_f \subseteq \mathcal{X}$ é o conjunto terminal. O domínio de factibilidade do OCP é
-\begin{equation}
-    \mathcal{X}_N := \bigl\{x \in \mathcal{X} \mid
-        \mathcal{U}_N(x) \neq \emptyset \bigr\},
-    \label{eq:factivel}
-\end{equation}
-\noindent ou seja, o conjunto de estados a partir dos quais existe ao menos uma sequência de controle que satisfaz todas as restrições e conduz o sistema ao conjunto terminal em $N$ passos \cite{rawlings2017}.
 
-O OCP resolvido no instante $k$ é
+A propagação temporal de um passo à frente no horizonte de predição é governada pela função de transição não-linear $x_{k+j+1|k} = F(x_{k+j|k}, u_{k+j})$, estruturada na forma de registrador de deslocamento:
+\begin{align}
+    y_{k+j|k} &= \mathcal{M}_{\text{NARX}}\bigl(x_{k+j|k}\bigr) = \sum_{i=1}^{M} \hat{\theta}_i \, \phi_i\bigl(x_{k+j|k}\bigr), \label{eq:narx_saida_predita} \\
+    x_{k+j+1|k} &= \begin{bmatrix}
+        y_{k+j|k} \\
+        x_{k+j|k}(1 : n_y - 1) \\
+        u_{k+j} \\
+        x_{k+j|k}(n_y + 1 : n_y + n_u - 1)
+    \end{bmatrix} \in \mathbb{R}^{30}, \label{eq:narx_shift}
+\end{align}
+\noindent onde $\mathcal{M}_{\text{NARX}}(\cdot)$ representa a combinação linear dos $M = 10$ regressores polinomiais da Tabela~\ref{tab:narx_termos}, propagando iterativamente o estado predito sem aproximações de truncamento numérico de integradores contínuos.
+
+\subsubsection*{Problema de Controle Ótimo em Tempo Discreto}
+
+O Problema de Controle Ótimo em horizonte finito ($N = 150$ passos, equivalente a $1{,}50$\,s de visão futura a $100$\,Hz) formulado a cada instante $k$ consiste em encontrar a sequência ótima de controle $U_k = \{u_k, u_{k+1}, \dots, u_{k+N-1}\}$ que minimiza a função de custo:
 \begin{equation}
-    \min_{U_k}\;
-    \underbrace{\sum_{j=0}^{N-1}
-    \ell\!\left(x_{k+j|k},\, u_{k+j},\, x_{ref,k}\right)}_{\text{custo acumulado}}
-    +\;
-    \underbrace{V_f\!\left(x_{k+N|k},\, x_{ref,k}\right)}_{\text{custo terminal}}
+    \min_{U_k}\; J(x_k, U_k, \mathbf{r}_k) = \sum_{j=0}^{N-1} \ell\bigl(x_{k+j|k},\, u_{k+j},\, r_{k+j}\bigr)
     \label{eq:ocp}
 \end{equation}
-\noindent sujeito a
+\noindent sujeito a:
 \begin{align}
-    x_{k+j+1|k} &= x_{k+j|k} + T_s\, f\!\left(x_{k+j|k},\, u_{k+j}\right),
-    && j = 0, \ldots, N-1, \label{eq:ocp_dinamica} \\
-    x_{k|k}      &= x_k, \label{eq:ocp_ic} \\
-    u_{k+j}      &\in \mathcal{U}, && j = 0, \ldots, N-1, \label{eq:ocp_u} \\
-    x_{k+j|k}    &\in \mathcal{X}, && j = 1, \ldots, N, \label{eq:ocp_x} \\
-    x_{k+N|k}    &\in \mathcal{X}_f, \label{eq:ocp_terminal}
+    x_{k|k} &= x_k, \label{eq:ocp_ic} \\
+    x_{k+j+1|k} &= F\bigl(x_{k+j|k},\, u_{k+j}\bigr), && j = 0, \ldots, N-1, \label{eq:ocp_dinamica} \\
+    u_{\min} &\leq u_{k+j} \leq u_{\max}, && j = 0, \ldots, N-1, \label{eq:ocp_u}
 \end{align}
-\noindent onde $N$ é o horizonte de predição; $U_k = \{u_{k}, \ldots, u_{k+N-1}\}$ é a sequência de controle a otimizar; $x_{k+j|k}$ é o estado predito $j$ passos à frente, propagado pela discretização de Euler explícita da dinâmica contínua~\eqref{eq:estadonl}; e $\mathcal{U}$ e $\mathcal{X}$ são os conjuntos admissíveis de entrada e de estado.
+\noindent onde $\mathbf{r}_k = [r_k, r_{k+1}, \dots, r_{k+N-1}]^\top$ denota o perfil de referência angular futuro ao longo do horizonte.
 
-\subsubsection*{Custo de Estágio e Custo Terminal}
+\subsubsection*{Custo de Estágio e Penalização de Taxa de Variação}
 
-O custo de estágio adota a forma quadrática em relação ao vetor de estados completo $x = [\theta,\; \dot{\theta}]^\top$ e ao vetor de referência $x_{ref} = [\theta_{ref},\; 0]^\top$:
+O custo de estágio $\ell(\cdot)$ penaliza quadrática e simultaneamente o erro de rastreamento angular da saída em relação à referência, o esforço absoluto de atuação e a taxa de variação da ação de controle ($\Delta u$), indispensável para assegurar transições suaves e evitar solicitações mecânicas excessivas ao conjunto propulsor:
 \begin{equation}
-    \ell(x, u, x_{ref}) =
-    (x - x_{ref})^\top Q\,(x - x_{ref}) + u^\top R\, u,
+    \ell\bigl(x_{k+j|k},\, u_{k+j},\, r_{k+j}\bigr) = 
+    q_y \bigl(y_{k+j|k} - r_{k+j}\bigr)^2 + r_u \, u_{k+j}^2 + r_{\Delta u} \, (\Delta u_{k+j})^2,
     \label{eq:custo_estagio}
 \end{equation}
-\noindent onde $Q \in \mathbb{R}^{2\times2}$ e $R \in \mathbb{R}$ são, respectivamente, as matrizes de peso definidas positivas ($Q \succ 0$ e $R > 0$). A matriz $Q$ penaliza o erro de rastreamento angular e a velocidade angular, garantindo o amortecimento do sistema, enquanto $R$ penaliza o esforço de controle, inibindo variações bruscas no sinal enviado ao ESC. A positividade estrita de $Q$ e $R$ garante que $\ell(x, u, x_{ref}) \geq \alpha_1(|x - x_{ref}|)$ para alguma função de classe $\mathcal{K}_\infty$, condição necessária para que a função de valor ótimo $V_N^0(\cdot)$ admita uma cota inferior compatível com os requisitos de uma função de Lyapunov \cite{rawlings2017}.
-
-
-O custo terminal é definido de forma análoga sobre o vetor de estados:
+\noindent onde a variação incremental de controle é definida por:
 \begin{equation}
-    V_f(x, x_{ref}) =
-    (x - x_{ref})^\top P\,(x - x_{ref}),
-    \label{eq:custo_terminal}
+    \Delta u_{k+j} = \begin{cases}
+        u_k - u(k-1), & \text{para } j = 0, \\
+        u_{k+j} - u_{k+j-1}, & \text{para } j = 1, \ldots, N-1,
+    \end{cases}
+    \label{eq:delta_u}
 \end{equation}
-\noindent onde a matriz $P \succ 0$ é obtida pela solução da equação de Lyapunov do sistema linearizado em torno do ponto de equilíbrio, operando sob uma lei de controle local estabilizante $u = K(x - x_{ref})$. Essa escolha garante que $V_f$ atue como uma Função de Lyapunov de Controle (CLF) local: para todo $x \in \mathcal{X}_f$, existe $u = Kx$ tal que
+\noindent com $u(k-1) = x_k(n_y + 1)$ obtido diretamente do estado medido atual.
+
+Os parâmetros de ponderação adotados na síntese foram calibrados experimentalmente para assegurar amortecimento rigoroso e rastreamento ágil:
 \begin{equation}
-    V_f\!\left(f(x, u),\, x_{ref}\right) - V_f(x, x_{ref})
-    \leq -\ell(x, u, x_{ref}),
-    \label{eq:clf}
+    q_y = 1000{,}0, \qquad r_u = 0{,}1, \qquad r_{\Delta u} = 50000{,}0.
+    \label{eq:pesos_nmpc}
 \end{equation}
-\noindent condição denominada suposição básica de estabilidade por
-\citeonline{rawlings2017}. O conjunto terminal
-$\mathcal{X}_f$ é escolhido como um subconjunto compacto e invariante por
-controle em torno de $\theta_{ref}$, tipicamente um subnível de $V_f$, de
-modo que~\eqref{eq:clf} seja satisfeita para todo $x \in \mathcal{X}_f$.
+A magnitude elevada atribuída ao peso $r_{\Delta u}$ ($5 \times 10^4$) atua como um forte filtro dinâmico de suavização na trajetória de comando, coibindo oscilações espúrias no ESC decorrentes de harmônicos de alta frequência da turbina.
 
-\subsubsection*{Estratégia de Horizonte Deslizante e Viabilidade Recursiva}
+\subsubsection*{Restrições nos Atuadores e Formulação Terminal}
 
-A estratégia de horizonte deslizante (\textit{receding horizon}) aplica apenas a primeira ação ótima $u_k^* = u^0(0; x_k)$ da sequência $U_k^* = \arg\min \eqref{eq:ocp}$, descarta os demais elementos e resolve novamente o OCP no instante seguinte com o novo estado medido $x_{k+1}$, incorporando retroalimentação de forma natural \cite{mayne2000}. A lei de controle implícita resultante é
+Em relação aos limites operacionais de controle~\eqref{eq:ocp_u}, estabeleceu-se $u_{\min} = 0{,}0\%$ e $u_{\max} = 100{,}0\%$ durante a rotina de otimização numérica offline para geração do dataset. Na operação física em bancada, o firmware do microcontrolador impõe um teto de segurança em $u \le 80{,}0\%$ para evitar sobreaquecimento prolongado do enrolamento do motor elétrico outrunner e admite controle bidirecional completo através do ESC configurado para modulação reversa.
+
+Na formulação adotada para geração offline da base de aprendizado, adota-se um horizonte de predição suficientemente extenso ($N = 150$ passos, ou $1{,}50$\,s, correspondendo a quase quatro vezes o período natural de oscilação do modo pendular dominante). Sob horizonte suficientemente longo, dispensa-se a imposição de restrições terminais restritivas de igualdade ou conjuntos terminais compactos $\mathcal{X}_f$ \cite{rawlings2017}, simplificando a convergência do algoritmo de pontos interiores (IPOPT) e prevenindo infactibilidades numéricas artificiais durante degraus bruscos de trajetória.
+
+\subsubsection*{Estratégia de Horizonte Deslizante}
+
+Seguindo o princípio do horizonte deslizante (\textit{receding horizon}), apenas a primeira ação calculada da sequência ótima $U_k^* = \{u_k^*, u_{k+1}^*, \dots\}$ é efetivamente retida:
 \begin{equation}
-    \kappa_N(x_k) := u^0(0;\, x_k), \qquad x_k \in \mathcal{X}_N.
+    \kappa_N(x_k, \mathbf{r}_k) := u_k^*,
     \label{eq:lei_controle}
 \end{equation}
-
-Uma propriedade fundamental dessa estratégia é a viabilidade recursiva, se o OCP é factível para o estado inicial $x_0 \in \mathcal{X}_N$, então ele permanece factível para todos os estados subsequentes $x_k$ do sistema em malha fechada $x^+ = f(x,
-\kappa_N(x))$, desde que $\mathcal{X}_f$ seja invariante por controle \cite{rawlings2017}. Isso garante que o controlador nunca encontra um estado para o qual não exista solução, evitando falhas em operação.
-Sob as condições~\eqref{eq:clf}, pode-se mostrar que a função de valor ótimo satisfaz
-\begin{equation}
-    V_N^0\!\left(f(x, \kappa_N(x))\right) \leq V_N^0(x) - \ell(x,\kappa_N(x))
-    \quad \forall x \in \mathcal{X}_N,
-    \label{eq:descida}
-\end{equation}
-\noindent o que caracteriza $V_N^0(\cdot)$ como uma função de Lyapunov do sistema em malha fechada, assegurando estabilidade assintótica da origem (erro de rastreamento nulo) em $\mathcal{X}_N$ \cite{rawlings2017}.
-
-O OCP~\eqref{eq:ocp}--\eqref{eq:ocp_terminal} é transcrito em um NLP e resolvido pelo CasADi \cite{andersson2019}, que constrói grafos de expressão simbólica (DAGs) e calcula automaticamente as derivadas de primeira e segunda ordem exigidas pelo resolvedor numérico IPOPT.
+\noindent descartando-se as ações subsequentes. O OCP é parametrizado simbolicamente no CasADi e resolvido repetidamente a cada passo amostral pelo IPOPT para formar a trajetória em malha fechada que abastecerá o banco de dados da rede neural.
 
 % ------------------------------------------------------------
 \subsection{Geração do \textit{Dataset}}
 
-A política de controle ótima gerada pelo NMPC em malha fechada é utilizada para compor o \textit{dataset} de treinamento da rede neural MLP, conforme o bloco central da fase offline na Figura~\ref{fig:diagrama-blocos-projeto}. Para cada instante de simulação, o OCP~\eqref{eq:ocp} é parametrizado pela referência corrente $\theta_{ref,k}$, e registra-se o par entrada-saída:
+A política de controle ótima gerada pelo NMPC em malha fechada é utilizada para compor o \textit{dataset} de treinamento supervisionado da rede neural MLP, conforme esquematizado na Figura~\ref{fig:diagrama-blocos-projeto}. Para cada instante de simulação $k$, registra-se o par vetor de entrada e comando ótimo:
 \begin{equation}
     \mathcal{D} = \bigl\{
-        \bigl(x_k,\; u_k^*\bigr)
-    \bigr\}_{k=1}^{M},
+        \bigl(z_k,\; u_k^*\bigr)
+    \bigr\}_{k=1}^{M_{\text{data}}},
     \label{eq:dataset}
 \end{equation}
-\noindent onde $x_k \in \mathbb{R}^{130}$ denota o vetor de características composto pelas $n_y = 15$ saídas passadas da planta ($\theta_{k-1}, \dots, \theta_{k-15}$), pelas $n_u = 15$ ações de controle passadas ($u_{k-1}, \dots, u_{k-15}$) e pelos $N = 100$ passos de referência futura no horizonte de predição ($\theta_{\text{ref}, k}, \dots, \theta_{\text{ref}, k+N-1}$), e $u_k^* \in \mathbb{R}$ representa a ação de controle ótima obtida da solução do OCP em malha fechada.
+\noindent onde $z_k \in \mathbb{R}^{130}$ denota o vetor de características composto pelas $n_y = 15$ saídas passadas da planta ($\theta_{k-1}, \dots, \theta_{k-15}$), pelas $n_u = 15$ ações de controle passadas ($u_{k-1}, \dots, u_{k-15}$) e pelos $N_{\text{prev}} = 100$ passos de referência futura no horizonte de visão antecipada ($\theta_{\text{ref}, k}, \dots, \theta_{\text{ref}, k+N_{\text{prev}}-1}$), enquanto $u_k^* \in \mathbb{R}$ representa a ação escalar ótima fornecida pelo CasADi.
 
-A inclusão das referências futuras dota a rede neural da capacidade de visão antecipada (\textit{preview}), permitindo compensar preventivamente a inércia mecânica da planta, em harmonia com a formulação do OCP da Seção~\ref{subsec:nmpc_ocp}. Para alimentar a resolução offline do controlador ótimo e assegurar rica cobertura do espaço de estados, sintetizou-se uma trajetória multivariada com duração de 187\,s, combinando trechos senoidais harmônicos até $0{,}50$\,Hz com degraus de amplitude comutada que percorrem desde $12^\circ$ até $110^\circ$, cobrindo dinâmicas de transição e regimes estáticos ao longo de todo o envelope operacional \cite{karg2020}.
+A inclusão explícita das referências futuras dota a rede neural da capacidade de visão antecipada (\textit{preview}), permitindo compensar preventivamente a inércia mecânica da planta antes que as mudanças de referência ocorram. Para cobrir amplamente o envelope operacional do sistema e assegurar rica variabilidade dinâmica, a trajetória de excitação do NMPC foi sintetizada com duração total de 187\,s ($18.700$ passos amostrais a $100$\,Hz), integrando patamares de repouso, varreduras em frequência com sinais \textit{chirp} (0,05 a 0,50\,Hz), multisseno com sobreposição harmônica e sequências aleatórias de degraus cobrindo deflexões de $0^\circ$ até $120^\circ$.
 
-O \textit{dataset} é normalizado componente a componente para o intervalo $[-1, 1]$ antes do treinamento, procedimento padrão que melhora o condicionamento do problema de otimização do aprendizado e a convergência do algoritmo Adam \cite{karg2020}.
+Antes do treinamento, as variáveis de entrada do \textit{dataset} são padronizadas via transformação $Z$-score (\texttt{StandardScaler}), subtraindo a média amostral e escalonando pela variância unitária, o que otimiza o condicionamento numérico da superfície de perda e acelera a convergência do algoritmo de retropropagação \cite{karg2020}.
 
 % ------------------------------------------------------------
 \subsection{Arquitetura e Treinamento da MLP}
 
-A implementação e o treinamento da rede neural MLP são realizados utilizando o PyTorch. O PyTorch é uma biblioteca de aprendizado de máquina que unifica facilidade de uso e alta performance computacional. Diferentemente de frameworks baseados na construção prévia de grafos estáticos de fluxo de dados, o PyTorch adota o paradigma de execução dinâmica e imperativa. Isso permite que os modelos de aprendizado profundo sejam programados e depurados como programas Python convencionais, mantendo o controle total do fluxo sob responsabilidade do usuário \cite{paszke2019}.
-A estrutura da rede, a configuração dos hiperparâmetros e a rotina de otimização, que inclui um critério de parada prematura (\textit{early stopping}) para evitar \textit{overfitting}, estão consolidadas no Algoritmo~\ref{alg:treino_mlp}.
+A implementação da rede neural aproximadora foi desenvolvida em PyTorch \cite{paszke2019}. Projetou-se uma arquitetura do tipo \textit{Multilayer Perceptron} (MLP) com a topologia:
+\begin{equation}
+    130 \;\longrightarrow\; 128 \;\longrightarrow\; 128 \;\longrightarrow\; 1,
+    \label{eq:topologia_mlp}
+\end{equation}
+\noindent constituída por uma camada de entrada de dimensão 130, duas camadas ocultas densas com 128 neurônios cada e funções de ativação do tipo Unidade Linear Retificada (ReLU, $\sigma(v) = \max(0, v)$), e uma camada de saída linear univariada gerando o comando contínuo $\hat{u}(k)$. A estrutura totaliza 33.665 parâmetros treináveis (pesos e \textit{biases}).
+
+O treinamento supervisionado foi conduzido minimizando o Erro Quadrático Médio (MSE):
+\begin{equation}
+    \mathcal{L}_{\text{MSE}}(\mathcal{W}) = \frac{1}{B} \sum_{i=1}^{B} \bigl( \hat{u}_i - u_i^* \bigr)^2,
+    \label{eq:mse_loss}
+\end{equation}
+\noindent utilizando o otimizador Adam com taxa de aprendizado inicial $\alpha = 10^{-3}$ e regularização por decaimento de peso (\textit{weight decay}) de $\lambda = 10^{-5}$. Utilizou-se tamanho de lote (\textit{batch size}) de 64 amostras com embaralhamento a cada época. Adotou-se o agendador de taxa de aprendizado \texttt{ReduceLROnPlateau} (fator de redução de 0,5 com paciência de 10 épocas e taxa mínima de $10^{-5}$) e critério de parada antecipada (\textit{early stopping}) para restaurar os parâmetros que alcançaram a menor perda no conjunto de validação. O procedimento de treinamento está estruturado no Algoritmo~\ref{alg:treino_mlp}.
 
 \begin{algorithm}
 \caption{Treinamento da Rede Neural para Aproximação do Controlador}
 \label{alg:treino_mlp}
 \begin{algorithmic}[1]
 
-\Procedure{TreinarAproximador}{}
+\Procedure{TreinarAproximador}{$\mathcal{D}$, $\text{épocas}=160$, $\text{batch}=64$, $\alpha=10^{-3}$}
 
-    \State Carregar dataset gerado pelo controlador ótimo
-    \State Dividir dataset em conjuntos de treino, validação e teste
-    \State Inicializar rede neural e otimizador
-    \State $melhorLoss \gets \infty$, \quad $contadorPaciencia \gets 0$
+    \State Carregar dataset gerado pelo controlador ótimo $\mathcal{D} = \{(z_k, u_k^*)\}$
+    \State Normalizar entradas $z_k$ com \texttt{StandardScaler}
+    \State Particionar $\mathcal{D}$ em conjuntos de treino ($80\%$), validação ($10\%$) e teste ($10\%$)
+    \State Inicializar MLP ($130 \to 128 \to 128 \to 1$), otimizador Adam e agendador \texttt{ReduceLROnPlateau}
+    \State $\mathcal{L}_{\text{val,min}} \gets \infty$, \quad $\mathcal{W}_{\text{ótimo}} \gets \text{pesos\_iniciais}$, \quad $\text{paciência} \gets 10$
 
     \Statex
-    \For{cada época}
-        \State Atualizar pesos minimizando o erro nos batches de treino
-        \State Avaliar erro no conjunto de validação
+    \For{$\text{época} = 1$ \textbf{até} $160$}
+        \State Embaralhar lotes de treino e executar passo \textit{forward} e \textit{backward} (Adam, $\text{batch}=64$)
+        \State Avaliar $\mathcal{L}_{\text{val}}$ no conjunto de validação
+        \State Atualizar agendador com $\mathcal{L}_{\text{val}}$ (reduz $\alpha$ se estagnado)
 
-        \If{houve melhora na validação}
-            \State Registrar melhora e salvar pesos atuais
-            \State Resetar contador de paciência
+        \If{$\mathcal{L}_{\text{val}} < \mathcal{L}_{\text{val,min}}$}
+            \State $\mathcal{L}_{\text{val,min}} \gets \mathcal{L}_{\text{val}}$
+            \State $\mathcal{W}_{\text{ótimo}} \gets \text{pesos\_atuais}$
+            \State $\text{contador\_paciência} \gets 0$
         \Else
-            \State Incrementar contador de paciência
-            \If{paciência esgotada}
-                \State \textbf{break} \Comment{\textit{Early stopping}}
+            \State $\text{contador\_paciência} \gets \text{contador\_paciência} + 1$
+            \If{$\text{contador\_paciência} \ge 20$}
+                \State \textbf{break} \Comment{\textit{Early stopping} preventivo}
             \EndIf
         \EndIf
     \EndFor
 
     \Statex
-    \State Restaurar melhores pesos
-    \State Avaliar desempenho final no conjunto de teste
-    \State Exportar modelo para implantação embarcada
+    \State Restaurar parâmetros $\mathcal{W}_{\text{ótimo}}$
+    \State Avaliar métricas finais ($R^2$ e MSE) no conjunto de teste independente
+    \State Exportar modelo para formato ONNX para compilação embarcada via X-CUBE-AI
 
 \EndProcedure
 \end{algorithmic}

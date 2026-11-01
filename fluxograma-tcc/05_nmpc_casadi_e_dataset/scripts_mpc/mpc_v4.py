@@ -180,16 +180,14 @@ ax1.legend(loc='upper right', framealpha=0.95)
 ax1.set_xlim(0, t_ms[-1])
 
 # Caixa com métricas
-metric_text = (f"RMSE = {rmse:.3f}" + r"$^\circ$" + "\n"
-               f"MAE = {mae:.3f}" + r"$^\circ$" + "\n"
-               f"FIT = {fit:.1f}\\%")
+metric_text = f"RMSE = {rmse:.3f}°\nMAE = {mae:.3f}°\nFIT = {fit:.1f}%"
 ax1.text(0.02, 0.95, metric_text, transform=ax1.transAxes,
          verticalalignment='top', fontsize=8.5,
          bbox=dict(boxstyle='round,pad=0.4', facecolor='white', edgecolor='0.8', alpha=0.92))
 
 ax2.plot(t_ms, u_ms, color='#1f77b4', lw=1.0, label=r'Excitação Multisseno $u(k)$')
 ax2.set_xlabel('Tempo [s]')
-ax2.set_ylabel(r'Controle $u$ [\%]')
+ax2.set_ylabel(r'Controle $u$ [%]')
 ax2.grid(True, linestyle='--', alpha=0.5)
 ax2.legend(loc='upper right', framealpha=0.95)
 
@@ -547,7 +545,7 @@ ax_m1.set_xlim(0, tvec_sim_train[-1])
 
 ax_m2.plot(tvec_sim_train, usim_train, color='#d62728', lw=1.0, label=r'Ação de Controle Ótima $u^*(t)$')
 ax_m2.set_xlabel('Tempo [s]')
-ax_m2.set_ylabel(r'Controle $u$ [\%]')
+ax_m2.set_ylabel(r'Controle $u$ [%]')
 ax_m2.grid(True, linestyle='--', alpha=0.5)
 ax_m2.legend(loc='upper right', framealpha=0.95)
 
@@ -687,20 +685,20 @@ fig_sc, axes = plt.subplots(1, 3, figsize=(10.0, 3.2), sharey=True)
 axes[0].scatter(y_train, y_train_pred, alpha=0.25, color='#1f77b4', s=10)
 axes[0].plot([y_train.min(), y_train.max()], [y_train.min(), y_train.max()], 'r--', lw=1.2)
 axes[0].set_title(f"Treino ($R^2 = {r2_tr:.4f}$)", fontsize=9.0)
-axes[0].set_xlabel(r"Controle NMPC $u^*$ [\%]")
-axes[0].set_ylabel(r"Predicao RNA $\hat{u}$ [\%]")
+axes[0].set_xlabel(r"Controle NMPC $u^*$ [%]")
+axes[0].set_ylabel(r"Predicao RNA $\hat{u}$ [%]")
 axes[0].grid(True, linestyle='--', alpha=0.5)
 
 axes[1].scatter(y_val, y_val_pred, alpha=0.35, color='#2ca02c', s=12)
 axes[1].plot([y_val.min(), y_val.max()], [y_val.min(), y_val.max()], 'r--', lw=1.2)
 axes[1].set_title(f"Validacao ($R^2 = {r2_va:.4f}$)", fontsize=9.0)
-axes[1].set_xlabel(r"Controle NMPC $u^*$ [\%]")
+axes[1].set_xlabel(r"Controle NMPC $u^*$ [%]")
 axes[1].grid(True, linestyle='--', alpha=0.5)
 
 axes[2].scatter(y_test, y_test_pred, alpha=0.35, color='#ff7f0e', s=12)
 axes[2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=1.2)
 axes[2].set_title(f"Teste Cego ($R^2 = {r2_te:.4f}$)", fontsize=9.0)
-axes[2].set_xlabel(r"Controle NMPC $u^*$ [\%]")
+axes[2].set_xlabel(r"Controle NMPC $u^*$ [%]")
 axes[2].grid(True, linestyle='--', alpha=0.5)
 
 plt.tight_layout()
@@ -1012,7 +1010,7 @@ ax_s2.plot(tvec_val, u_sim, color='#d62728', lw=1.0, label=r'Ação de Controle 
 ax_s2.axvspan(0, T_PID_START, color='#7f7f7f', alpha=0.15)
 ax_s2.axvspan(t_total_val - T_PID_END, t_total_val, color='#7f7f7f', alpha=0.15)
 ax_s2.set_xlabel('Tempo [s]')
-ax_s2.set_ylabel(r'Controle $u$ [\%]')
+ax_s2.set_ylabel(r'Controle $u$ [%]')
 ax_s2.grid(True, linestyle='--', alpha=0.5)
 ax_s2.legend(loc='upper right', framealpha=0.95)
 
@@ -1173,7 +1171,7 @@ def run_sil_validation(x2ref_custom, name, filename_prefix):
     ax_v2.axvspan(0, T_PID_START, color='#7f7f7f', alpha=0.15)
     ax_v2.axvspan(steps_custom*Ts - T_PID_END, steps_custom*Ts, color='#7f7f7f', alpha=0.15)
     ax_v2.set_xlabel('Tempo [s]')
-    ax_v2.set_ylabel(r'Controle $u$ [\%]')
+    ax_v2.set_ylabel(r'Controle $u$ [%]')
     ax_v2.grid(True, linestyle='--', alpha=0.5)
     ax_v2.legend(loc='upper right', framealpha=0.95)
 
