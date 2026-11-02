@@ -52,7 +52,7 @@ Embora os resultados experimentais atestem a viabilidade da metodologia desenvol
     
     \item \textbf{Sensibilidade a Discrepâncias Estáticas no Modelo Puramente por Dados:} A rede neural nominal opera como um aproximador de função estático baseado em dados. Discrepâncias entre a planta real e o modelo treinado (tais como perdas aerodinâmicas de recirculação em ângulos elevados e atrito seco de mancais) manifestaram-se como erros persistentes de regime permanente, tornando indispensável a adição de um integrador residual no firmware para assegurar erro estacionário nulo.
     
-    \item \textbf{Sensibilidade à Variação de Tensão da Alimentação (Bateria LiPo):} Os parâmetros da rede neural foram sintetizados assumindo uma relação de empuxo constante. Em ensaios operacionais contínuos alimentados por baterias recarregáveis, a curva de descarga reduz a tensão de barramento e diminui o empuxo disponível para uma dada largura de pulso PWM. A rede neural estática não possui mecanismos intrínsecos de compensação para essa perda gradual de ganho do atuador.
+
     
 \end{enumerate}
 

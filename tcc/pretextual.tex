@@ -74,7 +74,7 @@
 \begin{resumo}
 \SingleSpacing
 
-    \noindent Este trabalho apresenta o desenvolvimento, a otimização em \textit{TinyML} e a validação experimental de um controlador neural preditivo embarcado para o rastreamento angular de um aeropêndulo instrumentado (1-DOF), visando contornar o elevado custo computacional do Controle Preditivo Não-Linear (NMPC) tradicional em microcontroladores de baixo custo. A dinâmica do sistema, acionado por uma turbina fan dutada (EDF) bidirecional e monitorado por uma Unidade de Medição Inercial (IMU), é identificada experimentalmente por meio de um modelo discreto autorregressivo não-linear com entradas exógenas (NARX) via algoritmo FROLS. O Problema de Controle Ótimo em horizonte finito ($N = 150$ passos) é formulado e resolvido offline no ambiente CasADi/IPOPT sob um sinal rico de excitação de 187\,s, compondo uma base de dados utilizada no treinamento supervisionado de uma rede neural Perceptron Multicamadas (MLP, $130 \to 128 \to 128 \to 1$). O modelo neural é compilado em linguagem C nativa e executado em tempo real em um microcontrolador STM32F446RE (ARM Cortex-M4F a 180\,MHz) a uma taxa de amostragem determinística de 100\,Hz ($T_s = 10$\,ms). A latência de inferência situou-se entre 1,69\,ms (via ST X-CUBE-AI) e 2,08\,ms (C nativo sob otimização \texttt{-Os}), correspondendo a uma ocupação de CPU de apenas 18,2\% a 20,8\%. A quantização não-linear reduziu o armazenamento dos pesos em 86,4\% (de 130,5\,KiB para 17,75\,KiB), viabilizando o firmware completo em 69,51\,KB de Flash. Para mitigar o atrito estático de rolamento e o descasamento estático observados na bancada física, introduziu-se uma arquitetura de controle híbrida, integrando a MLP a um compensador integral residual paralelo saturado ($\pm 10\%$). O projeto avalia os compromissos entre a precisão do rastreamento de referências, a capacidade de rejeição a perturbações e as restrições de latência em tempo real e memória. Os ensaios experimentais na bancada demonstraram reduções entre 69\% e 81\% no RMSE dinâmico frente a um controlador PID clássico de referência, com atenuação superior a 96\% no erro estacionário de sustentação.
+    \noindent Este trabalho apresenta o desenvolvimento, a otimização em \textit{TinyML} e a validação experimental de um controlador neural preditivo embarcado para o rastreamento angular de um aeropêndulo (1-DOF), visando contornar o elevado custo computacional do Controle Preditivo Não-Linear (NMPC) tradicional em microcontroladores de baixo custo. A dinâmica do sistema é identificada experimentalmente por meio de um modelo discreto autorregressivo não-linear com entradas exógenas (NARX) via algoritmo FROLS. O Problema de Controle Ótimo é formulado e resolvido offline no ambiente CasADi/IPOPT para compor a base de dados de treinamento de uma rede neural Perceptron Multicamadas (MLP). O modelo neural é embarcado em um microcontrolador STM32F446RE a 100\,Hz e integrado a um compensador integral residual paralelo para mitigar o atrito estático e descasamentos de modelagem. Técnicas de quantização reduziram em 86,4\% o armazenamento dos pesos, viabilizando o firmware com latência de inferência de aproximadamente 2\,ms ($\sim$20\% de ocupação da CPU). Ensaios experimentais na bancada demonstraram reduções de até 81\% no RMSE dinâmico e atenuação superior a 96\% no erro estacionário frente a um controlador PID clássico.
 
     \vspace{\onelineskip}
 
@@ -88,7 +88,7 @@
 \SingleSpacing
     \begin{otherlanguage*}{english}
 
-        \noindent This work presents the development, TinyML optimization, and experimental validation of an embedded neural predictive controller for the angular tracking of an instrumented 1-DOF aeropendulum, aimed at circumventing the high computational burden of traditional Nonlinear Model Predictive Control (NMPC) on low-cost microcontrollers. The system dynamics, driven by a bidirectional Electric Ducted Fan (EDF) unit and monitored by an Inertial Measurement Unit (IMU), are experimentally identified through a discrete Nonlinear AutoRegressive with eXogenous inputs (NARX) model via the FROLS algorithm. A finite-horizon Optimal Control Problem ($N = 150$ steps) is formulated and solved offline in the CasADi/IPOPT framework over a 187\,s rich excitation signal, creating a dataset used for the supervised training of a Multilayer Perceptron neural network (MLP, $130 \to 128 \to 128 \to 1$). The neural model is compiled into native C code and executed in real time on an STM32F446RE microcontroller (ARM Cortex-M4F at 180\,MHz) at a deterministic sampling rate of 100\,Hz ($T_s = 10$\,ms). Inference latency ranged from 1.69\,ms (via ST X-CUBE-AI) to 2.08\,ms (native C under \texttt{-Os}), corresponding to a CPU occupancy of only 18.2\% to 20.8\%. Non-linear parameter quantization reduced weight storage by 86.4\% (from 130.5\,KiB to 17.75\,KiB), enabling the complete firmware footprint to fit within 69.51\,KB of Flash memory. To mitigate dry bearing friction and static model mismatch observed on the physical bench, a hybrid control architecture was introduced, coupling the MLP with a parallel saturated ($\pm 10\%$) residual integral compensator. The project evaluates the trade-offs between reference tracking accuracy, disturbance rejection capabilities, and real-time latency and memory constraints. Experimental bench trials demonstrated a 69\% to 81\% dynamic RMSE reduction compared to a baseline PID controller, alongside over 96\% attenuation of steady-state offset.
+        \noindent This work presents the development, TinyML optimization, and experimental validation of an embedded neural predictive controller for the angular tracking of a 1-DOF aeropendulum, aimed at circumventing the high computational burden of traditional Nonlinear Model Predictive Control (NMPC) on low-cost microcontrollers. The system dynamics are experimentally identified using a discrete Nonlinear AutoRegressive with eXogenous inputs (NARX) model via the FROLS algorithm. The Optimal Control Problem is formulated and solved offline in the CasADi/IPOPT framework to generate a training dataset for a Multilayer Perceptron (MLP) neural network. The neural model is deployed on an STM32F446RE microcontroller running at 100\,Hz and coupled with a parallel residual integral compensator to mitigate static friction and model mismatch. Parameter quantization reduced weight storage by 86.4\%, fitting the firmware with an inference latency of approximately 2\,ms ($\sim$20\% CPU occupancy). Bench experimental trials demonstrated dynamic RMSE reductions of up to 81\% and over 96\% attenuation of steady-state error compared to a classical PID controller.
 
         \vspace{\onelineskip}
 
@@ -128,24 +128,26 @@
 %--------Lista de abreviaturas e siglas---------%
 \begin{siglas}
     \item[ADC] Conversor Analógico-Digital (\textit{Analog-to-Digital Converter})
+    \item[APRBS] Sequência Binária Pseudo-Aleatória de Amplitude (\textit{Amplitude Pseudo-Random Binary Sequence})
     \item[BLDC] Motor de Corrente Contínua sem Escovas (\textit{Brushless Direct Current})
-    \item[CLF] Função de Lyapunov de Controle (\textit{Control Lyapunov Function})
+    \item[CMSIS-NN] Biblioteca de Redes Neurais do Padrão de Interface de Software de Microcontrolador Cortex (\textit{Cortex Microcontroller Software Interface Standard - Neural Network})
     \item[DAG] Grafo Direcionado Acíclico (\textit{Directed Acyclic Graph} / Grafo de expressão simbólica)
     \item[DLPF] Filtro Passa-Baixas Digital (\textit{Digital Low-Pass Filter})
-    \item[EDF] Ventilador Elétrico Dutado (\textit{Electric Ducted Fan})
     \item[DMA] Acesso Direto à Memória (\textit{Direct Memory Access})
     \item[DNN] Rede Neural Profunda (\textit{Deep Neural Network})
+    \item[DPC] Controle Preditivo Diferenciável (\textit{Differentiable Predictive Control})
     \item[dps] Graus por segundo (\textit{degrees per second})
+    \item[DWT] Unidade de Rastreamento e Ponto de Observação de Dados (\textit{Data Watchpoint and Trace})
+    \item[EDF] Ventilador Elétrico Dutado (\textit{Electric Ducted Fan})
     \item[EMPC] Controle Preditivo Baseado em Modelo Explícito (\textit{Explicit MPC})
     \item[ERR] Razão de Redução do Erro (\textit{Error Reduction Ratio})
     \item[ESC] Controlador Eletrônico de Velocidade (\textit{Electronic Speed Controller})
-    \item[FFNN] Rede Neural \textit{Feedforward} (\textit{Feedforward Neural Network})
     \item[FPU] Unidade de Ponto Flutuante (\textit{Floating-Point Unit})
     \item[FROLS] Mínimos Quadrados Ortogonais com Regressão Progressiva (\textit{Forward Regression Orthogonal Least Squares})
     \item[I$^2$C] \textit{Inter-Integrated Circuit}
     \item[IMU] Unidade de Medição Inercial (\textit{Inertial Measurement Unit})
+    \item[INT8] Representação Inteira de 8 bits (\textit{8-bit Integer})
     \item[IPOPT] Otimizador de Ponto Interior para Programação Não-Linear (\textit{Interior Point Optimizer})
-    \item[JAX] Estrutura computacional para diferenciação automática e computação numérica de alta performance
     \item[MAE] Erro Absoluto Médio (\textit{Mean Absolute Error})
     \item[MCU] Microcontrolador (\textit{Microcontroller Unit})
     \item[MDF] \textit{Medium Density Fiberboard}
@@ -157,7 +159,7 @@
     \item[NLP] Programação Não-Linear (\textit{Nonlinear Programming})
     \item[NMPC] Controle Preditivo Não-Linear (\textit{Nonlinear Model Predictive Control})
     \item[OCP] Problema de Controle Ótimo (\textit{Optimal Control Problem})
-    \item[ODE] Equação Diferencial Ordinária (\textit{Ordinary Differential Equation})
+    \item[OSA] Predição Um-Passo-à-Frente (\textit{One-Step-Ahead})
     \item[PID] Proporcional-Integral-Derivativo
     \item[PINN] Rede Neural Informada pela Física (\textit{Physics-Informed Neural Network})
     \item[PLA] Poliácido Láctico
@@ -166,8 +168,11 @@
     \item[QFN] \textit{Quad Flat No-leads}
     \item[ReLU] Unidade Linear Retificada (\textit{Rectified Linear Unit})
     \item[RMSE] Raiz do Erro Quadrático Médio (\textit{Root Mean Square Error})
+    \item[RTI] Iterações em Tempo Real (\textit{Real-Time Iterations})
     \item[SIL] \textit{Software-in-the-Loop}
+    \item[SIMD] Instrução Única, Múltiplos Dados (\textit{Single Instruction, Multiple Data})
     \item[SISO] Entrada Única e Saída Única (\textit{Single-Input Single-Output})
+    \item[SQP] Programação Quadrática Sequencial (\textit{Sequential Quadratic Programming})
     \item[SRAM] Memória de Acesso Aleatório Estática (\textit{Static Random Access Memory})
     \item[TCC] Trabalho de Conclusão de Curso
     \item[TFLM] TensorFlow Lite Micro
@@ -182,15 +187,15 @@
 
 %----------------Lista de Símbolos----------------%
 \begin{simbolos}
-    \item[$ \alpha $] Fator do filtro complementar
+    \item[$ \alpha $] Fator do filtro complementar / Taxa de aprendizado do otimizador
     \item[$ b $] Coeficiente de atrito viscoso
     \item[$ \mathcal{D} $] Conjunto de dados (\textit{dataset}) de treinamento
-    \item[$ e $] Erro de rastreamento
-    \item[$ f(\cdot) $] Função de transição de estados (dinâmica não-linear)
+    \item[$ e $] Erro de rastreamento angular
+    \item[$ f(\cdot), F(\cdot) $] Funções de transição de estados (dinâmica contínua e discreta)
     \item[$ g $] Aceleração da gravidade
-    \item[$ J $] Momento de inércia total do aeropêndulo
+    \item[$ J $] Momento de inércia total do aeropêndulo / Função de custo do controle ótimo
     \item[$ K_p, K_i, K_d $] Ganhos proporcional, integral e derivativo do controlador PID
-    \item[$ K_\tau $] Constante de empuxo do motor
+    \item[$ K_{i,\text{res}} $] Ganho do compensador integrador residual
     \item[$ \kappa_N(\cdot) $] Lei de controle implícita do NMPC
     \item[$ L_1 $] Distância da unidade propulsora (turbina EDF) ao pivô de rotação
     \item[$ L_2 $] Distância do contrapeso ao pivô de rotação
@@ -198,25 +203,23 @@
     \item[$ m_1 $] Massa da unidade propulsora (turbina EDF)
     \item[$ m_2 $] Massa do contrapeso
     \item[$ N $] Horizonte de predição
-    \item[$ P $] Matriz de peso do custo terminal
-    \item[$ Q $] Matriz de peso dos estados no custo de estágio
-    \item[$ R $] Matriz de peso da ação de controle no custo de estágio
-    \item[$ r $] Sinal de referência
+    \item[$ n_y, n_u $] Ordens de atraso temporal na saída e na entrada do modelo NARX
+    \item[$ q_y $] Peso de penalização do erro de rastreamento da saída no custo de estágio
+    \item[$ r_u $] Peso de penalização do esforço de controle no custo de estágio
+    \item[$ r_{\Delta u} $] Peso de penalização da variação da ação de controle no custo de estágio
+    \item[$ r $] Sinal de referência angular
     \item[$ \theta $] Posição angular do braço do aeropêndulo
     \item[$ \dot{\theta} $] Velocidade angular
     \item[$ \ddot{\theta} $] Aceleração angular
-    \item[$ \hat{\theta} $] Vetor de parâmetros a estimar
+    \item[$ \hat{\theta} $] Vetor de parâmetros estimados do modelo NARX
     \item[$ T_s $] Período de amostragem
     \item[$ \tau $] Torque gerado pelo empuxo do motor
-    \item[$ U_k $] Sequência de controle a otimizar
+    \item[$ U_k $] Sequência de controle a otimizar no horizonte
     \item[$ u $] Sinal de controle (\textit{duty cycle} do PWM)
-    \item[$ V_f(\cdot) $] Função de custo terminal
-    \item[$ V_N^0(\cdot) $] Função de valor ótimo
+    \item[$ \Delta u $] Variação incremental do sinal de controle
     \item[$ x $] Vetor de estados do sistema
-    \item[$ \mathcal{X} $] Conjunto admissível de estados / Conjunto de variáveis de decisão
-    \item[$ \mathcal{X}_f $] Conjunto terminal
-    \item[$ \mathcal{X}_N $] Domínio de factibilidade do Problema de Controle Ótimo
-    \item[$ y $] Variável de processo observada
+    \item[$ y $] Variável de processo observada (saída angular medida)
+    \item[$ \hat{y} $] Saída angular predita pelo modelo NARX
 \end{simbolos}
 
 

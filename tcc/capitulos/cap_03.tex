@@ -6,9 +6,10 @@ Este capítulo apresenta o detalhamento completo da fase experimental do projeto
  
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1\textwidth]{img/blocos-projeto.png}
     \caption{Diagrama de Blocos do Projeto}
     \label{fig:diagrama-blocos-projeto}
+    \includesvg[width=1\textwidth]{img/blocos-projeto}
+    \sourceFig{o autor, 2026.}
 \end{figure}
 
  A fase offline corresponde: (i)~a síntese e implantação do controlador PID em malha fechada, utilizado tanto para estabilizar a planta durante a coleta de dados quanto como referência de desempenho na comparação final (Seção~\ref{sec:pid}); (ii)~a aquisição dos dados de identificação em malha fechada com o PID ativo e a identificação dos parâmetros do modelo dinâmico discreto NARX via algoritmo FROLS (Seção~\ref{sec:identificacao}); (iii)~a formulação e resolução do NMPC via CasADi, a geração do \textit{dataset} e o treinamento da rede neural MLP (Seção~\ref{sec:sintese}). A fase de operação em tempo real, na parte inferior, corresponde à implantação do controlador embarcado no STM32 e sua atuação sobre a planta física (Seção~\ref{sec:embarcado}). A Seção~\ref{sec:descricao_fisica} descreve a bancada e os componentes de hardware que suportam ambas as fases.
@@ -27,23 +28,24 @@ A estrutura física do aeropêndulo é montada sobre uma base de madeira compens
 
 Para fixar o eixo de alumínio às torres, é utilizado um cuboide retangular contendo um rolamento de esferas, permitindo que o eixo gire livremente. No centro do eixo foi usinado e rosqueado um furo para encaixe da haste do pêndulo.
 
-A haste rosqueada também permite a fixação e remoção facilitada de contrapesos, que foram usinados e rosqueados para se encaixar diretamente na haste. Um suporte impresso em 3D acopla a unidade propulsora à extremidade da haste. A propulsão é gerada por uma turbina fan dutada (EDF, do inglês \textit{Electric Ducted Fan}) da fabricante FMS de 50\,mm de diâmetro (unidade \textit{FMS 50mm 11-Blade EDF Unit}), dotada de rotor de 11 pás e acionada por um motor elétrico \textit{brushless} outrunner 2627 de $4500$\,KV (compatível com alimentação LiPo de 3S a 4S). O confinamento do fluxo de ar pelo duto cilíndrico reduz perdas de vórtice de ponta de pá, assegura um empuxo colimado e rápido ao longo do plano pendular e confere maior segurança física durante os ensaios de bancada. Um alojamento impresso em 3D para a Unidade de Medição Inercial (IMU) foi desenvolvido e fixado ao eixo de rotação, responsável por capturar o ângulo do sistema. A Figura~\ref{fig:montagem-bancada} ilustra o formato atual da bancada. Os principais parâmetros construtivos do sistema são resumidos na Tabela~\ref{tab:componentes_mecanicos}.
+A haste rosqueada também permite a fixação e remoção facilitada de contrapesos, que foram usinados e rosqueados para se encaixar diretamente na haste. Um suporte impresso em 3D acopla a unidade propulsora à extremidade da haste. A propulsão é gerada por uma turbina fan dutada (\textit{Electric Ducted Fan}) comm 50\,mm de diâmetro, dotada de rotor de 11 pás e acionada por um motor elétrico \textit{brushless} outrunner 2627 de $4500$\,KV. Esse motor confere maior segurança física durante os ensaios de bancada. Um alojamento impresso em 3D para a Unidade de Medição Inercial (IMU) foi desenvolvido e fixado ao eixo de rotação, responsável por capturar o ângulo do sistema. A Figura~\ref{fig:montagem-bancada} ilustra o formato atual da bancada. Os principais parâmetros construtivos do sistema são resumidos na Tabela~\ref{tab:componentes_mecanicos}.
 
-\begin{figure}[h]
+\begin{figure}[H]
     \centering
-    \includegraphics[width=1\textwidth]{img/montagem-bancada.png}
     \caption{Desenho da Bancada}
     \label{fig:montagem-bancada}
+    \includegraphics[width=1\textwidth]{img/montagem-bancada.png}
+    \sourceFig{o autor, 2026.}
 \end{figure}
 
-\begin{table}[h!]
+\begin{table}[H]
     \centering
-    \caption{Componentes mecânicos do aeropêndulo}
+    \caption{Componentes mecânicos do aeropêndulo.}
     \label{tab:componentes_mecanicos}
     \begin{tabular}{ll}
-        \hline
+        \toprule
         \textbf{Componente}       & \textbf{Material / Modelo}              \\
-        \hline
+        \midrule
         Base                      & Madeira compensada                      \\
         Torres de suporte         & MDF com reforços em PLA (impressão 3D)  \\
         Eixo de rotação           & Alumínio                                \\
@@ -54,8 +56,9 @@ A haste rosqueada também permite a fixação e remoção facilitada de contrape
         Alojamento da IMU         & PLA (impressão 3D)                      \\
         Unidade Propulsora (EDF)  & FMS 50\,mm, 11 pás (\textit{Ducted Fan}) \\
         Motor Elétrico            & Brushless Outrunner 2627 KV4500 (3S--4S)\\
-        \hline
+        \bottomrule
     \end{tabular}
+    \sourceTab{o autor, 2026.}
 \end{table}
 
 % ------------------------------------------------------------
@@ -70,14 +73,14 @@ A comunicação com o microcontrolador é realizada via I$^2$C no modo \textit{f
 
 O giroscópio apresenta fundo de escala programável de $\pm250$, $\pm500$, $\pm1000$ ou $\pm2000$\,dps, com ADC de 16 bits e sensibilidade de 131\,LSB/dps na configuração de menor fundo de escala. A densidade espectral de ruído típica é de 0,015\,dps/$\sqrt{\text{Hz}}$, e o filtro passa-baixas digital (DLPF) é configurável entre 5,7 e 197\,Hz \cite{invensense2021icm20948}. A Tabela~\ref{tab:icm_gyro} resume os parâmetros do giroscópio que são relevantes para a aplicação.
 
-\begin{table}[h]
+\begin{table}[H]
     \centering
     \caption{Parâmetros do giroscópio do ICM-20948 utilizados no projeto.}
     \label{tab:icm_gyro}
     \begin{tabular}{lcc}
-        \hline
+        \toprule
         \textbf{Parâmetro} & \textbf{Valor} & \textbf{Unidade} \\
-        \hline
+        \midrule
         Fundo de escala selecionado & $\pm500$ & dps \\
         Sensibilidade                & 65,5   & LSB/dps \\
         Resolução do ADC             & 16     & bits \\
@@ -85,8 +88,9 @@ O giroscópio apresenta fundo de escala programável de $\pm250$, $\pm500$, $\pm
         Largura de banda do DLPF     & 51,2   & Hz \\
         Interface de comunicação     & I$^2$C & {-} \\
         Tensão de alimentação (VDD)  & 3,3    & V \\
-        \hline
+        \bottomrule
     \end{tabular}
+    \sourceTab{o autor, 2026.}
 \end{table}
 
 A frequência de amostragem de 100\,Hz satisfaz o requisito de $T_s \leq 10$\,ms imposto pela dinâmica do aeropêndulo, e a largura de banda do filtro de 51,2\,Hz é suficiente para capturar os modos dinâmicos relevantes sem amplificar ruído de alta frequência.
@@ -108,32 +112,33 @@ Os periféricos internos atendem aos requisitos dinâmicos e de interface do sis
 
 A Tabela~\ref{tab:perifericos_stm32} especifica a atribuição física de pinos e periféricos utilizada na implementação do protótipo.
 
-\begin{table}[h]
+\begin{table}[H]
     \centering
     \caption{Mapeamento de periféricos e pinos do STM32F446 para o aeropêndulo.}
     \label{tab:perifericos_stm32}
     \begin{tabularx}{\textwidth}{llXX}
-        \hline
+        \toprule
         \textbf{Periférico} & \textbf{Pino} & \textbf{Função Configurada} & \textbf{Destino / Interface} \\
-        \hline
-        \\
+        \midrule
         I2C1\_SCL  & PB8  & Clock do barramento I$^2$C (400\,kHz) & Pino SCL da IMU ICM-20948 \\
         I2C1\_SDA  & PB9  & Dados do barramento I$^2$C (400\,kHz) & Pino SDA da IMU ICM-20948 \\
         TIM1\_CH1  & PA8  & Saída PWM (Sinal de Controle) & Entrada de Sinal do ESC \\
         USART2\_TX & PA2  & Transmissão Serial Assíncrona & Receptor USB-UART \\
         USART2\_RX & PA3  & Recepção Serial Assíncrona    & Receptor USB-UART \\
-        \hline
+        \bottomrule
     \end{tabularx}
+    \sourceTab{o autor, 2026.}
 \end{table}
 
 A Figura~\ref{fig:esquematico} apresenta o esquemático elétrico simplificado da bancada, ilustrando a interligação entre o STM32 Nucleo-F446RE, a IMU ICM-20948 e o ESC. A fonte de alimentação do motor (VBAT) é independente da 
 alimentação lógica do microcontrolador.
 
-\begin{figure}[h]
+\begin{figure}[H]
     \centering
-    \includegraphics[width=1\textwidth]{img/diagrama-eletrico.png}
     \caption{Esquemático elétrico simplificado da bancada}
     \label{fig:esquematico}
+    \includegraphics[width=1\textwidth]{img/diagrama-eletrico.png}
+    \sourceFig{o autor, 2026.}
 \end{figure}
 
 % ============================================================
@@ -142,7 +147,7 @@ alimentação lógica do microcontrolador.
 
 A síntese do Controle Preditivo Não-Linear (NMPC) exige um modelo matemático rigoroso, mas a modelagem puramente analítica do aeropêndulo impõe dificuldades práticas, visto que parâmetros físicos são de difícil mensuração isolada e o arranjo propulsor (turbina EDF) introduz não-linearidades que costumam ser ignoradas. Contudo, as abordagens clássicas de identificação baseadas em modelos lineares possuem restrições estruturais que as tornam insuficientes para representar os efeitos aerodinâmicos em todo o envelope operacional da planta \cite{jiang2022}. 
 
-Diante dessas limitações, para fundamentar conceitualmente a dinâmica rotacional do aeropêndulo e compreender as fontes dominantes de não-linearidade, parte-se dos princípios da física clássica. Pela Segunda Lei de Newton aplicada à dinâmica rotacional, considerando explicitamente a massa da unidade propulsora (turbina EDF) $m_1$ posicionada à distância $L_1$ do pivô e a massa do contrapeso $m_2$ posicionada à distância $L_2$ no lado oposto, a equação de movimento do aeropêndulo é:
+Diante dessas limitações, para fundamentar conceitualmente a dinâmica rotacional do aeropêndulo e compreender as fontes dominantes de não-linearidade, parte-se dos princípios da física clássica. Pela Segunda Lei de Newton aplicada à dinâmica rotacional, considerando explicitamente a massa da unidade propulsora $m_1$ posicionada à distância $L_1$ do pivô e a massa do contrapeso $m_2$ posicionada à distância $L_2$ no lado oposto, a equação de movimento do aeropêndulo é:
 
 \begin{equation}
     J\ddot{\theta} + b\dot{\theta} + (m_1 L_1 - m_2 L_2)\,g\sin(\theta) = \tau(u),
@@ -166,9 +171,9 @@ Para o formalismo do NMPC, é necessário representar o sistema na forma de  esp
 \subsection{Ensaios e Estratégia de Excitação}
 \label{subsec:ensaios}
 
-Os ensaios de identificação foram conduzidos com o aeropêndulo operando obrigatoriamente em malha fechada, estabilizado por um controlador PID preliminar embarcado no microcontrolador STM32 (Seção~\ref{sec:pid}). A realimentação em malha fechada constituiu um requisito mandatório de segurança operacional: dada a natureza subamortecida da planta e a ausência de batentes amortecidos, ensaios em malha aberta conduziriam o braço do pêndulo a colisões destrutivas contra os limites físicos da bancada ou a regimes de saturação irreversível do atuador.
+Os ensaios de identificação foram conduzidos com o aeropêndulo operando obrigatoriamente em malha fechada, estabilizado por um controlador PID preliminar embarcado no microcontrolador STM32 (Seção~\ref{sec:pid}). A realimentação em malha fechada constituiu um requisito mandatório de segurança operacional: dada a natureza subamortecida da planta e a ausência de batentes, ensaios em malha aberta conduziriam o braço do pêndulo a colisões contra os limites físicos da bancada ou a regimes de saturação irreversível do atuador.
 
-O microcontrolador STM32 Nucleo-F446RE foi responsável pela execução determinística da lei de controle PID a uma taxa de amostragem de $f_s = 100$\,Hz ($T_s = 10$\,ms), pela injeção sincronizada dos sinais de referência dinâmicos e pelo envio contínuo da telemetria serial em tempo real para a estação de processamento em terra.
+O microcontrolador STM32 foi responsável pela execução determinística da lei de controle PID a uma taxa de amostragem de $f_s = 100$\,Hz ($T_s = 10$\,ms), pela injeção sincronizada dos sinais de referência dinâmicos e pelo envio contínuo da telemetria serial em tempo real para a estação de processamento em terra.
 
 \subsubsection{Sinais de Excitação}
 
@@ -182,7 +187,8 @@ Para assegurar a identificabilidade desses efeitos em todo o envelope físico, e
      \item \textbf{Dois níveis de estabilização em malha fechada ($45^\circ$ e $60^\circ$):} Os ensaios foram realizados em torno de dois pontos de equilíbrio: $\theta_0 = 45^\circ$ e $\theta_0 = 60^\circ$. A operação em dois patamares distintos é indispensável para cobrir diferentes condições de carga da planta, nas quais o empuxo requerido e a sensibilidade do torque gravitacional diferem substancialmente. Em $45^\circ$, o sistema opera em uma região intermediária de transição dinâmica ($\sin 45^\circ = \cos 45^\circ \approx 0{,}707$), enquanto em $60^\circ$ o empuxo necessário para sustentação estática é cerca de $22\%$ superior, alterando o ponto de trabalho do propulsor.
     
     
-    \item \textbf{Faixa total definida de referência ($0^\circ$ a $120^\circ$):} O envelope total de rastreamento estipulado para o projeto compreende o intervalo de $0^\circ$ (posição de repouso vertical com o motor inferior desativado) até $120^\circ$ (inclinação acentuada acima da horizontal). Em torno do nível de $45^\circ$, os sinais dinâmicos impõem variações de até $\pm 45^\circ$, cobrindo o intervalo de $0^\circ$ a $90^\circ$. Em torno do nível de $60^\circ$, os sinais atingem excursões de até $\pm 60^\circ$, percorrendo de $0^\circ$ a $120^\circ$, de modo a excitar toda a não-linearidade do envelope de voo.
+    \item \textbf{Faixa total definida de referência ($0^\circ$ a $120^\circ$):} O envelope total de rastreamento estipulado para o projeto compreende o intervalo de $0^\circ$ (posição de repouso vertical com o motor inferior desativado) até $120^\circ$ (inclinação acentuada acima da horizontal). Em torno do nível de $45^\circ$, os sinais dinâmicos impõem variações de até $\pm 45^\circ$, cobrindo o intervalo de $0^\circ$ a $90^\circ$. Em torno do nível de $60^\circ$, os sinais atingem excursões de até $\pm 60^\circ$, percorrendo de $0^\circ$ a $120^\circ$, de modo a excitar toda a não-linearidade.
+    
 \end{enumerate}
 
 
@@ -206,7 +212,7 @@ A Tabela~\ref{tab:ranges_angulos} sintetiza a matriz experimental dos 24 sinais 
 
 
 
-Para cumprir tais requisitos, a síntese dos perfis de referência foi realizada em ambiente computacional a uma taxa de amostragem de $f_s = 100$\,Hz ($T_s = 10$\,ms). Todas as trajetórias geradas incorporam intervalos iniciais e finais de repouso (\textit{zero-padding} de 3 a 5\,s), indispensáveis para a estabilização da comunicação serial e para a calibração automática de \textit{bias} do giroscópio da IMU antes do início da movimentação dinâmica. Adicionalmente, os perfis foram delimitados a valores não-negativos ($\ge 0^\circ$) para respeitar a geometria da bancada física, sendo estruturados em torno dos patamares operacionais de $45^\circ$ e $60^\circ$.
+Todas as trajetórias geradas incorporam intervalos iniciais e finais de repouso (\textit{zero-padding} de 3 a 5\,s), indispensáveis para a estabilização da comunicação serial e para a calibração automática de \textit{bias} do giroscópio da IMU antes do início da movimentação dinâmica. Adicionalmente, os perfis foram delimitados a valores não-negativos ($\ge 0^\circ$) para respeitar a geometria da bancada física, sendo estruturados em torno dos patamares operacionais de $45^\circ$ e $60^\circ$.
 
 Foram sintetizadas quatro classes principais de sinais dinâmicos:
 
@@ -398,7 +404,7 @@ A análise dos polos de malha aberta revela as propriedades dinâmicas intrínse
 \begin{itemize}
     \item Frequência natural de oscilação: $\omega_n = \sqrt{6{,}2537} \approx 2{,}5007$\,rad/s ($f_n \approx 0{,}398$\,Hz);
     \item Coeficiente de amortecimento: $\zeta = \frac{0{,}8755}{2\omega_n} \approx 0{,}1751$ (planta severamente subamortecida);
-    \item Ganho estático incremental: $K_{dc} = \frac{6{,}9522}{6{,}2537} \approx 1{,}1117^\circ/\%$.
+    \item Ganho estático incremental: $K_{dc} = \frac{6{,}9522}{6{,}2537} \approx 1{,}1117^\circ\%$.
 \end{itemize}
 
 Para a implantação computacional e simulação digital em tempo discreto com período de amostragem $T_s = 10$\,ms ($f_s = 100$\,Hz), a função de transferência contínua~\eqref{eq:tf_continua} foi discretizada pelo método do Segurador de Ordem Zero (\textit{Zero-Order Hold} - ZOH), resultando em:
@@ -609,7 +615,7 @@ O treinamento supervisionado foi conduzido minimizando o Erro Quadrático Médio
 
     \State Carregar dataset gerado pelo controlador ótimo $\mathcal{D} = \{(z_k, u_k^*)\}$
     \State Normalizar entradas $z_k$ com \texttt{StandardScaler}
-    \State Particionar $\mathcal{D}$ em conjuntos de treino ($80\%$), validação ($10\%$) e teste ($10\%$)
+    \State Particionar $\mathcal{D}$ em conjuntos de treino ($75\%$), validação ($15\%$) e teste ($15\%$)
     \State Inicializar MLP ($130 \to 128 \to 128 \to 1$), otimizador Adam e agendador \texttt{ReduceLROnPlateau}
     \State $\mathcal{L}_{\text{val,min}} \gets \infty$, \quad $\mathcal{W}_{\text{ótimo}} \gets \text{pesos\_iniciais}$, \quad $\text{paciência} \gets 10$
 

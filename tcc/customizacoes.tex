@@ -46,6 +46,13 @@
 % \usepackage[alf,abnt-etal-text=it,abnt-repeated-author-omit=yes,abnt-etal-list=0,abnt-etal-cite=4,abnt-emphasize=bf]{abntex2cite}
 \usepackage[alf,abnt-etal-text=it,abnt-repeated-author-omit=no,abnt-etal-list=0,abnt-etal-cite=4,abnt-emphasize=bf]{abntex2cite}
 % ---
+% Ajusta o espaçamento entre o título do capítulo e o primeiro parágrafo (padrão ABNT/PUCPR)
+\setlength{\afterchapskip}{\onelineskip}
+
+% Evita que o LaTeX estique os espaços verticais para forçar a página até o rodapé
+\raggedbottom
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, fit, backgrounds, calc}
 
 \usepackage{listings}
 \lstset{
