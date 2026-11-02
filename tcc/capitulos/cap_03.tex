@@ -8,7 +8,7 @@ Este capítulo apresenta o detalhamento completo da fase experimental do projeto
     \centering
     \caption{Diagrama de Blocos do Projeto}
     \label{fig:diagrama-blocos-projeto}
-    \includesvg[width=1\textwidth]{img/blocos-projeto}
+    \includegraphics[width=1\textwidth]{img/blocos-projeto.png}
     \sourceFig{o autor, 2026.}
 \end{figure}
 
@@ -28,7 +28,7 @@ A estrutura física do aeropêndulo é montada sobre uma base de madeira compens
 
 Para fixar o eixo de alumínio às torres, é utilizado um cuboide retangular contendo um rolamento de esferas, permitindo que o eixo gire livremente. No centro do eixo foi usinado e rosqueado um furo para encaixe da haste do pêndulo.
 
-A haste rosqueada também permite a fixação e remoção facilitada de contrapesos, que foram usinados e rosqueados para se encaixar diretamente na haste. Um suporte impresso em 3D acopla a unidade propulsora à extremidade da haste. A propulsão é gerada por uma turbina fan dutada (\textit{Electric Ducted Fan}) comm 50\,mm de diâmetro, dotada de rotor de 11 pás e acionada por um motor elétrico \textit{brushless} outrunner 2627 de $4500$\,KV. Esse motor confere maior segurança física durante os ensaios de bancada. Um alojamento impresso em 3D para a Unidade de Medição Inercial (IMU) foi desenvolvido e fixado ao eixo de rotação, responsável por capturar o ângulo do sistema. A Figura~\ref{fig:montagem-bancada} ilustra o formato atual da bancada. Os principais parâmetros construtivos do sistema são resumidos na Tabela~\ref{tab:componentes_mecanicos}.
+A haste rosqueada também permite a fixação e remoção facilitada de contrapesos, que foram usinados e rosqueados para se encaixar diretamente na haste. Um suporte impresso em 3D acopla a unidade propulsora à extremidade da haste. A propulsão é gerada por uma turbina fan dutada (\textit{Electric Ducted Fan}) com 50\,mm de diâmetro, dotada de rotor de 11 pás e acionada por um motor elétrico \textit{brushless} outrunner 2627 de $4500$\,KV. Esse motor confere maior segurança física durante os ensaios de bancada. Um alojamento impresso em 3D para a Unidade de Medição Inercial (IMU) foi desenvolvido e fixado ao eixo de rotação, responsável por capturar o ângulo do sistema. A Figura~\ref{fig:montagem-bancada} ilustra o formato atual da bancada. Os principais parâmetros construtivos do sistema são resumidos na Tabela~\ref{tab:componentes_mecanicos}.
 
 \begin{figure}[H]
     \centering
@@ -615,7 +615,7 @@ O treinamento supervisionado foi conduzido minimizando o Erro Quadrático Médio
 
     \State Carregar dataset gerado pelo controlador ótimo $\mathcal{D} = \{(z_k, u_k^*)\}$
     \State Normalizar entradas $z_k$ com \texttt{StandardScaler}
-    \State Particionar $\mathcal{D}$ em conjuntos de treino ($75\%$), validação ($15\%$) e teste ($15\%$)
+    \State Particionar $\mathcal{D}$ em conjuntos de treino ($70\%$), validação ($15\%$) e teste ($15\%$)
     \State Inicializar MLP ($130 \to 128 \to 128 \to 1$), otimizador Adam e agendador \texttt{ReduceLROnPlateau}
     \State $\mathcal{L}_{\text{val,min}} \gets \infty$, \quad $\mathcal{W}_{\text{ótimo}} \gets \text{pesos\_iniciais}$, \quad $\text{paciência} \gets 10$
 
