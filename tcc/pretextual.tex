@@ -58,15 +58,17 @@
 
 
 %----------------------Epígrafe----------------------%
-%\begin{epigrafe}
-%    \vspace*{\fill}
-%    \begin{flushright}
-%        \begin{minipage}{8.5cm}
-%            \raggedleft
-%            \textit{}
-%        \end{minipage}
-%    \end{flushright}
-%\end{epigrafe}
+\begin{epigrafe}
+    \vspace*{\fill}
+    \begin{flushright}
+        \begin{minipage}{8.5cm}
+            \raggedleft
+            \textit{"A resposta continua sendo 42."}\\
+            \vspace{0.5ex}
+            Douglas Adams
+        \end{minipage}
+    \end{flushright}
+\end{epigrafe}
 
 
 %----------------------Resumos----------------------%
@@ -74,7 +76,7 @@
 \begin{resumo}
 \SingleSpacing
 
-    \noindent Este trabalho apresenta o desenvolvimento, a otimização em \textit{TinyML} e a validação experimental de um controlador neural preditivo embarcado para o rastreamento angular de um aeropêndulo (1-DOF), visando contornar o elevado custo computacional do Controle Preditivo Não-Linear (NMPC) tradicional em microcontroladores de baixo custo. A dinâmica do sistema é identificada experimentalmente por meio de um modelo discreto autorregressivo não-linear com entradas exógenas (NARX) via algoritmo FROLS. O Problema de Controle Ótimo é formulado e resolvido offline no ambiente CasADi/IPOPT para compor a base de dados de treinamento de uma rede neural Perceptron Multicamadas (MLP). O modelo neural é embarcado em um microcontrolador STM32F446RE a 100\,Hz e integrado a um compensador integral residual paralelo para mitigar o atrito estático e descasamentos de modelagem. Técnicas de quantização reduziram em 86,4\% o armazenamento dos pesos, viabilizando o firmware com latência de inferência de aproximadamente 2\,ms ($\sim$20\% de ocupação da CPU). Ensaios experimentais na bancada demonstraram reduções de até 81\% no RMSE dinâmico e atenuação superior a 96\% no erro estacionário frente a um controlador PID clássico.
+    \noindent Este trabalho apresenta o desenvolvimento, a otimização em \textit{TinyML} e a validação experimental de um controlador neural preditivo embarcado para o rastreamento angular de um aeropêndulo (1-DOF), visando contornar o elevado custo computacional do Controle Preditivo Não-Linear (NMPC) tradicional em microcontroladores de baixo custo. A dinâmica do sistema é identificada experimentalmente por meio de um modelo discreto autorregressivo não-linear com entradas exógenas (NARX) via algoritmo FROLS. O Problema de Controle Ótimo é formulado e resolvido offline no ambiente CasADi/IPOPT para compor a base de dados de treinamento de uma rede neural Perceptron Multicamadas (MLP). O modelo neural é embarcado em um microcontrolador STM32F446RE a 100\,Hz e integrado a um compensador integral residual paralelo para mitigar o atrito estático e descasamentos de modelagem. Técnicas de quantização reduziram em 86,4\% o armazenamento dos pesos, viabilizando o firmware com latência de inferência de aproximadamente 2\,ms ($\sim$20\% de ocupação da CPU). Ensaios experimentais na bancada demonstraram que o controlador preditivo neural reduziu o RMSE em até 81,7\% (faixa de 69,2\% a 81,7\%) frente ao PID linear clássico sob manobras dinâmicas rápidas. Por sua vez, a adição do compensador integral residual na arquitetura híbrida reduziu o viés de regime permanente entre 96,4\% e 99,5\% (erro estático residual $\le 0{,}08^\circ$) e o RMSE em até 49,3\% frente ao controlador neural puramente nominal, com repetibilidade estatística verificada em $N = 10$ ensaios independentes.
 
     \vspace{\onelineskip}
 
@@ -88,7 +90,7 @@
 \SingleSpacing
     \begin{otherlanguage*}{english}
 
-        \noindent This work presents the development, TinyML optimization, and experimental validation of an embedded neural predictive controller for the angular tracking of a 1-DOF aeropendulum, aimed at circumventing the high computational burden of traditional Nonlinear Model Predictive Control (NMPC) on low-cost microcontrollers. The system dynamics are experimentally identified using a discrete Nonlinear AutoRegressive with eXogenous inputs (NARX) model via the FROLS algorithm. The Optimal Control Problem is formulated and solved offline in the CasADi/IPOPT framework to generate a training dataset for a Multilayer Perceptron (MLP) neural network. The neural model is deployed on an STM32F446RE microcontroller running at 100\,Hz and coupled with a parallel residual integral compensator to mitigate static friction and model mismatch. Parameter quantization reduced weight storage by 86.4\%, fitting the firmware with an inference latency of approximately 2\,ms ($\sim$20\% CPU occupancy). Bench experimental trials demonstrated dynamic RMSE reductions of up to 81\% and over 96\% attenuation of steady-state error compared to a classical PID controller.
+        \noindent This work presents the development, TinyML optimization, and experimental validation of an embedded neural predictive controller for the angular tracking of a 1-DOF aeropendulum, aimed at circumventing the high computational burden of traditional Nonlinear Model Predictive Control (NMPC) on low-cost microcontrollers. The system dynamics are experimentally identified using a discrete Nonlinear AutoRegressive with eXogenous inputs (NARX) model via the FROLS algorithm. The Optimal Control Problem is formulated and solved offline in the CasADi/IPOPT framework to generate a training dataset for a Multilayer Perceptron (MLP) neural network. The neural model is deployed on an STM32F446RE microcontroller running at 100\,Hz and coupled with a parallel residual integral compensator to mitigate static friction and model mismatch. Parameter quantization reduced weight storage by 86.4\%, fitting the firmware with an inference latency of approximately 2\,ms ($\sim$20\% CPU occupancy). Bench experimental trials demonstrated that the neural predictive controller reduced tracking RMSE by up to 81.7\% (ranging from 69.2\% to 81.7\%) compared to a classical linear PID under fast dynamic maneuvers. Furthermore, the addition of the residual integral compensator in the hybrid architecture reduced steady-state bias by 96.4\% to 99.5\% (residual static error $\le 0.08^\circ$) and RMSE by up to 49.3\% compared to the purely nominal neural controller, with statistical repeatability verified over $N = 10$ independent runs.
 
         \vspace{\onelineskip}
 

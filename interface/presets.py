@@ -10,6 +10,21 @@ Para sinais contínuos (chirp, multi-seno), use os parâmetros em main.py.
 
 SEQUENCIAS_PRESET = [
     (
+        "Perturbacao 60 deg (Subida PID 0-5s -> RNA 5-70s -> Descida PID 70-80s)",
+        80,
+        [(0, 60), (70, 0)],
+    ),
+    (
+        "Perturbacao 90 deg (Subida PID 0-5s -> RNA 5-70s -> Descida PID 70-80s)",
+        80,
+        [(0, 90), (70, 0)],
+    ),
+    (
+        "Perturbacao 60 e 90 deg sequencial (Subida PID -> RNA 60/90 deg -> Descida PID)",
+        80,
+        [(0, 60), (35, 90), (70, 0)],
+    ),
+    (
         "Degrau unico 40 deg / 30 s",
         30,
         [(0, 40)],

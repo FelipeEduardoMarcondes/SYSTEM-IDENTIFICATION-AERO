@@ -1,5 +1,7 @@
 %===============================================================================
+% $Id: ifacconf.tex 19 2011-10-27 09:32:13Z jpuente $  
 % Template for IFAC meeting papers
+% Copyright (c) 2007-2008 International Federation of Automatic Control
 %===============================================================================
 \documentclass{ifacconf}
 
@@ -8,8 +10,10 @@
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{xcolor}
+\usepackage{url}
 
-% Toggle instructional comments (\instrfalse hides all instruction boxes)
+% Mude para \instrfalse para esconder todas as instruções
+
 \newif\ifinstr \instrfalse
 
 \newcommand{\instr}[1]{%
@@ -36,22 +40,26 @@
 \begin{document}
 \begin{frontmatter}
 
-\title{Embedded Neural Approximation of Nonlinear MPC for an Aeropendulum: Experimental Validation\thanksref{footnoteinfo}}
+\title{NARX Identification and Neural Approximate MPC of a Quarter-Drone\thanksref{footnoteinfo}} 
+% Title, preferably not more than 10 words.
 
-\thanks[footnoteinfo]{The authors thank the Pontifical Catholic University of Paran\'a (PUCPR) and Brazilian funding agencies for supporting this research.}
+\thanks[footnoteinfo]{The authors acknowledge the Pontifical Catholic University of Paraná (PUCPR), CAPES, and CNPq for financial support.}
 
-\author[First]{Felipe Eduardo Marcondes}
-\author[First]{Matheus Kale Mendes}
+\author[First]{Felipe Eduardo Marcondes} 
+\author[First]{Matheus Kale Mendes} 
 \author[First]{Helon Vicente Hultmann Ayala}
 
-\address[First]{Polytechnic School, Pontifical Catholic University of Paran\'a (PUCPR), Curitiba, PR, Brazil (e-mail: helon.ayala@pucpr.br).}
+\address[First]{Polytechnic School, Pontifical Catholic University of Paraná (PUCPR), Curitiba, PR 80215-901, Brazil (e-mail: marcondes.felipe@pucpr.edu.br, matheus.kale@pucpr.edu.br, helon.ayala@pucpr.br).}
 
 \begin{abstract}                % Abstract of not more than 250 words.
-Nonlinear Model Predictive Control (NMPC) provides superior trajectory tracking and constraint handling for agile mechatronic and Vertical Take-Off and Landing (VTOL) systems, yet its online iterative optimization remains computationally prohibitive for low-cost microcontrollers operating at high sampling rates. This paper presents the end-to-end development, TinyML optimization, and experimental validation of an embedded neural predictive controller for the angular tracking of an instrumented 1-DOF aeropendulum (quarter-drone bench) running at $100\,\mathrm{Hz}$ ($T_s = 10\,\mathrm{ms}$). The nonlinear aerodynamic and gravitational dynamics are identified from closed-loop experimental data using a parsimonious polynomial Nonlinear AutoRegressive with eXogenous inputs (NARX) model selected via the Forward Regression Orthogonal Least Squares (FROLS) algorithm. An Optimal Control Problem (OCP) with a long prediction horizon ($N = 150$) and reference preview is solved offline in CasADi/IPOPT to generate a supervision dataset for a Multilayer Perceptron (MLP) policy. To bridge the Sim-to-Real gap caused by bearing static friction and unmodeled aerodynamic losses, a parallel low-authority residual integral compensator is integrated into the embedded firmware on an ARM Cortex-M4F microcontroller (STM32F446RE). Hardware benchmarks comparing native C compilation against the ST X-CUBE-AI framework show that non-linear weight quantization reduces Flash memory footprint by $86.4\%$ while achieving a deterministic inference latency of $1.82\,\mathrm{ms}$ ($18.2\%$ CPU utilization). Experimental bench trials demonstrate that the hybrid neural controller reduces steady-state bias by over $96\%$ and achieves dynamic tracking RMSE reductions of $69.2\%$ to $81.7\%$ compared to a classical PID controller.
+This paper presents an identification-for-control case study on an instrumented quarter-drone (aeropendulum) testbench, which isolates the single-degree-of-freedom rotational dynamics of a propulsion arm driven by an Electric Ducted Fan (EDF). Because the plant is lightly damped and has no mechanical stops, persistently exciting multisine, chirp and pseudo-random step experiments were executed in closed loop at 100\,Hz around two equilibria ($45^\circ$ and $60^\circ$). A polynomial Nonlinear AutoRegressive with eXogenous inputs (NARX) model with 10 terms was selected out of 496 candidates by the Forward Regression Orthogonal Least Squares (FROLS) algorithm and validated in free-run simulation on unseen data (FIT of 72--75\%). The identified model was then used as the internal predictor of a Nonlinear Model Predictive Controller (NMPC) with reference preview. Since solving the NMPC online took 90--120\,ms per step on a desktop computer, ten times the 10\,ms sampling period, its closed-loop policy was distilled offline into a Multilayer Perceptron (MLP) executed on an ARM Cortex-M4F microcontroller in about 2\,ms. On the physical bench, the purely data-driven policy exhibited a steady-state offset caused by unmodeled friction and model mismatch; a low-authority residual integrator in parallel with the MLP reduced the mean bias by more than 96\% and the tracking RMSE by 18--49\% over $N=10$ repetitions. All experimental datasets and scripts are made publicly available.
+
+\instr{preencher apenas no final.}
+
 \end{abstract}
 
 \begin{keyword}
-Nonlinear model predictive control, neural networks, system identification, NARX models, embedded control, TinyML, aeropendulum.
+Nonlinear system identification, NARX models, approximate model predictive control, neural networks, embedded control, aeropendulum.
 \end{keyword}
 
 \end{frontmatter}
@@ -59,289 +67,261 @@ Nonlinear model predictive control, neural networks, system identification, NARX
 
 \section{Introduction}
 
-The rapid proliferation of Unmanned Aerial Vehicles (UAVs) and Vertical Take-Off and Landing (VTOL) platforms has intensified the demand for control strategies capable of simultaneously achieving high-precision trajectory tracking, disturbance rejection, and real-time execution on resource-constrained embedded processors \citep{nguyen2020}. In this context, the aeropendulum---or quarter-drone testbench---serves as an effective experimental benchmark that isolates the essential single-degree-of-freedom (1-DOF) rotational dynamics of a VTOL propulsion arm, combining the quadratic aerodynamic thrust of an Electric Ducted Fan (EDF) with nonlinear gravitational restoring torque and bearing friction \citep{job2015,lima2025}.
+\tamanho{1.5 pp. (contando resumo titulo etc)}
 
-Nonlinear Model Predictive Control (NMPC) stands out among advanced control methodologies due to its ability to explicitly handle actuator constraints, leverage future reference preview, and anticipate nonlinear plant dynamics \citep{mayne2000,rawlings2017}. However, solving a Nonlinear Programming (NLP) problem online at each sampling instant imposes a severe computational burden. For agile mechatronic systems requiring sampling periods on the order of $T_s = 10\,\mathrm{ms}$ ($100\,\mathrm{Hz}$), iterative numerical solvers frequently exceed the available CPU budget of low-power microcontrollers. While Explicit MPC (EMPC) circumvents online optimization by precomputing piecewise affine (PWA) control laws over polytopic partitions \citep{bemporad2002}, the number of regions grows exponentially with the prediction horizon and state dimension, quickly exhausting the static memory of embedded devices.
+\textit{Contextualization: } The development of Unmanned Aerial Vehicles (UAVs) and Vertical Take-Off and Landing (VTOL) platforms demands models and controllers able to handle strong nonlinearities and actuator constraints, a setting in which Model Predictive Control (MPC) has become a prominent approach \citep{nguyen2020}. Laboratory testbenches that isolate core subsystem dynamics play an important role in this context. The aeropendulum, or ``quarter-drone'', reproduces the rotational degree of freedom of a drone propulsion arm, coupling an electric thrust generator with a nonlinear gravitational torque, aerodynamic damping and bearing friction. It is therefore a convenient first step towards model-based control of multirotor vehicles and a case study for combining data-driven models with physical insight.
 
-To overcome both the latency of online solvers and the combinatorial explosion of EMPC, approximating the implicit MPC policy via Deep Neural Networks (DNNs) has emerged as a compelling paradigm \citep{chen2018approximating,hewing2020learning}. \citet{karg2020} proved that feedforward networks with Rectified Linear Unit (ReLU) activations can exactly represent PWA control laws and approximate nonlinear MPC policies with high fidelity and deterministic memory footprint. Recent theoretical and numerical advances have further addressed statistical and deterministic safety guarantees \citep{hertneck2018,nubert2020safe,alsmeier2024,hose2025approximate}, differentiable predictive control on single-board computers \citep{drgona2022differentiable}, and neural-assisted MPC for quadrotors using onboard GPUs or companion computers \citep{jiang2022,li2022,sanyal2023}.
+\instr{Contextualização: estudo de caso para modelagem híbrida (black-box + física); 1o passo para controle de drones. }
 
-Despite these advances, a practical technological gap remains regarding end-to-end experimental validations on bare-metal microcontrollers (such as ARM Cortex-M cores) operating at $100\,\mathrm{Hz}$. Whereas studies such as \citet{drgona2022differentiable} deploy policies on Linux-based Raspberry Pi boards at sub-Hertz or slow sampling rates ($T_s = 250\,\mathrm{ms}$), fast mechatronic systems require strict real-time determinism in the millisecond range and must contend with the Sim-to-Real gap induced by static friction and model mismatch when using purely static neural mappings.
+\textit{Motivation: } Although first-principles equations describe the idealized pendulum, the real assembly includes EDF thrust that scales approximately with the square of the command, aerodynamic losses and bearing friction, which are difficult to parameterize analytically. Model-based controllers built on inaccurate linear models suffer from tracking offsets and phase lag away from the linearization point. Nonlinear MPC (NMPC) built on an identified nonlinear model addresses these issues, but the online solution of a Nonlinear Program (NLP) at every sampling instant is computationally prohibitive on low-cost microcontrollers. Showing that an identified model is useful for control, and that the resulting controller can actually run on embedded hardware, is thus the central motivation of this work.
 
-The main contributions of this work are threefold:
+\instr{Justificar pq é importante. }
+
+\textit{Literature review:} Physical benchmarks such as the Wiener--Hammerstein, Bouc--Wen and cascaded tanks systems are widely used to evaluate nonlinear identification methods \citep{schoukens2017}. Polynomial NARX models with structure selection via orthogonal least squares and the Error Reduction Ratio (ERR) are a well-established, parsimonious option for such problems \citep{chen1989,billings2013,aguirre2015}. Aeropendulum benches have mostly been addressed with first-principles modeling and linear control design \citep{job2015}, and the quarter-drone bench used here was introduced in \citet{lima2025}. On the control side, explicit MPC removes online optimization by precomputing a piecewise-affine law \citep{bemporad2002}, but its complexity grows quickly with the horizon and the number of constraints. This motivated approximating MPC laws with neural networks: deep ReLU networks can represent explicit MPC laws efficiently \citep{karg2020}, constrained networks with projection guarantee feasible inputs \citep{chen2018approximating}, and safety-augmented approximations provide deterministic guarantees for nonlinear MPC \citep{hose2025approximate}. Experimental validations include a robust MPC approximated by a neural network on a 7-DOF manipulator, with a speed-up of two orders of magnitude \citep{nubert2020safe}, and differentiable predictive control running on a Raspberry Pi with a 0.25\,s sampling time \citep{drgona2022differentiable}; see \citet{hewing2020learning} for a review of learning-based MPC. However, an end-to-end experimental pipeline, from closed-loop nonlinear identification of a fast mechatronic plant to an approximate NMPC running bare-metal on a microcontroller at 100\,Hz, remains scarcely reported.
+
+\instr{Revisão da literatura: estudos de caso em identificacao de sistemas.}
+
+\textit{Contributions:} This paper extends the quarter-drone benchmark \citep{lima2025} with the following contributions:
 \begin{enumerate}
-    \item An end-to-end data-driven pipeline combining closed-loop polynomial NARX system identification via FROLS with an offline long-horizon NMPC ($N = 150$) featuring future reference preview, distilled into a compact ReLU Multilayer Perceptron (MLP);
-    \item A hybrid neural-integral control architecture that pairs the anticipatory feedforward/feedback policy of the MLP with a bounded parallel residual integrator to eliminate steady-state Sim-to-Real bias and mitigate bearing stick-slip friction;
-    \item A comprehensive experimental validation on a physical aeropendulum driven by an STM32F446RE microcontroller at $100\,\mathrm{Hz}$, including Software-in-the-Loop (SIL) verification, mirrored comparisons against a tuned PID baseline, and a TinyML trade-off analysis of compiler optimizations and weight compression via ST X-CUBE-AI.
+    \item A closed-loop identification protocol for an EDF-driven 1-DOF quarter-drone, with multisine, chirp and step excitation around two equilibria, and a parsimonious polynomial NARX model selected via FROLS/ERR and validated in free-run simulation;
+    \item An NMPC with reference preview built directly on the identified NARX predictor, whose policy is distilled into an MLP executed on an ARM Cortex-M4F microcontroller within the 10\,ms sampling period;
+    \item An experimental analysis of the sim-to-real gap of the approximate controller and its mitigation by a low-authority residual integrator, evaluated over repeated bench trials;
+    \item An open-access repository with the experimental time series and identification scripts.
 \end{enumerate}
 
-The remainder of this paper is organized as follows. Section~\ref{sec:sysid} describes the experimental bench and the NARX identification procedure. Section~\ref{sec:methodology} formulates the discrete-time NMPC, the MLP imitation learning, and the hybrid residual compensator. Section~\ref{sec:results} presents the experimental results, Sim-to-Real analysis, and embedded TinyML benchmarks. Section~\ref{sec:conclusion} concludes the paper.
+\instr{Contribuição: liste em itens o que este artigo traz de novo.}
+
+The remainder of the paper is organized as follows. Section~\ref{sec:case} describes the testbench. Section~\ref{sec:exp_design} details the excitation protocol and the dataset. Section~\ref{sec:results} presents the NARX model, the approximate NMPC and the experimental results. Section~\ref{sec:conclusion} concludes the paper.
 
 %===============================================================================
-\section{Experimental Setup and NARX Identification}
-\label{sec:sysid}
+\section{Case Study} \label{sec:case}
+\tamanho{1 p.}
 
-\subsection{Quarter-Drone Aeropendulum Testbench}
+\textit{Description:} The quarter-drone consists of a rigid rod that rotates around a fixed horizontal shaft, with a single rotational degree of freedom. The angle $\theta(t)$ is measured from the downward vertical, so that $\theta = 0^\circ$ is the rest position. A propulsion unit at one end of the rod generates a thrust $T(u)$ perpendicular to it, while removable counterweights threaded on the opposite segment adjust the effective gravitational torque. The setup is depicted in Fig.~\ref{fig:montagem-bancada}.
 
-The experimental platform used in this work is the quarter-drone bench developed by \citet{lima2025}. The system consists of a rigid pendulum arm rotating around a horizontal aluminum shaft supported by ball bearings. Propulsion is provided at the tip of the arm by a $50\,\mathrm{mm}$, 11-blade EDF driven by a $4500\,\mathrm{KV}$ brushless outrunner motor and an Electronic Speed Controller (ESC), while adjustable counterweights are mounted on the opposite end of the threaded rod. The angular position $\theta$ is measured with respect to the downward vertical equilibrium ($\theta = 0^\circ$ at rest).
-
-From rotational Newtonian mechanics, the conceptual continuous-time dynamics are governed by
-\begin{equation} \label{eq:physical_ode}
-J\ddot{\theta} + b\dot{\theta} + (m_1 L_1 - m_2 L_2)g\sin(\theta) = \tau(u),
-\end{equation}
-where $J$ is the total moment of inertia, $b$ is the viscous damping coefficient, $m_1, L_1$ and $m_2, L_2$ are the masses and lever arms of the thruster and counterweight, respectively, $g$ is gravitational acceleration, and $\tau(u)$ is the aerodynamic torque generated by the normalized PWM command $u \in [0, 100]\%$. Because first-principles parameterization of (\ref{eq:physical_ode}) struggles to capture EDF aerodynamic hysteresis, duct recirculation, and bearing friction across wide angular excursions, we adopt a data-driven discrete-time nonlinear identification approach.
-
-The embedded processing unit is an STM32 Nucleo-F446RE board featuring a 32-bit ARM Cortex-M4F microcontroller clocked at $180\,\mathrm{MHz}$, equipped with a single-precision hardware Floating-Point Unit (FPU), $512\,\mathrm{KB}$ of Flash memory, and $128\,\mathrm{KB}$ of SRAM. Angular sensing is performed at $f_s = 100\,\mathrm{Hz}$ ($T_s = 10\,\mathrm{ms}$) using an InvenSense ICM-20948 9-axis MEMS Inertial Measurement Unit (IMU) communicating via $\mathrm{I}^2\mathrm{C}$ in Fast Mode ($400\,\mathrm{kHz}$) with Direct Memory Access (DMA) and a digital low-pass filter (DLPF) cutoff of $51.2\,\mathrm{Hz}$. A complementary filter fuses accelerometer and gyroscope readings to estimate $\theta(k)$ in real time, while telemetry is streamed to a host PC via UART DMA at $500\,\mathrm{kbaud}$.
-
-\subsection{Closed-Loop Excitation and Data Partitioning}
-
-Due to the lightly damped nature of the pendulum ($\zeta \approx 0.175$, natural frequency $f_n \approx 0.40\,\mathrm{Hz}$) and the absence of mechanical end-stops, open-loop excitation is unsafe. Consequently, identification experiments were conducted in closed loop using a preliminary digital PID controller with gains $K_p = 0.5793$, $K_i = 0.6647$, and $K_d = 0.2000$, synthesized via frequency-response tuning around $\theta_0 = 40^\circ$ with trapezoidal integration, derivative-on-measurement, and back-calculation anti-windup \citep{astrom1995}.
-
-To excite the nonlinear dynamics across the full operating envelope $\theta \in [0^\circ, 120^\circ]$ up to the mechanical bandwidth $f_{\max} = 0.50\,\mathrm{Hz}$, 24 closed-loop experiments were designed around two equilibrium operating points ($\theta_0 = 45^\circ$ and $\theta_0 = 60^\circ$), comprising four signal classes \citep{ljung1999}: (i)~random-phase multisines ($f_{\max} \in \{0.30, 0.40, 0.50\}\,\mathrm{Hz}$, crest factor $\mathrm{CF} \le 1.8$); (ii)~swept-sine chirps ($0.05$ to $0.50\,\mathrm{Hz}$, amplitudes $\pm 25^\circ$ to $\pm 60^\circ$); (iii)~Amplitude Pseudo-Random Binary Sequences (APRBS, random dwell times in $[2.0, 4.0]\,\mathrm{s}$); and (iv)~multi-level fixed steps.
-
-To prevent overfitting, model estimation used exclusively the 6 most demanding trials (highest bandwidth $f_{\max} = 0.50\,\mathrm{Hz}$ and largest excursions in multisine, chirp, and APRBS at both $45^\circ$ and $60^\circ$). All remaining 18 trials with intermediate frequencies and distinct step profiles were strictly held out for independent Free-Run (FR) cross-validation.
-
-\subsection{Polynomial NARX Structure Selection via FROLS}
-
-The discrete-time SISO polynomial NARX model represents the one-step-ahead output prediction $\hat{y}(k)$ as a linear-in-the-parameters expansion \citep{billings2013,aguirre2015}:
-\begin{equation} \label{eq:narx_model}
-\hat{y}(k) = \sum_{m=1}^{M} \hat{\theta}_m p_m\bigl(y(k-1),\dots,y(k-n_y),u(k-1),\dots,u(k-n_u)\bigr),
-\end{equation}
-where $p_m(\cdot)$ are monomials of degree up to $\ell$ formed by lagged outputs $y(k-i)$ and inputs $u(k-j)$, and $\hat{\theta}_m$ are constant parameters. Setting maximum lags $n_y = 15$ ($150\,\mathrm{ms}$), $n_u = 15$ ($150\,\mathrm{ms}$), and polynomial degree $\ell = 2$ yields $M_{\mathrm{total}} = (n_y + n_u + \ell)! / [(n_y + n_u)!\,\ell!] = 496$ candidate regressors.
-
-To avoid ill-conditioning and unstable free-run recursion, the Forward Regression Orthogonal Least Squares (FROLS) algorithm \citep{chen1989} was applied using the Error Reduction Ratio ($\mathrm{ERR}$) criterion:
-\begin{equation} \label{eq:err}
-[\mathrm{ERR}]_i = \frac{g_i^2 w_i^\top w_i}{y^\top y} \times 100\%, \qquad g_i = \frac{w_i^\top y}{w_i^\top w_i},
-\end{equation}
-where $w_i$ are orthogonalized basis vectors. Greedy selection was truncated at $M = 10$ terms, yielding the parsimonious model reported in Table~\ref{tb:narx_terms}.
-
-\begin{table}[tb]
+\begin{figure}[htbp]
 \begin{center}
-\caption{Selected polynomial NARX regressors and estimated coefficients ($M = 10$).}\label{tb:narx_terms}
-\begin{tabular}{lr@{\hspace{1.2cm}}lr}
+\includegraphics[width=8.4cm]{img/montagem-bancada.png}
+\caption{Mechanical layout of the quarter-drone bench.}
+\label{fig:montagem-bancada}
+\end{center}
+\end{figure}
+
+\instr{Physical system description (with diagrams). Adicionar fotos.}
+
+The conceptual continuous-time dynamics follow from Newton's second law for planar rotation:
+\begin{equation}
+    \label{eq:physical_ode}
+    J\ddot{\theta} + b\dot{\theta} + (m_1 L_1 - m_2 L_2)g\sin(\theta) = \tau(u),
+\end{equation}
+where $J$ is the moment of inertia about the pivot, $b$ is the viscous damping coefficient, $m_1$ and $m_2$ are the masses of the propulsion head and of the counterweight at lever arms $L_1$ and $L_2$, $g$ is the gravitational acceleration and $\tau(u)$ is the torque produced by the normalized command $u$ (\% of PWM duty cycle). Since $J$, $b$ and $\tau(u)$ are affected by aerodynamic effects and dry friction that are hard to quantify analytically, (\ref{eq:physical_ode}) is used only for physical insight, and a discrete-time nonlinear model is identified from data.
+
+\textit{Hardware:} The mechanical structure was originally built by \citet{lima2025}. It comprises a plywood base, two MDF support towers reinforced with 3D-printed parts, and an aluminium shaft mounted on ball bearings. The main components are summarized in Table~\ref{tab:hardware_bom}.
+
+\begin{table}[htbp]
+\begin{center}
+\caption{Main components of the quarter-drone bench.}\label{tab:hardware_bom}
+\begin{tabular}{ll}
 \toprule
-\textbf{Regressor} & \textbf{Coefficient ($\hat{\theta}_m$)} & \textbf{Regressor} & \textbf{Coefficient ($\hat{\theta}_m$)} \\
-\midrule
-$y(k-1)$       & $+1.4230$             & $y(k-1)^2$     & $+6.9 \times 10^{-6}$  \\
-$y(k-2)$       & $-0.2120$             & $u(k-3)u(k-6)$ & $-9.3 \times 10^{-7}$  \\
-$y(k-4)$       & $-0.1568$             & $u(k-6)u(k-9)$ & $+1.77 \times 10^{-5}$ \\
-$y(k-10)$      & $-0.0944$             & $u(k-3)u(k-15)$& $+9.3 \times 10^{-6}$  \\
-$y(k-15)$      & $+0.0388$             & $\mathrm{Constant}$ & $-0.0059$         \\
-\bottomrule
+\textbf{Component} & \textbf{Specification} \\ \midrule
+Propulsion unit & FMS 50\,mm EDF, 11 blades \\
+Motor & Brushless outrunner 2627, 4500\,KV \\
+Arm and counterweights & Threaded rod, threaded masses \\
+Shaft and bearings & Aluminium shaft, ball bearings \\
+Angle sensor & ICM-20948 IMU (I$^2$C, 400\,kHz) \\
+Microcontroller & STM32F446RE (Cortex-M4F, 180\,MHz) \\
+Memory & 512\,KB Flash, 128\,KB SRAM \\
+Telemetry & UART, 500\,kbaud \\ \bottomrule
 \end{tabular}
 \end{center}
 \end{table}
 
-Notably, FROLS automatically selected exclusively quadratic delayed input products $u(k-i)u(k-j)$, which is physically consistent with the aerodynamic thrust law of ducted fans ($\tau \propto \omega^2$). Because this quadratic input structure induces even symmetry $F(y, -u) = F(y, u)$, a lower bound $u \ge 0$ is enforced during NMPC synthesis.
+\instr{Acrescentar as massas $m_1$, $m_2$ e braços $L_1$, $L_2$ medidos na bancada. Os valores da versão anterior (145\,g, 0,380\,m, 185\,g, 0,120\,m, mancais 608-2RS, MPU-6050) não constam no TCC e foram removidos.}
 
-Model qualification was conducted strictly in Free-Run ($\mathrm{FR}$) simulation, where $\hat{y}_{\mathrm{FR}}(k)$ is propagated open-loop over thousands of steps using only its own past predictions $\hat{y}_{\mathrm{FR}}(k-i)$ and the experimental input sequence $u(k-j)$. Across the held-out validation sets, the 10-term NARX model achieved $\mathrm{RMSE} = 4.685^\circ$ on the $130\,\mathrm{s}$ validation multisine, $\mathrm{RMSE} = 5.678^\circ$ ($\mathrm{MAE} = 4.238^\circ$, $\mathrm{FIT} = 74.7\%$, $R^2 = 0.936$) on the $125\,\mathrm{s}$ multi-step sequence (Fig.~\ref{fig:narx_steps}), and $\mathrm{RMSE} = 6.270^\circ$ ($\mathrm{FIT} = 72.2\%$, $R^2 = 0.922$) on the $\pm 35^\circ$ chirp test, exhibiting zero phase drift and high structural stability.
+The IMU is housed in a 3D-printed bracket fixed to the rotation shaft and is sampled every $T_s = 10\,\mathrm{ms}$ (100\,Hz) through a hardware-timer interrupt with DMA transfers. A complementary filter running on the microcontroller fuses the accelerometer inclination and the gyroscope rate to estimate $\theta$. The command $u$ is sent to the Electronic Speed Controller (ESC) as a PWM signal, and the time stamp, reference, command and angle are streamed to a host computer at every sample.
 
-\begin{figure}[tb]
+\instr{Ecquipment used (components: bill of materials). Uma extensao do artigo do cobem}
+
+%===============================================================================
+\section{Experimental Design} \label{sec:exp_design}
+\tamanho{1 p.}
+
+Due to the lightly damped open-loop dynamics and the absence of mechanical stops, open-loop experiments would drive the arm into collisions or prolonged actuator saturation. All data were therefore acquired in closed loop under a baseline PID controller executed on the microcontroller at 100\,Hz.
+
+\instr{Describe excitation signals (plot them on a graph)}
+
+The reference signals were designed according to the following guidelines:
+\begin{enumerate}
+    \item \textbf{Bandwidth ($f_{\max} = 0.50\,\mathrm{Hz}$):} the dominant oscillatory mode of the arm lies around $0.40\,\mathrm{Hz}$, so the excitation energy was concentrated below $0.50\,\mathrm{Hz}$ to excite the rigid-body dynamics with good signal-to-noise ratio;
+    \item \textbf{Two operating levels ($45^\circ$ and $60^\circ$):} at $60^\circ$ the static thrust required is about 22\% higher than at $45^\circ$, which changes the operating point of the propulsor and the sensitivity of the gravitational torque; excursions around these levels cover the envelope from $0^\circ$ to $120^\circ$;
+    \item \textbf{Signal classes:} (i)~random-phase multisines with uniform spectrum and $f_{\max} \in \{0.30, 0.40, 0.50\}\,\mathrm{Hz}$; (ii)~linear chirps from $0.05$ to $0.50\,\mathrm{Hz}$ with amplitudes from $\pm 25^\circ$ to $\pm 60^\circ$; (iii)~fixed-level steps and Amplitude-modulated Pseudo-Random Binary Sequences (APRBS) with switching times between 2 and 4\,s.
+\end{enumerate}
+In total, 24 trials were collected (three per signal class and operating level). The first 10\,s (motor start-up) and last 13\,s (shutdown) of each trial were discarded.
+
+\begin{figure}[htbp]
 \begin{center}
-\includegraphics[width=8.4cm]{img/narx_val_steps.pdf}
-\caption{Free-run validation of the 10-term NARX model over an independent $125\,\mathrm{s}$ multi-step trial around $45^\circ$ ($\mathrm{RMSE} = 5.678^\circ$, $\mathrm{FIT} = 74.7\%$).}
-\label{fig:narx_steps}
+\includegraphics[width=8.4cm]{img/narx_train_datasets.pdf}
+\caption{Closed-loop identification training experiments ($f_{\max} = 0.50\,\mathrm{Hz}$): planned reference $r(t)$ versus actual measured bench angle $\theta(t)$ across the six datasets.}
+\label{fig:excitation}
 \end{center}
 \end{figure}
 
+\instr{Describe measured output signals (plot them on a graph).}
+
+The identification set gathers the six most demanding trials (Fig.~\ref{fig:excitation}): the $0.50\,\mathrm{Hz}$ multisine, the largest chirp ($\pm 45^\circ$ around $45^\circ$ and $\pm 60^\circ$ around $60^\circ$) and one APRBS at each level. All remaining trials, with lower frequency content, smaller amplitudes or different step patterns, were reserved for validation.
+
+\subsection{Access to the Datasets}
+
+\instr{Create a github repo; check the guidelines of Scientific Data, for example; check the BAB datasets)}
+
+To support reproducibility, the experimental repository follows the FAIR (Findable, Accessible, Interoperable, and Reusable) data principles and is hosted at:
+\begin{center}
+\url{https://github.com/FelipeEduardoMarcondes/SYSTEM-IDENTIFICATION-AERO}
+\end{center}
+It contains the CSV files with time stamp ($t$), angle ($\theta$), command ($u$) and reference ($r$) for every trial, together with the preprocessing, identification and controller training scripts.
+
 %===============================================================================
-\section{Embedded Neural Approximate NMPC}
-\label{sec:methodology}
+\section{Results} \label{sec:results}
+\tamanho{1.5 pp.}
 
-\subsection{Discrete-Time NMPC Formulation with Preview}
+This section first describes the model and controller design setup. Approach~1 presents the identified NARX model and its free-run validation; Approach~2 uses this model in an NMPC, distills the NMPC policy into an embedded MLP and evaluates it, with and without a residual integrator, on the physical bench. A comparative RMSE table closes the section.
 
-To embed the NARX predictor (\ref{eq:narx_model}) into a canonical discrete-time state-space framework at $T_s = 10\,\mathrm{ms}$, we define the augmented shift-register state vector $x_k \in \mathbb{R}^{30}$:
-\begin{equation} \label{eq:narx_state}
-x_k = \bigl[y(k-1),\dots,y(k-15),\, u(k-1),\dots,u(k-15)\bigr]^\top.
+\instr{adicionar no paragrafo acima um resumo do que se encontra na secao , um resumo}
+
+\textit{Model creation setup:} The plant is modeled by a discrete-time polynomial NARX model \citep{billings2013}:
+\begin{equation}
+\begin{aligned}
+    y(k) = F\bigl(&y(k-1), \dots, y(k-n_y), \\
+                  &u(k-1), \dots, u(k-n_u)\bigr) + e(k),
+\end{aligned}
+\label{eq:narx_general}
 \end{equation}
-The state transition $x_{k+j+1|k} = F(x_{k+j|k}, u_{k+j})$ shifts the historical buffers and inserts the one-step NARX prediction $y_{k+j|k} = \mathcal{M}_{\mathrm{NARX}}(x_{k+j|k})$ and applied input $u_{k+j}$ without numerical integration truncation errors.
+where $y(k) = \theta(k)$, $u(k)$ is the duty cycle and $e(k)$ is the residual. With $n_y = n_u = 15$ (150\,ms of memory) and polynomial degree $\ell = 2$, the candidate set contains
+\begin{equation}
+    M = \frac{(n_y + n_u + \ell)!}{(n_y + n_u)!\,\ell!} = 496 \quad \text{terms}.
+\end{equation}
+Structure selection used FROLS with the ERR criterion \citep{chen1989,aguirre2015}, limited to 10 terms to keep the predictor compact for the optimizer. The model is assessed in free-run simulation on the validation trials, using RMSE and the normalized fit
+\begin{equation}
+    \mathrm{FIT} = \left(1 - \frac{\|y - \hat{y}\|_2}{\|y - \bar{y}\|_2}\right) \times 100\%.
+\end{equation}
 
-At each sampling instant $k$, given the current state $x_k$ and a future reference trajectory preview $\mathbf{r}_k = [r_k, r_{k+1}, \dots, r_{k+N-1}]^\top$ over horizon $N = 150$ ($1.50\,\mathrm{s}$, approximately four times the natural oscillation period of the pendulum), the Optimal Control Problem (OCP) minimizes
-\begin{subequations} \label{eq:ocp}
-\begin{align}
-\min_{U_k} \quad & J(x_k, U_k, \mathbf{r}_k) = \sum_{j=0}^{N-1} \Bigl[ q_y\bigl(y_{k+j|k} - r_{k+j}\bigr)^2 \nonumber\\[-3pt]
-                 & \hspace{2.7cm} + r_u u_{k+j}^2 + r_{\Delta u} (\Delta u_{k+j})^2 \Bigr] \label{eq:ocp_cost}\\
-\textrm{s.t.} \quad & x_{k|k} = x_k, \quad x_{k+j+1|k} = F(x_{k+j|k}, u_{k+j}), \\
-                    & u_{\min} \le u_{k+j} \le u_{\max}, \quad \forall j \in \{0,\dots,N-1\},
-\end{align}
-\end{subequations}
-where $U_k = \{u_k, \dots, u_{k+N-1}\}$, $\Delta u_{k+j} = u_{k+j} - u_{k+j-1}$ penalizes actuator slew rate (with $u_{k-1}$ read directly from $x_k$), and the input bounds are $u_{\min} = 0\%$ and $u_{\max} = 100\%$ (capped at $80\%$ in bench firmware for thermal protection). The weighting parameters were tuned to $q_y = 1000.0$, $r_u = 0.1$, and $r_{\Delta u} = 50000.0$, where the strong $\Delta u$ penalty acts as a dynamic smoothing filter against high-frequency ESC switching. Under the sufficiently long horizon $N = 150$, explicit terminal set constraints are omitted to prevent artificial solver infeasibility during abrupt reference steps \citep{rawlings2017}. By the receding-horizon principle, the implicit NMPC policy applies $\kappa_N(x_k, \mathbf{r}_k) := u_k^*$.
+The NMPC uses the NARX model as internal predictor, with state $x_k = [y(k-1),\dots,y(k-15), \allowbreak u(k-1),\dots,u(k-15)]^\top \in \mathbb{R}^{30}$ propagated as a shift register. At each step it solves
+\begin{equation}
+    \min_{u_k,\dots,u_{k+N-1}} \sum_{j=0}^{N-1} q_y (y_{k+j|k} - r_{k+j})^2 + r_u u_{k+j}^2 + r_{\Delta u} \Delta u_{k+j}^2,
+    \label{eq:ocp}
+\end{equation}
+subject to the NARX dynamics and $0 \le u \le 100\%$, where the NMPC prediction horizon is chosen as $N = 150$ steps ($1.5\,\mathrm{s}$) to encompass the dominant oscillatory dynamics and guarantee closed-loop stability without terminal constraints \citep{rawlings2017}, with weights $q_y = 10^3$, $r_u = 0.1$, and $r_{\Delta u} = 5\times 10^4$. The optimal control problem was formulated in CasADi \citep{andersson2019} and solved with IPOPT \citep{wachter2006}. To construct the training dataset for the neural approximator, the NMPC was simulated in closed loop with the NARX model over a 187\,s trajectory combining steps, chirps, and multisines ($0^\circ$ to $120^\circ$), generating 18\,700 pairs $(z_k, u_k^*)$. The input feature vector $z_k \in \mathbb{R}^{130}$ is composed of $n_y = 15$ past angles, $n_u = 15$ past commands, and an MLP preview window of $N_{\mathrm{prev}} = 100$ future reference steps ($1.0\,\mathrm{s}$). Truncating the preview to $1.0\,\mathrm{s}$ (rather than the full $1.5\,\mathrm{s}$ NMPC prediction horizon) reduces the input layer dimension to 130 neurons, saving 6\,400 weights ($25.6\,\mathrm{KB}$ of Flash memory) and computational latency on the microcontroller without noticeable loss in tracking accuracy, since the immediate control action $u_k^*$ has negligible sensitivity to reference changes beyond $1.0\,\mathrm{s}$. An MLP with topology $130$--$128$--$128$--$1$ and ReLU activations (33\,665 trainable parameters) was trained using Adam on the mean squared error loss with a 70/15/15\% split and early stopping.
 
-The OCP (\ref{eq:ocp}) was formulated symbolically in CasADi \citep{andersson2019} using algorithmic differentiation and solved via IPOPT. As shown in Fig.~\ref{fig:mpc_time}, evaluating the exact NMPC on a desktop CPU requires $90$ to $120\,\mathrm{ms}$ per step on average, with a cold-start peak of $458\,\mathrm{ms}$ and transient peaks of $220$ to $333\,\mathrm{ms}$ during step transitions---exceeding the $T_s = 10\,\mathrm{ms}$ real-time deadline by a factor of $10\times$ to $45\times$.
+\instr{Descrever todas as condições para criar os modelos (hiperparametros). Definir protocolo de treino e teste (quais datasets sao usados e para que, referenciar secao anterior). Metrica para comparacao (RMSE).}
 
-\begin{figure}[tb]
+\textit{Approach 1: Polynomial NARX via FROLS:} The 10 selected regressors and their coefficients are listed in Table~\ref{tab:narx_params}.
+
+\begin{table}[htbp]
+\begin{center}
+\caption{Regressors and coefficients of the identified NARX model ($T_s = 10\,\mathrm{ms}$).}\label{tab:narx_params}
+\begin{tabular}{clr}
+\toprule
+\textbf{$i$} & \textbf{Regressor} & \textbf{Coefficient} \\ \midrule
+1 & $y(k-1)$          & $+1.4230$                \\
+2 & $y(k-2)$          & $-0.2120$                \\
+3 & $y(k-4)$          & $-0.1568$                \\
+4 & $y(k-10)$         & $-0.0944$                \\
+5 & $y(k-15)$         & $+0.0388$                \\
+6 & $y(k-1)^2$        & $+6.90\times10^{-6}$      \\
+7 & $u(k-3)u(k-6)$    & $-9.30\times10^{-7}$      \\
+8 & $u(k-6)u(k-9)$    & $+1.77\times10^{-5}$     \\
+9 & $u(k-3)u(k-15)$   & $+9.30\times10^{-6}$      \\
+10 & Constant & $-0.0059$              \\ \bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+\instr{Resultados abordagem \#01}
+
+The input enters only through delayed quadratic products $u(k-i)u(k-j)$, consistent with the approximately quadratic thrust characteristic of the propulsor; as the predictor is even in $u$, the constraint $u \ge 0$ is required in the NMPC. Linearizing the model around $45^\circ$ yields a pair of lightly damped complex poles with $|z| \approx 0.997$ and a natural frequency of $0.40\,\mathrm{Hz}$, in agreement with the dominant mode observed experimentally.
+
+\begin{figure*}[htbp]
+\begin{center}
+\includegraphics[width=16.8cm]{img/narx_val_freerun_grid.pdf}
+\caption{Free-run simulation of the identified polynomial NARX model across four unseen validation trials: (a)~multisine ($45^\circ$, $0.30\,\mathrm{Hz}$), (b)~chirp ($\pm 35^\circ$ around $45^\circ$), (c)~multistep sequence ($25^\circ$--$65^\circ$), and (d)~APRBS.}
+\label{fig:narx_val_grid}
+\end{center}
+\end{figure*}
+
+In free run (Fig.~\ref{fig:narx_val_grid} and Table~\ref{tab:model_comparison}), the model faithfully tracks the measured response across all validation signal classes without numerical divergence, achieving FIT values between 63.4\% and 80.7\% (RMSE from $4.77^\circ$ to $6.27^\circ$). The main deviation is a minor overestimation of the amplitude at peak excursions, indicating that the identified polynomial is slightly less damped than the physical platform.
+
+\textit{Approach 2: Approximate NMPC:} Figure~\ref{fig:mpc_tempo} shows the IPOPT solution time per sampling instant. Typical values were 90--120\,ms on a desktop computer, with peaks of 220--333\,ms at reference transitions and 458\,ms at the cold start, i.e., about 10 to 45 times $T_s = 10\,\mathrm{ms}$, which rules out online optimization on the microcontroller.
+
+\begin{figure}[htbp]
 \begin{center}
 \includegraphics[width=8.4cm]{img/mpc_tempo.pdf}
-\caption{Per-step solution time of the nominal NMPC (CasADi/IPOPT) compared against the $T_s = 10\,\mathrm{ms}$ real-time sampling deadline.}
-\label{fig:mpc_time}
+\caption{NMPC solution time per sampling instant (CasADi/IPOPT, desktop computer) compared with $T_s = 10\,\mathrm{ms}$.}
+\label{fig:mpc_tempo}
 \end{center}
 \end{figure}
 
-\subsection{Imitation Learning via Preview-Augmented MLP}
+The trained MLP reached $R^2 = 0.999$ on the training, validation and test sets. Since a random split of a single time series yields strongly correlated samples, generalization was assessed in closed loop on three unseen 75\,s scenarios: (1)~multisine with steps and a fast chirp segment, (2)~random steps, and (3)~a smooth sinusoid. In each run, a PID controller lifts the arm during the first 5\,s, the MLP acts alone from 5 to 70\,s, and the PID takes over again for shutdown; metrics are computed in the 5--70\,s window. The weights were exported to native C code in single precision; on the STM32F446RE, inference took 1.7--2.5\,ms depending on the compiler optimization and toolchain, with deterministic timing and no missed deadlines.
 
-To distill the optimal policy $\kappa_N$ into a constant-time embedded mapping, the nominal NMPC was simulated in closed loop over a rich $187\,\mathrm{s}$ reference profile ($M_{\mathrm{data}} = 18,700$ samples at $100\,\mathrm{Hz}$) combining multisines (up to $0.50\,\mathrm{Hz}$), chirps, and steps spanning $[12^\circ, 110^\circ]$. At each step $k$, we record the supervision pair $(z_k, u_k^*)$, where the feature vector $z_k \in \mathbb{R}^{130}$ concatenates the $n_y = 15$ past outputs, $n_u = 15$ past inputs, and $N_{\mathrm{prev}} = 100$ future reference steps ($1.0\,\mathrm{s}$ of anticipatory preview):
-\begin{equation} \label{eq:mlp_input}
-z_k = \bigl[x_k^\top,\; r_k,\, r_{k+1},\, \dots,\, r_{k+99}\bigr]^\top \in \mathbb{R}^{130}.
+On the bench, the purely data-driven (nominal) MLP was stable and kept the preview behaviour of the NMPC, but showed a persistent positive bias of $+2.1^\circ$ to $+2.7^\circ$ (Table~\ref{tab:model_comparison}) and stick-slip plateaus at velocity reversals. These effects are attributed to bearing friction and static-gain mismatch, which the NARX model does not capture, and to the lack of integral action in the policy; at angles above $90^\circ$, extrapolation of the NARX model and the distribution shift typical of imitation learning \citep{ross2011reduction} may also contribute. To compensate them while preserving the learned policy, a low-authority residual integrator was added in parallel:
+\begin{equation}
+    u(k) = u_{\mathrm{MLP}}(k) + \mathrm{sat}_{\pm 10\%}\Bigl(u_i(k-1) + K_i \tfrac{T_s}{2}\bigl(e(k) + e(k-1)\bigr)\Bigr),
+    \label{eq:hybrid}
 \end{equation}
+where $u_i$ denotes the saturated integrator state, $e = r - \theta$ and $K_i = 0.20$. The saturation keeps at least 90\% of the control authority with the MLP.
 
-After $Z$-score standardization of $z_k$, a feedforward MLP with topology $130 \to 128 \to 128 \to 1$ ($33,665$ trainable parameters, ReLU hidden activations, and linear output) was trained in PyTorch \citep{paszke2019} minimizing the Mean Squared Error $\mathcal{L}_{\mathrm{MSE}} = \frac{1}{B}\sum_{i=1}^B (\hat{u}_i - u_i^*)^2$ via Adam ($\alpha = 10^{-3}$, weight decay $10^{-5}$, batch size $64$, \texttt{ReduceLROnPlateau}, and early stopping). The network converged in fewer than 5 epochs, achieving $R^2 = 0.999$ across training, validation, and test splits.
-
-\subsection{Hybrid Neural-Integral Control Architecture}
-
-While the MLP accurately replicates the dynamic and anticipatory behavior of the NMPC, a purely static neural network lacks an internal state (pole at the origin). When deployed on the physical aeropendulum, unmodeled effects---specifically ball-bearing static friction (\emph{stick-slip}), aerodynamic recirculation losses at high angles, and slight thermal drift in motor thrust---manifest as persistent steady-state offsets.
-
-To overcome this limitation while preserving the fast nonlinear preview policy of the network, we propose a parallel hybrid neural-integral architecture:
-\begin{equation} \label{eq:hybrid_law}
-u[k] = u_{\mathrm{ANN}}[k] + u_{i,\mathrm{res}}[k],
-\end{equation}
-where $u_{\mathrm{ANN}}[k] = \mathrm{MLP}(z_k)$ is the neural inference and $u_{i,\mathrm{res}}[k]$ is a low-authority residual integrator discretized via Tustin's trapezoidal rule with symmetrical anti-windup clamping:
-\begin{subequations} \label{eq:residual_integrator}
-\begin{align}
-\tilde{u}_{i,\mathrm{res}}[k] &= u_{i,\mathrm{res}}[k-1] + K_{i,\mathrm{res}}\frac{T_s}{2}\bigl(e[k] + e[k-1]\bigr), \\
-u_{i,\mathrm{res}}[k] &= \mathrm{sat}\bigl(\tilde{u}_{i,\mathrm{res}}[k],\, -U_{i,\max},\, +U_{i,\max}\bigr),
-\end{align}
-\end{subequations}
-with tracking error $e[k] = r[k] - y[k]$, residual integral gain $K_{i,\mathrm{res}} = 0.20$, and authority bound $U_{i,\max} = 10.0\%$. Restricting $U_{i,\max} = 10.0\%$ guarantees that the MLP retains at least $90\%$ of the control authority during agile transients while the residual integrator smoothly supplies the exact bias needed to break static friction and eliminate steady-state offset.
-
-%===============================================================================
-\section{Experimental Results and Analysis}
-\label{sec:results}
-
-\subsection{Triad Validation and Sim-to-Real Gap Mitigation}
-
-To systematically separate numerical implementation effects from physical plant mismatch, the closed-loop control law was evaluated across a three-stage triad: (i)~ideal Python simulation (\texttt{float64}); (ii)~Software-in-the-Loop (SIL) on the STM32F446RE executing the compiled C neural policy and the NARX plant in \texttt{float32} at $100\,\mathrm{Hz}$; and (iii)~real-time physical bench operation. A standardized $75\,\mathrm{s}$ protocol was adopted: $0\text{--}5\,\mathrm{s}$ soft-start under baseline PID, $5\text{--}70\,\mathrm{s}$ active neural control window (used for all RMSE and bias metrics), and $70\text{--}75\,\mathrm{s}$ return to baseline PID. Three independent validation profiles were tested:
-\begin{itemize}
-    \item \textbf{Scenario 1 (Multisine + Steps):} Superimposed multisine, high-frequency chirp ($40\text{--}50\,\mathrm{s}$), and rectangular steps;
-    \item \textbf{Scenario 2 (Random Steps):} Abrupt multi-level steps up to $95^\circ$;
-    \item \textbf{Scenario 3 (Smooth Sine):} Wide-amplitude sinusoidal wave with gradual velocity zero-crossings.
-\end{itemize}
-
-Table~\ref{tb:triad_rmse} summarizes the tracking performance across all environments for both the Nominal (pure MLP) and Hybrid (MLP + residual integrator) configurations.
-
-\begin{table*}[tb]
-\begin{center}
-\caption{Closed-loop tracking RMSE and steady-state bias across the validation triad ($5.0\,\mathrm{s}$ to $70.0\,\mathrm{s}$ active window).}\label{tb:triad_rmse}
-\begin{tabular}{lccccccc}
-\toprule
-\textbf{Validation Scenario} & \textbf{Python ($^\circ$)} & \textbf{SIL Nom. ($^\circ$)} & \textbf{SIL Hyb. ($^\circ$)} & \textbf{Bench Nom. ($^\circ$)} & \textbf{Bench Hyb. ($^\circ$)} & \textbf{Bench RMSE Red.} & \textbf{Bench Bias Reduction} \\
-\midrule
-1. Multisine + Steps & $1.49$ & $2.48$ & $1.53$ & $3.13$ & $\mathbf{2.20}$ & $\mathbf{-29.8\%}$ & $+2.29^\circ \to \mathbf{+0.03^\circ}$ ($-98.8\%$) \\
-2. Random Steps      & $3.63$ & $3.78$ & $3.38$ & $4.61$ & $\mathbf{3.60}$ & $\mathbf{-21.8\%}$ & $+2.67^\circ \to \mathbf{+0.07^\circ}$ ($-97.5\%$) \\
-3. Smooth Sine       & $1.34$ & $1.49$ & $0.62$ & $3.55$ & $\mathbf{1.75}$ & $\mathbf{-50.8\%}$ & $+2.13^\circ \to \mathbf{+0.08^\circ}$ ($-96.2\%$) \\
-\bottomrule
-\end{tabular}
-\end{center}
-\end{table*}
-
-Comparing Python simulation against STM32 SIL confirms high numerical fidelity: Pearson correlation between \texttt{float64} Python trajectories and \texttt{float32} Cortex-M4F SIL trajectories exceeded $r > 0.998$ in all scenarios. Notably, the preview capability learned by the MLP is clearly observed in Scenario~2, where the control signal and pendulum arm initiate movement fractions of a second prior to step transitions, proactively compensating for rotational inertia.
-
-When deploying the Nominal MLP on the physical bench, a consistent steady-state bias between $+2.13^\circ$ and $+2.67^\circ$ emerged due to Sim-to-Real model mismatch, alongside flat dead-zones at velocity zero-crossings in Scenario~3 caused by unmodeled ball-bearing static friction. As illustrated in Figs.~\ref{fig:bench_hyb_val1} and \ref{fig:bench_hyb_val3}, activating the hybrid residual integrator (\ref{eq:hybrid_law}) virtually eliminated steady-state bias---reducing mean offset by $98.8\%$ in Scenario~1 ($+0.03^\circ$) and $97.5\%$ in Scenario~2 ($+0.07^\circ$)---while smoothly accumulating torque at velocity reversals to overcome stick-slip friction, cutting the sinusoidal RMSE in Scenario~3 by more than half ($3.55^\circ \to 1.75^\circ$, a $50.8\%$ reduction) without inducing actuator chatter.
-
-\begin{figure}[tb]
+\begin{figure}[htbp]
 \begin{center}
 \includegraphics[width=8.4cm]{img/comparacao_hibrido_val1.pdf}
-\caption{Physical bench response for Scenario 1 (Multisine + Steps): Nominal MLP vs. Hybrid Neural-Integral controller ($\mathrm{RMSE}$ reduced from $3.13^\circ$ to $2.20^\circ$, bias reduced by $98.8\%$).}
-\label{fig:bench_hyb_val1}
+\caption{Bench experiment with the hybrid controller (MLP + residual integrator) in scenario 1 (multisine, steps and chirp).}
+\label{fig:hybrid}
 \end{center}
 \end{figure}
 
-\begin{figure}[tb]
+\instr{Resultados abordagem \#02 etc}
+
+Figure~\ref{fig:hybrid} shows the hybrid controller in scenario~1. Over $N=10$ repetitions per scenario, the mean bias dropped to $+0.01^\circ$--$+0.08^\circ$ (reductions of 96.4--99.5\%), and the RMSE decreased by 27.8\%, 17.6\% and 49.3\% in scenarios 1, 2 and 3, with coefficients of variation below 5\%. The mean command increment per sample remained at the level of the nominal controller ($\approx 0.03$--$0.13\%$), so the integrator did not introduce high-frequency control activity. The remaining gap to simulation, largest in scenario~3, is associated with friction-induced lag at velocity reversals.
+
+\instr{Tabela comparativa (RMSE).}
+
+Table~\ref{tab:model_comparison} summarizes the free-run model metrics and the closed-loop tracking results.
+
+\begin{table}[htbp]
 \begin{center}
-\includegraphics[width=8.4cm]{img/comparacao_hibrido_val3.pdf}
-\caption{Physical bench response for Scenario 3 (Smooth Sine): mitigation of bearing stick-slip plateaus at velocity reversals by the Hybrid controller ($\mathrm{RMSE}$ reduced from $3.55^\circ$ to $1.75^\circ$).}
-\label{fig:bench_hyb_val3}
-\end{center}
-\end{figure}
-
-\subsection{Mirrored Comparison Against Classical PID Control}
-
-To benchmark the embedded neural controller directly against the linear PID baseline on the physical bench, mirrored experiments were conducted using four demanding excitation trajectories at $\theta_0 = 45^\circ$ and $\theta_0 = 60^\circ$. Table~\ref{tb:pid_vs_ann} summarizes the tracking RMSE over both the full trial and the high-frequency steady-state window, while Fig.~\ref{fig:chirp45_pid_ann} depicts the time-domain response for the $\pm 35^\circ$ chirp trial.
-
-\begin{table}[tb]
-\begin{center}
-\caption{Mirrored physical bench comparison (RMSE) between classical PID and Embedded Neural controller.}\label{tb:pid_vs_ann}
-\resizebox{8.4cm}{!}{%
-\begin{tabular}{llccc}
+\caption{Free-run NARX validation across unseen trials and closed-loop tracking RMSE on the physical bench (window 5--70\,s; hybrid: mean $\pm$ std over $N=10$).}\label{tab:model_comparison}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccc}
 \toprule
-\textbf{Excitation Profile} & \textbf{Window} & \textbf{PID ($^\circ$)} & \textbf{Neural ($^\circ$)} & \textbf{Improvement} \\
-\midrule
-Multisine $45^\circ$ ($0.50\,\mathrm{Hz}$) & Global ($0\text{--}80\,\mathrm{s}$) & $9.55$ & $\mathbf{2.16}$ & $-77.4\%$ \\
-                                           & Steady ($20\text{--}60\,\mathrm{s}$)& $6.47$ & $\mathbf{1.99}$ & $-69.2\%$ \\
-\midrule
-Multisine $60^\circ$ ($0.50\,\mathrm{Hz}$) & Global ($0\text{--}80\,\mathrm{s}$) & $14.17$& $\mathbf{2.78}$ & $-80.4\%$ \\
-                                           & Steady ($20\text{--}60\,\mathrm{s}$)& $12.55$& $\mathbf{2.51}$ & $-80.0\%$ \\
-\midrule
-Chirp $45^\circ$ ($\pm 35^\circ$)          & Global ($0\text{--}60\,\mathrm{s}$) & $15.81$& $\mathbf{2.94}$ & $-81.4\%$ \\
-                                           & Steady ($10\text{--}60\,\mathrm{s}$)& $16.46$& $\mathbf{3.01}$ & $-81.7\%$ \\
-\midrule
-Chirp $60^\circ$ ($\pm 50^\circ$)          & Global ($0\text{--}60\,\mathrm{s}$) & $22.98$& $\mathbf{4.84}$ & $-78.9\%$ \\
-                                           & Steady ($10\text{--}60\,\mathrm{s}$)& $26.02$& $\mathbf{4.82}$ & $-81.5\%$ \\
-\bottomrule
+\multicolumn{4}{l}{\textbf{(a) NARX free-run validation}} \\ \midrule
+\textbf{Dataset} & \textbf{RMSE ($^\circ$)} & \textbf{FIT (\%)} & $\boldsymbol{R^2}$ \\ \midrule
+Multisine ($45^\circ$, $0.30\,\mathrm{Hz}$) & 5.95 & 63.4 & 0.866 \\
+Multistep ($25^\circ$--$65^\circ$)          & 5.68 & 74.7 & 0.936 \\
+Chirp ($\pm 35^\circ$)                      & 6.27 & 72.2 & 0.922 \\
+APRBS ($45^\circ$)                          & 4.77 & 80.7 & 0.963 \\ \midrule
+\multicolumn{4}{l}{\textbf{(b) Approximate NMPC, tracking RMSE ($^\circ$)}} \\ \midrule
+\textbf{Scenario} & \textbf{Sim.} & \textbf{Nominal} & \textbf{Hybrid} \\ \midrule
+1: Multisine+steps & 1.49 & 3.13 & $2.26 \pm 0.03$ \\
+2: Random steps & 3.63 & 4.61 & $3.80 \pm 0.17$ \\
+3: Smooth sine & 1.34 & 3.55 & $1.80 \pm 0.03$ \\ \bottomrule
 \end{tabular}%
 }
 \end{center}
 \end{table}
 
-\begin{figure}[tb]
-\begin{center}
-\includegraphics[width=8.4cm]{img/comparacao_rodada7_chirp45.pdf}
-\caption{Mirrored bench tracking of a swept-sine chirp ($0.05\text{--}0.50\,\mathrm{Hz}$, $\pm 35^\circ$ around $45^\circ$): classical PID ($\mathrm{RMSE} = 16.46^\circ$) vs. Embedded Neural controller ($\mathrm{RMSE} = 3.01^\circ$).}
-\label{fig:chirp45_pid_ann}
-\end{center}
-\end{figure}
+\instr{Preencher FIT e $R^2$ do multisseno de validação (o TCC só reportava o RMSE; valores calculados na validação cruzada).}
 
-As shown in Fig.~\ref{fig:chirp45_pid_ann} and Table~\ref{tb:pid_vs_ann}, the purely reactive PID controller suffers from severe phase lag ($>60^\circ\text{--}90^\circ$) as frequency approaches $0.50\,\mathrm{Hz}$, as well as static gain mismatch during wide angular excursions ($10^\circ$ to $110^\circ$ in the $60^\circ$ chirp, where PID RMSE reaches $26.02^\circ$). Conversely, by exploiting the $100$-step future reference preview and nonlinear NARX dynamics encoded during training, the neural controller decelerates the thruster ahead of trajectory peaks, maintaining strict phase synchronization and reducing tracking RMSE by $69.2\%$ to $81.7\%$.
-
-\subsection{Embedded TinyML Optimization and Compression Analysis}
-
-Deploying deep policies on low-cost microcontrollers requires balancing execution latency against Flash memory footprint. Using the hardware Data Watchpoint and Trace (DWT) cycle counter on the STM32F446RE ($180\,\mathrm{MHz}$ Cortex-M4F) over $8,365$ control cycles, we evaluated two deployment toolchains: (i)~native C matrix-vector routines compiled with ARM GCC under flags \texttt{-O0}, \texttt{-O1}, \texttt{-Os}, and \texttt{-O3}; and (ii)~the ST X-CUBE-AI code generator \citep{stmu2526,david2021} utilizing CMSIS-NN SIMD instructions, tested in both uncompressed \texttt{float32} and 4-bit non-linear LUT quantization (\emph{High Compression}).
-
-\begin{table}[tb]
-\begin{center}
-\caption{Computational latency ($t_{\mathrm{ann}}$) and memory footprint on STM32F446RE ($180\,\mathrm{MHz}$, $T_s = 10\,\mathrm{ms}$).}\label{tb:tinyml_bench}
-\resizebox{8.4cm}{!}{%
-\begin{tabular}{lccccc}
-\toprule
-\textbf{Configuration} & \textbf{$t_{\mathrm{ann}}$ (ms)} & \textbf{CPU (\%)} & \textbf{Speedup} & \textbf{Weights Flash} & \textbf{Total Flash} \\
-\midrule
-Native C (\texttt{-O0})     & $10.07^*$ & $100.7\%^*$ & $1.00\times$ & $130.50\,\mathrm{KiB}$ & $183.05\,\mathrm{KB}$ \\
-Native C (\texttt{-O1})     & $2.46$    & $24.6\%$    & $4.09\times$ & $130.50\,\mathrm{KiB}$ & $173.70\,\mathrm{KB}$ \\
-Native C (\texttt{-Os})     & $2.08$    & $20.8\%$    & $4.84\times$ & $130.50\,\mathrm{KiB}$ & $174.14\,\mathrm{KB}$ \\
-Native C (\texttt{-O3})     & $1.98$    & $19.8\%$    & $5.09\times$ & $130.50\,\mathrm{KiB}$ & $175.63\,\mathrm{KB}$ \\
-\midrule
-X-CUBE-AI (\texttt{float32})& $\mathbf{1.69}$ & $\mathbf{16.9\%}$ & $\mathbf{5.96\times}$ & $130.50\,\mathrm{KiB}$ & $182.25\,\mathrm{KB}$ \\
-X-CUBE-AI (High Comp.)      & $\mathbf{1.82}$ & $\mathbf{18.2\%}$ & $\mathbf{5.53\times}$ & $\mathbf{17.75\,\mathrm{KiB}}$ & $\mathbf{69.51\,\mathrm{KB}}$ \\
-\bottomrule
-\multicolumn{6}{l}{\footnotesize $^*$Exceeds $T_s = 10\,\mathrm{ms}$ deadline, causing 1,878 cumulative sample overruns.}
-\end{tabular}%
-}
-\end{center}
-\end{table}
-
-\begin{figure}[tb]
-\begin{center}
-\includegraphics[width=8.4cm]{img/benchmark_inferencia_flash.pdf}
-\caption{Comparison of per-step inference time ($t_{\mathrm{ann}}$) and Flash memory footprint across GCC optimization levels and ST X-CUBE-AI.}
-\label{fig:tinyml_flash}
-\end{center}
-\end{figure}
-
-The results in Table~\ref{tb:tinyml_bench} and Fig.~\ref{fig:tinyml_flash} highlight three key engineering findings:
-\begin{enumerate}
-    \item \textbf{Compiler Flags and Hard Real-Time Determinism:} Unoptimized compilation (\texttt{-O0}) requires $10.07\,\mathrm{ms}$, violating the $10\,\mathrm{ms}$ sampling deadline ($100.7\%$ CPU load). Enabling \texttt{-Os} or \texttt{-O3} reduces latency to $2.08\,\mathrm{ms}$ and $1.98\,\mathrm{ms}$ ($\sim 20\%$ CPU load) with sub-microsecond jitter ($< 1\,\mu\mathrm{s}$) due to the branch-free feedforward structure of the MLP.
-    \item \textbf{SIMD Acceleration via X-CUBE-AI:} Uncompressed X-CUBE-AI achieves the fastest execution at $1.69\,\mathrm{ms}$ ($16.9\%$ CPU occupancy, $14.6\%$ faster than GCC \texttt{-O3}) by exploiting Cortex-M4 multiply-accumulate (MAC) pipeline scheduling, requiring only $2.78\,\mathrm{KiB}$ of RAM.
-    \item \textbf{High Compression with Negligible Closed-Loop Impact:} Applying non-linear weight quantization shrinks weight storage by $\mathbf{86.4\%}$ ($130.50\,\mathrm{KiB} \to 17.75\,\mathrm{KiB}$) and total firmware size by $61.8\%$ ($182.25\,\mathrm{KB} \to 69.51\,\mathrm{KB}$), while adding only $0.13\,\mathrm{ms}$ of runtime LUT decoding overhead ($t_{\mathrm{ann}} = 1.82\,\mathrm{ms}$, still $8.1\%$ faster than native C \texttt{-O3}). Closed-loop SIL tests on Scenario~1 confirmed that the compressed model preserves stability and transient fidelity, shifting active-window RMSE by only $+0.38^\circ$ ($1.53^\circ \to 1.91^\circ$) and global RMSE by $+0.11^\circ$ ($4.88^\circ \to 5.00^\circ$), making the neural NMPC deployable even on ultra-low-cost microcontrollers with $64\,\mathrm{KB}$ of Flash.
-\end{enumerate}
+As a reference, in experiments that reproduced the identification trials, the nominal MLP reduced the tracking RMSE by 69--82\% compared with the baseline PID. This comparison favors the MLP, since the PID was tuned conservatively and has no reference preview, but it illustrates the benefit of the predictive policy under large excursions, where thrust and gravitational nonlinearities are most pronounced.
 
 %===============================================================================
-\section{Conclusion}
-\label{sec:conclusion}
+\section{Conclusion} \label{sec:conclusion}
 
-This paper presented the design, TinyML deployment, and experimental validation of an embedded neural predictive controller for a 1-DOF quarter-drone aeropendulum operating at $100\,\mathrm{Hz}$. By identifying a compact 10-term polynomial NARX model via FROLS and distilling a long-horizon CasADi/IPOPT NMPC policy ($N = 150$) with future reference preview into a $130 \to 128 \to 128 \to 1$ ReLU MLP, the computational bottleneck of online NLP optimization ($90\text{--}458\,\mathrm{ms}$) was reduced to a deterministic $1.69\text{--}2.08\,\mathrm{ms}$ feedforward execution on an STM32F446RE microcontroller.
+\tamanho{1 p. (contando as referências)}
 
-Furthermore, coupling the neural policy with a bounded parallel residual integrator ($\pm 10\%$ authority) effectively bridged the Sim-to-Real gap on the physical bench, attenuating steady-state offset by $96.2\%$ to $98.8\%$ and mitigating bearing stick-slip friction to reduce sinusoidal tracking RMSE by $50.8\%$. Mirrored experimental trials against a classical PID controller demonstrated $69.2\%$ to $81.7\%$ reductions in tracking RMSE across aggressive multisine and chirp trajectories. Finally, X-CUBE-AI weight quantization compressed parameter Flash usage by $86.4\%$ ($17.75\,\mathrm{KiB}$) at $1.82\,\mathrm{ms}$ latency with negligible closed-loop degradation.
+This paper presented an identification-for-control case study on a quarter-drone aeropendulum. Closed-loop multisine, chirp and step experiments around two equilibria allowed the plant to be identified safely, and FROLS selected a 10-term polynomial NARX model out of 496 candidates whose structure reflects the quadratic thrust characteristic and the lightly damped dominant mode. Validated in free run on unseen data (FIT of 72--75\%), the model was used as the predictor of an NMPC with reference preview. As the online NMPC took about 10 to 45 times the 10\,ms sampling period, its policy was distilled into an MLP that runs on a Cortex-M4F microcontroller in about 2\,ms. Bench experiments revealed a sim-to-real gap, mainly a steady-state bias due to friction and model mismatch, which a low-authority residual integrator reduced by more than 96\%, with RMSE between $1.8^\circ$ and $3.8^\circ$ over repeated trials. Future work includes adding friction terms to the identified model, providing formal guarantees for the approximate controller, and extending the approach to 2-DOF platforms. The datasets and scripts are openly available to support research on nonlinear identification and learning-based predictive control.
 
-Future work will investigate iterative dataset aggregation (DAgger) \citep{ross2011reduction} to mitigate distribution shift at extreme angles, full 8-bit integer quantization (INT8) \citep{jacob2018quantization} for FPU-less Cortex-M0+ processors, and extension to multi-DOF VTOL attitude control.
+\begin{ack}
+The authors acknowledge the Pontifical Catholic University of Paraná (PUCPR), CAPES, and CNPq for financial support.
+\end{ack}
 
-\bibliography{ifacconf}
+\bibliography{ifacconf}      
 
 \end{document}

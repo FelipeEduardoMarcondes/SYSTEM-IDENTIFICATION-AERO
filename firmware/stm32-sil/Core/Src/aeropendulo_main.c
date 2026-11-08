@@ -32,7 +32,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-#define SIL_MODE 1 // <-- Comentado para rodar na bancada real com IMU
+//#define SIL_MODE 1 // <-- Comentado para rodar na bancada real com IMU
 #include "ann_weights.h" // Incluido incondicionalmente para ter acesso ao MPC na bancada real
 
 /* ── Chaveador de Motor de Inferência Neural ────────────────────────────── */
