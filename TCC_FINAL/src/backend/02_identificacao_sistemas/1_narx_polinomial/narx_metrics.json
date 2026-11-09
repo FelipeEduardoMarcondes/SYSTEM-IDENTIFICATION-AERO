@@ -1,0 +1,50 @@
+{
+    "multisine_45_val": {
+        "label": "Multisseno (45\u00b0, 0.30 Hz)",
+        "rmse_deg": 5.954590553093639,
+        "mae_deg": 4.526657770099795,
+        "fit_percent": 63.44470565847035,
+        "r2_score": 0.866371045560413,
+        "samples": 12699
+    },
+    "chirp_45_val": {
+        "label": "Chirp (45\u00b0, Amp \u00b135\u00b0)",
+        "rmse_deg": 6.270022614006883,
+        "mae_deg": 5.117443485352186,
+        "fit_percent": 72.15732826567832,
+        "r2_score": 0.9224785630694804,
+        "samples": 4979
+    },
+    "steps_45_val": {
+        "label": "Sequ\u00eancia de Degraus (45\u00b0)",
+        "rmse_deg": 5.678399421864085,
+        "mae_deg": 4.238329503375616,
+        "fit_percent": 74.68458775653335,
+        "r2_score": 0.9359129902943338,
+        "samples": 12656
+    },
+    "multisine_60_val": {
+        "label": "Multisseno (60\u00b0, 0.30 Hz)",
+        "rmse_deg": 16.470681296589635,
+        "mae_deg": 10.409594176656684,
+        "fit_percent": 15.228257553254698,
+        "r2_score": 0.2813751682542681,
+        "samples": 12709
+    },
+    "chirp_60_val": {
+        "label": "Chirp (60\u00b0, Amp \u00b140\u00b0)",
+        "rmse_deg": 15.975576990389309,
+        "mae_deg": 10.378408525192091,
+        "fit_percent": 44.237676370325076,
+        "r2_score": 0.6890563263419399,
+        "samples": 4994
+    },
+    "steps_60_val": {
+        "label": "Sequ\u00eancia de Degraus (60\u00b0)",
+        "rmse_deg": 30.934747253018237,
+        "mae_deg": 19.899553648636694,
+        "fit_percent": 15.134516682270672,
+        "r2_score": 0.2797849741248202,
+        "samples": 12704
+    }
+}

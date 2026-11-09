@@ -1,0 +1,484 @@
+"""
+main.py — Ponto de entrada do sistema de aquisição do aeropêndulo.
+"""
+
+import sys
+import os
+import pandas as pd
+
+sys.path.insert(0, os.path.dirname(__file__))
+
+from config import BAUD, FS, CONTROLE_DIR, SINAIS_REF_DIR
+
+try:
+    from serial_comm import SerialManager, selecionar_porta, SERIAL_OK
+except ImportError:
+    SERIAL_OK = False
+
+from signals     import multisine, carregar_sinal_csv, info
+from storage     import salvar_csv, carregar_csv, plotar, selecionar_csv
+from live_plot   import LivePlot
+from acquisition import Aquisicao
+from presets     import SEQUENCIAS_PRESET
+
+def _pedir_float(prompt: str, padrao: float) -> float:
+    while True:
+        try:
+            raw = input(f"  {prompt} [{padrao}]: ").strip() or str(padrao)
+            return float(raw)
+        except ValueError:
+            print("  Valor inválido.")
+
+def _pedir_int(prompt: str, padrao: int) -> int:
+    while True:
+        try:
+            raw = input(f"  {prompt} [{padrao}]: ").strip() or str(padrao)
+            return int(raw)
+        except ValueError:
+            print("  Valor inválido.")
+
+def _definir_sequencia_degraus() -> tuple:
+    from storage import carregar_sequencia_csv
+    import glob
+
+    n_pre     = len(SEQUENCIAS_PRESET)
+    opt_manual = n_pre + 1
+    opt_csv    = n_pre + 2
+
+    print("\n  Sequencias predefinidas:")
+    for i, (nome, dur, _) in enumerate(SEQUENCIAS_PRESET):
+        print(f"  [{i + 1}] {nome}  ({dur} s)")
+    print(f"  [{opt_manual}] Definir manualmente")
+    print(f"  [{opt_csv}]   Carregar de CSV (MATLAB)\n")
+
+    escolha = None
+    while escolha is None:
+        try:
+            v = int(input(f"  Escolha [1-{opt_csv}]: ").strip())
+            if 1 <= v <= opt_csv:
+                escolha = v
+        except ValueError:
+            pass
+
+    if escolha <= n_pre:
+        nome, duracao_s, degraus = SEQUENCIAS_PRESET[escolha - 1]
+        degraus = list(degraus)
+        print(f"\n  Preset: {nome}")
+    elif escolha == opt_manual:
+        duracao_s = _pedir_float("Duração total (s)", 30)
+        print("\n  Degrau: <t_inicio_s> <angulo_deg>  |  linha vazia = encerrar\n")
+        degraus = []
+        idx = 1
+        while True:
+            try:
+                raw = input(f"  Degrau {idx}: ").strip()
+            except EOFError:
+                break
+            if not raw:
+                if not degraus:
+                    degraus = [(0.0, 40.0)]
+                break
+            partes = raw.replace(",", " ").replace(":", " ").split()
+            if len(partes) == 2:
+                try:
+                    degraus.append((float(partes[0]), float(partes[1])))
+                    idx += 1
+                    continue
+                except ValueError:
+                    pass
+            print("  Formato: <tempo_s> <angulo_deg>  ex: 0 40")
+    else:
+        from config import CONTROLE_DIR
+        csvs = sorted(glob.glob("*.csv") + glob.glob(f"{CONTROLE_DIR}/*.csv") + glob.glob(f"{SINAIS_REF_DIR}/*.csv"))
+        if not csvs:
+            print("  Nenhum CSV encontrado. Usando padrão.")
+            return 10.0, [(0.0, 45.0)]
+        print("\n  CSVs disponíveis:")
+        for i, f in enumerate(csvs):
+            print(f"  [{i + 1}] {os.path.basename(f)}")
+        idx_csv = -1
+        while not (0 <= idx_csv < len(csvs)):
+            try:
+                idx_csv = int(input(f"  Escolha [1-{len(csvs)}]: ").strip()) - 1
+            except ValueError:
+                pass
+        duracao_s, degraus = carregar_sequencia_csv(csvs[idx_csv])
+        print(f"  CSV carregado: {csvs[idx_csv]}")
+
+    degraus.sort(key=lambda x: x[0])
+    if degraus[0][0] != 0.0:
+        degraus[0] = (0.0, degraus[0][1])
+    degraus = [(t, r) for t, r in degraus if t < duracao_s]
+    if not degraus:
+        degraus = [(0.0, 40.0)]
+
+    print("\n  Resumo:")
+    for i, (t, r) in enumerate(degraus):
+        t_fim = degraus[i + 1][0] if i + 1 < len(degraus) else duracao_s
+        print(f"    t={t:.1f}s  ->  t={t_fim:.1f}s  :  {r:.1f} deg  ({t_fim - t:.1f}s)")
+    print(f"  Duração total: {duracao_s:.1f} s\n")
+    return duracao_s, degraus
+
+
+def _configurar_sinal_arbitrario() -> tuple | None:
+    import glob
+    print("\n  Configuracao do SINAL ARBITRARIO (Carregar CSV)")
+
+    csvs = sorted(glob.glob("*.csv") + glob.glob(f"{CONTROLE_DIR}/*.csv") + glob.glob(f"{SINAIS_REF_DIR}/*.csv"))
+    if not csvs:
+        print(f"  Nenhum CSV encontrado na pasta '{CONTROLE_DIR}'.")
+        return None
+
+    print("\n  Conjunto de Controle disponíveis:")
+    for i, f in enumerate(csvs):
+        print(f"  [{i + 1}] {os.path.basename(f)}")
+    
+    idx_csv = -1
+    while not (0 <= idx_csv < len(csvs)):
+        try:
+            idx_csv = int(input(f"  Escolha [1-{len(csvs)}]: ").strip()) - 1
+        except ValueError:
+            pass
+            
+    t, u = carregar_sinal_csv(csvs[idx_csv])
+    info(t, u, f"sinal (CSV: {csvs[idx_csv]})")
+    nome_arq = os.path.splitext(os.path.basename(csvs[idx_csv]))[0]
+    return float(t[-1]), t, u, nome_arq
+
+def _conectar_e_aguardar(porta: str) -> "SerialManager | None":
+    mgr = SerialManager(porta)
+    if not mgr.conectar():
+        return None
+    if not mgr.aguardar_token("PRONTO", timeout_s=30.0):
+        mgr.fechar()
+        return None
+    return mgr
+
+def _pedir_recal(mgr: "SerialManager"):
+    if input("  Recalibrar giroscopio? (s/N): ").strip().lower() == "s":
+        mgr.recalibrar()
+
+def _pedir_modo_controle(mgr: "SerialManager") -> str:
+    print("\n  Selecione o Modo de Controle:")
+    print("  [1] Híbrido (PID subida -> RNA -> PID descida) [Padrão]")
+    print("  [2] Apenas PID (100% clássico, sem RNA)")
+    print("  [3] Apenas RNA (100% Neural MPC)")
+    escolha = input("  Escolha [1-3, Enter=1]: ").strip()
+    mapa = {"1": "HYBRID", "2": "PID", "3": "ANN", "": "HYBRID"}
+    modo = mapa.get(escolha, "HYBRID")
+    if mgr.definir_modo_controle(modo):
+        print(f"  Modo de controle no STM32: {modo}\n")
+    else:
+        print(f"  [AVISO] Falha ao configurar modo {modo}, mantendo padrão.\n")
+    return modo
+
+def rodar_degraus(porta: str) -> str | None:
+    mgr = _conectar_e_aguardar(porta)
+    if not mgr: return None
+    duracao_s, degraus = _definir_sequencia_degraus()
+    modo_ctrl = _pedir_modo_controle(mgr)
+    _pedir_recal(mgr)
+
+    if not mgr.enviar_seq(degraus):
+        mgr.fechar()
+        return None
+
+    transicoes = [t for t, _ in degraus[1:]]
+    nome = f"[{modo_ctrl}] SEQ  " + "  ".join(f"{t:.0f}s->{r:.0f}deg" for t, r in degraus)
+    live = LivePlot(nome=nome, transicoes=transicoes)
+
+    print("  Aguardando 2 segundos antes de começar (teste ESC)...")
+    import time
+    time.sleep(2.0)
+
+    if not mgr.iniciar_experimento():
+        live.fechar()
+        mgr.fechar()
+        return None
+
+    aq = Aquisicao(mgr, live)
+    linhas = aq.rodar(duracao_s=duracao_s, modo="seq", degraus=degraus)
+    live.fechar()
+    mgr.fechar()
+
+    if len(linhas) < 2:
+        print("  Dados insuficientes.")
+        return None
+    return salvar_csv(linhas, prefixo=f"degraus_{modo_ctrl.lower()}")
+
+
+def rodar_sinal_arbitrario(porta: str) -> str | None:
+    mgr = _conectar_e_aguardar(porta)
+    if not mgr: return None
+
+    resultado = _configurar_sinal_arbitrario()
+    if not resultado:
+        mgr.fechar()
+        return None
+        
+    duracao_total, t_sig, u_sig, prefixo = resultado
+    modo_ctrl = _pedir_modo_controle(mgr)
+    _pedir_recal(mgr)
+
+    print(f"\n  Pré-carregando {len(u_sig)} amostras no STM32...")
+    if not mgr.enviar_wave(u_sig):
+        print("  [ERRO] Falha ao enviar WAVE. Abortando.")
+        mgr.fechar()
+        return None
+
+    live = LivePlot(nome=f"[{modo_ctrl}] {prefixo.upper()}", janela_s=min(30.0, duracao_total / 2))
+    
+    print("  Aguardando 2 segundos antes de começar (teste ESC)...")
+    import time
+    time.sleep(2.0)
+
+    if not mgr.iniciar_experimento():
+        live.fechar()
+        mgr.fechar()
+        return None
+
+    aq = Aquisicao(mgr, live)
+    linhas = aq.rodar(duracao_s=duracao_total + 2.0, modo="wave")
+    live.fechar()
+    mgr.fechar()
+
+    if len(linhas) < 2:
+        return None
+    return salvar_csv(linhas, prefixo=f"{prefixo}_{modo_ctrl.lower()}")
+
+def rodar_repouso(porta: str) -> str | None:
+    mgr = _conectar_e_aguardar(porta)
+    if not mgr: return None
+    duracao_s = _pedir_float("Duracao da coleta em repouso (s)", 20.0)
+    
+    mgr.ser.reset_input_buffer()
+    import time; time.sleep(0.1)       # aguarda bytes residuais do boot
+    mgr.ser.reset_input_buffer()       # limpa novamente após settle
+    mgr.enviar("FREE")
+    mgr.ser.flush()                    # garante que FREE foi transmitido
+    if not mgr.aguardar_token("EXP_START", timeout_s=10.0):
+        mgr.fechar()
+        return None
+
+    cab = mgr.readline()
+    if cab: print(f"  [STM32] {cab}")
+
+    live = LivePlot(nome="REPOUSO")
+    aq = Aquisicao(mgr, live)
+    linhas = aq.rodar(duracao_s=duracao_s, modo="wave")
+    live.fechar()
+    mgr.fechar()
+
+    if len(linhas) < 2: return None
+    return salvar_csv(linhas, prefixo="repouso")
+
+def rodar_malha_aberta(porta: str) -> str | None:
+    mgr = _conectar_e_aguardar(porta)
+    if not mgr: return None
+    
+    u_pct = _pedir_float("Valor do PWM (%) [0-100]", 30.0)
+    duracao_s = _pedir_float("Duracao DO DEGRAU (s)", 20.0)
+    
+    _pedir_recal(mgr)
+
+    print(f"\n  Configurando malha aberta (PWM = {u_pct}%)...")
+    print("  NOTA: Os primeiros 5 segundos serão com PWM = 0 para baseline.")
+    mgr.enviar(f"OPENLOOP={u_pct:.1f}")
+    if not mgr.aguardar_token("OPENLOOP_OK", timeout_s=5.0):
+        print("  [ERRO] Falha ao configurar OPENLOOP no STM32.")
+        mgr.fechar()
+        return None
+
+    live = LivePlot(nome=f"MALHA ABERTA {u_pct:.1f}%", janela_s=min(30.0, duracao_s / 2))
+    
+    print("  Aguardando 2 segundos antes de começar (teste ESC)...")
+    import time
+    time.sleep(2.0)
+
+    if not mgr.iniciar_experimento():
+        live.fechar()
+        mgr.fechar()
+        return None
+
+    aq = Aquisicao(mgr, live)
+    linhas = aq.rodar(duracao_s=duracao_s + 5.0, modo="wave")
+    live.fechar()
+    mgr.fechar()
+
+    if len(linhas) < 2: return None
+    # Converte para int para não ficar "30.0" no nome do arquivo se for redondo
+    str_pwm = f"{int(u_pct)}" if u_pct.is_integer() else f"{u_pct:.1f}".replace('.', '_')
+    return salvar_csv(linhas, prefixo=f"malha_aberta_{str_pwm}")
+
+def rodar_sim_to_real(porta: str) -> str | None:
+    from config import CONTROLE_DIR, SINAIS_REF_DIR
+    import time
+    
+    # Buscar referência no novo local, com fallback para o antigo
+    ref_csv = os.path.join(SINAIS_REF_DIR, "referencia_mpc.csv")
+    sim_csv = os.path.join(SINAIS_REF_DIR, "simulacao_mpc.csv")
+    if not os.path.exists(ref_csv):
+        ref_csv = os.path.join(CONTROLE_DIR, "referencia_mpc.csv")
+    if not os.path.exists(sim_csv):
+        sim_csv = os.path.join(CONTROLE_DIR, "simulacao_mpc.csv")
+    
+    if not os.path.exists(ref_csv):
+        print(f"  [ERRO] Arquivo referencia_mpc.csv não encontrado em sinais_referencia/ nem controle/.")
+        return None
+    if not os.path.exists(sim_csv):
+        print(f"  [ERRO] Arquivo simulacao_mpc.csv não encontrado em sinais_referencia/ nem controle/.")
+        return None
+        
+    print("\n  [AUTO SIM-TO-REAL] Lendo referencia da simulacao...")
+    t, u = carregar_sinal_csv(ref_csv)
+    info(t, u, f"sinal (CSV: {ref_csv})")
+    duracao_total = float(t[-1])
+    prefixo = "stm_validacao_mpc"
+    
+    mgr = _conectar_e_aguardar(porta)
+    if not mgr: return None
+    
+    modo_ctrl = _pedir_modo_controle(mgr)
+    _pedir_recal(mgr)
+
+    print(f"\n  Pré-carregando {len(u)} amostras no STM32...")
+    if not mgr.enviar_wave(u):
+        print("  [ERRO] Falha ao enviar WAVE. Abortando.")
+        mgr.fechar()
+        return None
+
+    live = LivePlot(nome=f"[{modo_ctrl}] AUTO SIM-TO-REAL", janela_s=min(30.0, duracao_total / 2))
+    
+    print("  Aguardando 2 segundos antes de começar (teste ESC)...")
+    time.sleep(2.0)
+
+    if not mgr.iniciar_experimento():
+        live.fechar()
+        mgr.fechar()
+        return None
+
+    aq = Aquisicao(mgr, live)
+    linhas = aq.rodar(duracao_s=duracao_total + 2.0, modo="wave")
+    live.fechar()
+    mgr.fechar()
+
+    if len(linhas) < 2:
+        return None
+        
+    caminho_stm = salvar_csv(linhas, prefixo=f"stm_validacao_{modo_ctrl.lower()}")
+    
+    print("\n  [AUTO SIM-TO-REAL] Abrindo comparacao automatica...")
+    import comparar_csvs
+    comparar_csvs.comparar_arquivos([sim_csv, caminho_stm])
+    
+    return None
+
+def recalibrar(porta: str):
+    mgr = _conectar_e_aguardar(porta)
+    if not mgr: return
+    print("  Recalibrando...")
+    mgr.recalibrar()
+    mgr.fechar()
+
+def _menu() -> str:
+    print()
+    if SERIAL_OK:
+        print("  [1] Degraus de referencia")
+        print("  [2] Sinal Arbitrario")
+        print("  [3] Coleta em repouso (sem controle)")
+        print("  [4] Recalibrar giroscopio")
+        print("  [5] Plotar CSV existente")
+        print("  [6] Coleta de malha aberta (PWM fixo)")
+        print("  [7] Comparar multiplos CSVs")
+        print("  [8] Validar Simulação (Sim-to-Real automático)")
+    else:
+        print("  [5] Plotar CSV existente")
+        print("  [7] Comparar multiplos CSVs")
+        print("\n  OBS: pyserial nao instalado.")
+    print("  [0] Sair")
+
+    validas = {"0", "5", "7"} | ({"1", "2", "3", "4", "6", "8"} if SERIAL_OK else set())
+    while True:
+        op = input("\n  Opcao: ").strip()
+        if op in validas: return op
+        print("  Opcao invalida.")
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("  Aeropendulo  |  Aquisicao de Dados  |  v2")
+    print("=" * 60)
+
+    from config import set_experimento_ativo, EXPERIMENTOS_DIR
+    print("\n  [Configuracao de Experimento]")
+    
+    exp_folders = []
+    if os.path.exists(EXPERIMENTOS_DIR):
+        exp_folders = [d for d in os.listdir(EXPERIMENTOS_DIR) if os.path.isdir(os.path.join(EXPERIMENTOS_DIR, d))]
+    exp_folders.sort()
+    
+    exp_input = ""
+    if exp_folders:
+        print("  Experimentos disponiveis:")
+        for i, folder in enumerate(exp_folders, 1):
+            print(f"  [{i}] {folder}")
+        print("  [0] Coleta Livre (nenhum experimento)")
+        
+        escolha = input(f"\n  Escolha [0-{len(exp_folders)}]: ").strip()
+        try:
+            escolha_int = int(escolha)
+            if 1 <= escolha_int <= len(exp_folders):
+                exp_input = exp_folders[escolha_int - 1]
+        except ValueError:
+            pass
+    else:
+        exp_input = input("  Nenhum experimento encontrado. Digite o nome de um novo (ou Enter para Coleta Livre): ").strip()
+
+    if exp_input:
+        print(f"\n  Experimento selecionado: {exp_input}")
+        print("  Modo de execucao:")
+        print("  [1] Bancada Fisica (salvar em 4_aeropendulo)")
+        print("  [2] Simulacao SIL (salvar em 3_sil_stm32)")
+        modo_op = input("  Escolha [1-2]: ").strip()
+        modo_str = "3_sil_stm32" if modo_op == "2" else "4_aeropendulo"
+        set_experimento_ativo(exp_input, modo_str)
+    else:
+        print("  Modo Coleta Livre selecionado (sem experimento ativo).")
+
+    if len(sys.argv) > 1:
+        plotar(sys.argv[1])
+        sys.exit(0)
+
+    op = _menu()
+
+    if op == "0": sys.exit(0)
+    elif op in ("1", "2", "3", "4", "6", "8"):
+        porta = selecionar_porta()
+        if not porta: sys.exit(1)
+
+        if op == "1":
+            caminho = rodar_degraus(porta)
+        elif op == "2":
+            caminho = rodar_sinal_arbitrario(porta)
+        elif op == "3":
+            caminho = rodar_repouso(porta)
+        elif op == "4":
+            recalibrar(porta)
+            caminho = None
+        elif op == "6":
+            caminho = rodar_malha_aberta(porta)
+        elif op == "8":
+            caminho = rodar_sim_to_real(porta)
+
+        if caminho:
+            print(f"\n  Plotando resultado: {caminho}")
+            plotar(caminho)
+
+    elif op == "5":
+        caminho = selecionar_csv()
+        if caminho: plotar(caminho)
+        else: print("  Nenhum CSV encontrado.")
+        
+    elif op == "7":
+        import comparar_csvs
+        arquivos = comparar_csvs.selecionar_multiplos()
+        comparar_csvs.comparar_arquivos(arquivos)

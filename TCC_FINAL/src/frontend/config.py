@@ -1,0 +1,91 @@
+"""
+config.py — Constantes globais do projeto aeropêndulo.
+
+Edite aqui antes de rodar qualquer módulo.
+"""
+import os
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# ── Serial ────────────────────────────────────────────────────────────────────
+BAUD                 = 500_000
+SERIAL_TIMEOUT       = 1.0          # s — timeout de readline em coleta normal
+SERIAL_WRITE_TIMEOUT = 3.0          # s — timeout de escrita (evita travamento do driver Windows)
+WAVE_CHUNK           = 200          # amostras por bloco DATA= (margem segura para RX_BUF_LEN=2048)
+
+# ── Amostragem ────────────────────────────────────────────────────────────────
+FS             = 100.0        # Hz — deve bater com o firmware (INTERVALO_US=10000)
+TS             = 1.0 / FS    # s
+
+# ── Live plot ─────────────────────────────────────────────────────────────────
+LIVE_JANELA_S  = 30.0         # s — janela de visualização
+LIVE_UPDATE    = 0.25         # s — intervalo mínimo entre redesenhos
+
+# ── Caminhos (nova estrutura) ────────────────────────────────────────────────
+COLETAS_DIR       = os.path.join(BASE_DIR, "data", "coletas")
+EXPERIMENTOS_DIR  = os.path.join(BASE_DIR, "data", "experimentos_novos")
+SINAIS_REF_DIR    = os.path.join(BASE_DIR, "data", "sinais_referencia")
+
+# Legado — manter até migração completa, não usar em código novo
+EXP_DIR           = os.path.join(BASE_DIR, "data", "experimentos")   # DEPRECATED
+CONTROLE_DIR      = os.path.join(BASE_DIR, "data", "controle")       # DEPRECATED
+
+# ── Experimento ativo ────────────────────────────────────────────────────────
+# Quando definido, salvar_csv() direciona os dados para dentro do EXP.
+# Usar set_experimento_ativo("EXP001_...") antes de rodar a interface.
+_experimento_ativo = None
+_modo_execucao = "4_aeropendulo"
+
+def set_experimento_ativo(exp_id: str | None, modo: str = "4_aeropendulo"):
+    """Define o experimento ativo. Salvamentos vão para a pasta escolhida."""
+    global _experimento_ativo, _modo_execucao
+    _experimento_ativo = exp_id
+    _modo_execucao = modo
+    if exp_id:
+        exp_path = os.path.join(EXPERIMENTOS_DIR, exp_id)
+        if not os.path.exists(exp_path):
+            print(f"  [AVISO] Pasta {exp_path} não existe. Crie com novo_experimento.py")
+        else:
+            print(f"  [OK] Experimento ativo: {exp_id} (Salvando em: {modo})")
+
+def get_experimento_ativo() -> str | None:
+    """Retorna o ID do experimento ativo, ou None."""
+    return _experimento_ativo
+
+def get_modo_execucao() -> str:
+    return _modo_execucao
+
+
+# ── Limites físicos ───────────────────────────────────────────────────────────
+REF_MIN        = 0.0          # graus
+REF_MAX        = 135.0        # graus
+U_MAX          = 100.0         # % (espelho do firmware)
+
+# ── Cores do plot (tema escuro) ───────────────────────────────────────────────
+CORES = {
+    "angulo":   "#58a6ff",
+    "ref":      "#f0883e",
+    "controle": "#3fb950",
+    "erro":     "#da3633",
+    "zero":     "#6e7681",
+    "fill_a":   "#1f3a5f",
+    "fill_r":   "#3a2010",
+    "fill_c":   "#1a3a22",
+    "fill_e":   "#3a1010",
+}
+
+# ── Matplotlib ────────────────────────────────────────────────────────────────
+MPL_RC = {
+    "figure.facecolor": "#0d1117",
+    "axes.facecolor":   "#161b22",
+    "axes.edgecolor":   "#30363d",
+    "axes.labelcolor":  "#c9d1d9",
+    "axes.titlecolor":  "#e6edf3",
+    "xtick.color":      "#8b949e",
+    "ytick.color":      "#8b949e",
+    "grid.color":       "#21262d",
+    "grid.linewidth":   0.8,
+    "text.color":       "#c9d1d9",
+    "font.family":      "monospace",
+    "lines.linewidth":  1.6,
+}
