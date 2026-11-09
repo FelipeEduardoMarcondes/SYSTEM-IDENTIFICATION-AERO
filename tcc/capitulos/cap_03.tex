@@ -8,7 +8,7 @@ Este capítulo apresenta o detalhamento completo da fase experimental do projeto
     \centering
     \caption{Diagrama de Blocos do Projeto}
     \label{fig:diagrama-blocos-projeto}
-    \includegraphics[width=1\textwidth]{img/blocos-projeto.png}
+    \includesvg[width=1\textwidth]{img/blocos-projeto}
     \sourceFig{o autor, 2026.}
 \end{figure}
 
@@ -35,7 +35,7 @@ A haste rosqueada também permite a fixação e remoção facilitada de contrape
     \caption{Desenho da Bancada}
     \label{fig:montagem-bancada}
     \includegraphics[width=1\textwidth]{img/montagem-bancada.png}
-    \sourceFig{o autor, 2026.}
+    \sourceFig{Adaptado de Lima et al., 2025}
 \end{figure}
 
 \begin{table}[H]
@@ -100,7 +100,7 @@ A leitura dos registradores de saída do giroscópio é executada via interrupç
 % ------------------------------------------------------------
 \subsection{Microcontrolador STM32 Nucleo-F446RE}
 
-O núcleo de processamento do aeropêndulo é composto pelo microcontrolador STM32F446, baseado na arquitetura Arm Cortex-M4 de 32 bits, operando a uma frequência de clock máxima de 180\,MHz. Este processador incorpora uma Unidade de Ponto Flutuante (FPU) em hardware que suporta todas as instruções de precisão única do padrão IEEE 754, o que elimina a sobrecarga computacional de emulação por software e otimiza a execução em tempo real do algoritmo de controle do aeropêndulo e da filtragem dos sensores. A arquitetura de memória do dispositivo conta com 512\,KB de memória Flash para armazenamento do firmware e 128\,KB de memória SRAM para alocação dinâmica de variáveis e buffers de execução \cite{stm32}.
+O núcleo de processamento do aeropêndulo é composto pelo microcontrolador STM32F446, baseado na arquitetura Arm Cortex-M4 de 32 bits, operando a uma frequência de clock máxima de 180\,MHz. Este processador incorpora uma Unidade de Ponto Flutuante (FPU) em hardware que suporta todas as instruções de precisão única do padrão IEEE 754, o que elimina a sobrecarga computacional de emulação por software e otimiza a execução em tempo real do algoritmo de controle do aeropêndulo e da filtragem dos sensores. A arquitetura de memória do dispositivo conta com 512\,KB de memória Flash para armazenamento do firmware e 128\,KB de memória SRAM para alocação dinâmica de variáveis e buffers de execução \cite{strm0390f446}.
 
 Os periféricos internos atendem aos requisitos dinâmicos e de interface do sistema, dividindo-se nas seguintes funções:
 
@@ -130,14 +130,13 @@ A Tabela~\ref{tab:perifericos_stm32} especifica a atribuição física de pinos 
     \sourceTab{o autor, 2026.}
 \end{table}
 
-A Figura~\ref{fig:esquematico} apresenta o esquemático elétrico simplificado da bancada, ilustrando a interligação entre o STM32 Nucleo-F446RE, a IMU ICM-20948 e o ESC. A fonte de alimentação do motor (VBAT) é independente da 
-alimentação lógica do microcontrolador.
+A Figura~\ref{fig:esquematico} apresenta o esquemático elétrico simplificado da bancada, ilustrando a interligação entre o STM32 Nucleo-F446RE, a IMU ICM-20948 e o ESC. A fonte de alimentação do motor (VBAT) é independente da alimentação lógica do microcontrolador.
 
 \begin{figure}[H]
     \centering
     \caption{Esquemático elétrico simplificado da bancada}
     \label{fig:esquematico}
-    \includegraphics[width=1\textwidth]{img/diagrama-eletrico.png}
+    \includegraphics[width=0.8\textwidth]{img/diagrama-eletrico.png}
     \sourceFig{o autor, 2026.}
 \end{figure}
 
@@ -145,7 +144,7 @@ alimentação lógica do microcontrolador.
 \section{Identificação do Modelo Dinâmico}
 \label{sec:identificacao}
 
-A síntese do Controle Preditivo Não-Linear (NMPC) exige um modelo matemático rigoroso, mas a modelagem puramente analítica do aeropêndulo impõe dificuldades práticas, visto que parâmetros físicos são de difícil mensuração isolada e o arranjo propulsor (turbina EDF) introduz não-linearidades que costumam ser ignoradas. Contudo, as abordagens clássicas de identificação baseadas em modelos lineares possuem restrições estruturais que as tornam insuficientes para representar os efeitos aerodinâmicos em todo o envelope operacional da planta \cite{jiang2022}. 
+A síntese do Controle Preditivo Não-Linear (NMPC) exige um modelo matemático rigoroso, mas a modelagem puramente analítica do aeropêndulo impõe dificuldades práticas, visto que parâmetros físicos são de difícil mensuração isolada e o arranjo propulsor introduz não-linearidades que costumam ser ignoradas. Contudo, as abordagens clássicas de identificação baseadas em modelos lineares possuem restrições estruturais que as tornam insuficientes para representar os efeitos aerodinâmicos em todo o envelope operacional da planta \cite{jiang2022}. 
 
 Diante dessas limitações, para fundamentar conceitualmente a dinâmica rotacional do aeropêndulo e compreender as fontes dominantes de não-linearidade, parte-se dos princípios da física clássica. Pela Segunda Lei de Newton aplicada à dinâmica rotacional, considerando explicitamente a massa da unidade propulsora $m_1$ posicionada à distância $L_1$ do pivô e a massa do contrapeso $m_2$ posicionada à distância $L_2$ no lado oposto, a equação de movimento do aeropêndulo é:
 
@@ -268,14 +267,14 @@ Para garantir que o modelo identificado possua alta capacidade de generalizaçã
 
 \subsubsection{Procedimento de Coleta de Dados}
 
-Durante os ensaios, os dados foram transmitidos em tempo real pela interface USART2 do microcontrolador STM32 Nucleo-F446RE a uma taxa de comunicação de 500.000\,baud para o computador hospedeiro. Cada quadro de telemetria transmitido continha o carimbo de tempo determinístico (\textit{timestamp} com resolução de microssegundos), o sinal de referência $r(t)$, a ação de controle de saída $u(t)$ calculada pelo PID (expressa em porcentagem de \textit{duty cycle} do PWM no ESC) e o ângulo $\theta(t)$ estimado pelo filtro complementar a partir dos eixos do acelerômetro e giroscópio.
+Durante os ensaios, os dados foram transmitidos em tempo real pela interface USART2 do microcontrolador STM32 a uma taxa de comunicação de 500.000\,baud para o computador hospedeiro. Cada quadro de telemetria transmitido continha o carimbo de tempo determinístico (\textit{timestamp} com resolução de microssegundos), o sinal de referência $r(t)$, a ação de controle de saída $u(t)$ calculada pelo PID (expressa em porcentagem de \textit{duty cycle} do PWM no ESC) e o ângulo $\theta(t)$ estimado pelo filtro complementar a partir dos eixos do acelerômetro e giroscópio.
 
 Os pacotes seriais foram capturados por um script Python dedicado utilizando a biblioteca \texttt{pyserial}, armazenados em arquivos estruturados de formato CSV e submetidos à rotina de pré-processamento, na qual os primeiros 10\,s (partida do motor e acomodação da comunicação) e os últimos 13\,s (desativação e frenagem) foram aparados, preservando os trechos estacionários de regime contínuo. O Algoritmo~\ref{alg:aquisicao_dados} sintetiza a lógica do laço em tempo real executada no microcontrolador durante as coletas.
 
 \begin{algorithm}[H]
 \caption{Ciclo Determinístico de Amostragem e Telemetria no STM32}
-\begin{algorithmic}[1]
 \label{alg:aquisicao_dados}
+\begin{algorithmic}[1]
 \Procedure{Setup}{}
     \State Inicializar periféricos (TIM, I$^2$C no modo Fast 400\,kHz, UART a 500\,kbaud, PWM a 50\,Hz)
     \State Calibrar offsets de bias do giroscópio da IMU ICM-20948 em repouso
@@ -302,6 +301,7 @@ Os pacotes seriais foram capturados por um script Python dedicado utilizando a b
     \State Desativar propulsão ($u \gets 0\%$) e aguardar parada mecânica
 \EndProcedure
 \end{algorithmic}
+\sourceFig{o autor, 2026.}
 \end{algorithm}
 
 % ------------------------------------------------------------
@@ -551,7 +551,7 @@ O custo de estágio $\ell(\cdot)$ penaliza quadrática e simultaneamente o erro 
 \end{equation}
 \noindent com $u(k-1) = x_k(n_y + 1)$ obtido diretamente do estado medido atual.
 
-Os parâmetros de ponderação adotados na síntese foram calibrados experimentalmente para assegurar amortecimento rigoroso e rastreamento ágil:
+Os parâmetros de ponderação adotados na síntese foram calibrados experimentalmente para assegurar amortecimento e rastreamento:
 \begin{equation}
     q_y = 1000{,}0, \qquad r_u = 0{,}1, \qquad r_{\Delta u} = 50000{,}0.
     \label{eq:pesos_nmpc}
@@ -560,7 +560,7 @@ A magnitude elevada atribuída ao peso $r_{\Delta u}$ ($5 \times 10^4$) atua com
 
 \subsubsection*{Restrições nos Atuadores e Formulação Terminal}
 
-Em relação aos limites operacionais de controle~\eqref{eq:ocp_u}, estabeleceu-se $u_{\min} = 0{,}0\%$ e $u_{\max} = 100{,}0\%$ durante a rotina de otimização numérica offline para geração do dataset. Na operação física em bancada, o firmware do microcontrolador impõe um teto de segurança em $u \le 80{,}0\%$ para evitar sobreaquecimento prolongado do enrolamento do motor elétrico outrunner e admite controle bidirecional completo através do ESC configurado para modulação reversa.
+Em relação aos limites operacionais de controle~\eqref{eq:ocp_u}, estabeleceu-se $u_{\min} = 0{,}0\%$ e $u_{\max} = 100{,}0\%$ durante a rotina de otimização numérica offline para geração do dataset. Na operação física em bancada, o firmware do microcontrolador impõe um teto de segurança em $u \le 80{,}0\%$ para evitar sobreaquecimento do motor elétrico e admite controle bidirecional completo através do ESC configurado para modulação reversa.
 
 Na formulação adotada para geração offline da base de aprendizado, adota-se um horizonte de predição suficientemente extenso ($N = 150$ passos, ou $1{,}50$\,s, correspondendo a quase quatro vezes o período natural de oscilação do modo pendular dominante). Sob horizonte suficientemente longo, dispensa-se a imposição de restrições terminais restritivas de igualdade ou conjuntos terminais compactos $\mathcal{X}_f$ \cite{rawlings2017}, simplificando a convergência do algoritmo de pontos interiores (IPOPT) e prevenindo infactibilidades numéricas artificiais durante degraus bruscos de trajetória.
 
@@ -587,17 +587,17 @@ A política de controle ótima gerada pelo NMPC em malha fechada é utilizada pa
 
 A inclusão explícita das referências futuras dota a rede neural da capacidade de visão antecipada (\textit{preview}), permitindo compensar preventivamente a inércia mecânica da planta antes que as mudanças de referência ocorram. Para cobrir amplamente o envelope operacional do sistema e assegurar rica variabilidade dinâmica, a trajetória de excitação do NMPC foi sintetizada com duração total de 187\,s ($18.700$ passos amostrais a $100$\,Hz), integrando patamares de repouso, varreduras em frequência com sinais \textit{chirp} (0,05 a 0,50\,Hz), multisseno com sobreposição harmônica e sequências aleatórias de degraus cobrindo deflexões de $0^\circ$ até $120^\circ$.
 
-Antes do treinamento, as variáveis de entrada do \textit{dataset} são padronizadas via transformação $Z$-score (\texttt{StandardScaler}), subtraindo a média amostral e escalonando pela variância unitária, o que otimiza o condicionamento numérico da superfície de perda e acelera a convergência do algoritmo de retropropagação \cite{karg2020}.
+Antes do treinamento, as variáveis de entrada do \textit{dataset} são padronizadas via transformação $Z$-score (\texttt{StandardScaler}), subtraindo a média amostral e escalonando pela variância unitária, o que otimiza o condicionamento numérico da superfície de perda e acelera a convergência do algoritmo de retropropagação \cite{jiang2022}.
 
 % ------------------------------------------------------------
 \subsection{Arquitetura e Treinamento da MLP}
 
-A implementação da rede neural aproximadora foi desenvolvida em PyTorch \cite{paszke2019}. Projetou-se uma arquitetura do tipo \textit{Multilayer Perceptron} (MLP) com a topologia:
+A implementação da rede neural aproximadora foi desenvolvida em PyTorch. Projetou-se uma arquitetura do tipo \textit{Multilayer Perceptron} (MLP) com a topologia:
 \begin{equation}
     130 \;\longrightarrow\; 128 \;\longrightarrow\; 128 \;\longrightarrow\; 1,
     \label{eq:topologia_mlp}
 \end{equation}
-\noindent constituída por uma camada de entrada de dimensão 130, duas camadas ocultas densas com 128 neurônios cada e funções de ativação do tipo Unidade Linear Retificada (ReLU, $\sigma(v) = \max(0, v)$), e uma camada de saída linear univariada gerando o comando contínuo $\hat{u}(k)$. A estrutura totaliza 33.665 parâmetros treináveis (pesos e \textit{biases}).
+\noindent constituída por uma camada de entrada de dimensão 130, duas camadas ocultas densas com 128 neurônios cada e funções de ativação do tipo Unidade Linear Retificada (ReLU, $\sigma(v) = \max(0, v)$), e uma camada de saída linear univariada gerando o comando contínuo $\hat{u}(k)$. A estrutura totaliza 33.409 parâmetros treináveis (pesos e \textit{biases}).
 
 O treinamento supervisionado foi conduzido minimizando o Erro Quadrático Médio (MSE):
 \begin{equation}
@@ -606,7 +606,7 @@ O treinamento supervisionado foi conduzido minimizando o Erro Quadrático Médio
 \end{equation}
 \noindent utilizando o otimizador Adam com taxa de aprendizado inicial $\alpha = 10^{-3}$ e regularização por decaimento de peso (\textit{weight decay}) de $\lambda = 10^{-5}$. Utilizou-se tamanho de lote (\textit{batch size}) de 64 amostras com embaralhamento a cada época. Adotou-se o agendador de taxa de aprendizado \texttt{ReduceLROnPlateau} (fator de redução de 0,5 com paciência de 10 épocas e taxa mínima de $10^{-5}$) e critério de parada antecipada (\textit{early stopping}) para restaurar os parâmetros que alcançaram a menor perda no conjunto de validação. O procedimento de treinamento está estruturado no Algoritmo~\ref{alg:treino_mlp}.
 
-\begin{algorithm}
+\begin{algorithm}[H]
 \caption{Treinamento da Rede Neural para Aproximação do Controlador}
 \label{alg:treino_mlp}
 \begin{algorithmic}[1]
@@ -629,6 +629,7 @@ O treinamento supervisionado foi conduzido minimizando o Erro Quadrático Médio
             \State $\mathcal{L}_{\text{val,min}} \gets \mathcal{L}_{\text{val}}$
             \State $\mathcal{W}_{\text{ótimo}} \gets \text{pesos\_atuais}$
             \State $\text{contador\_paciência} \gets 0$
+            
         \Else
             \State $\text{contador\_paciência} \gets \text{contador\_paciência} + 1$
             \If{$\text{contador\_paciência} \ge 20$}
@@ -644,6 +645,7 @@ O treinamento supervisionado foi conduzido minimizando o Erro Quadrático Médio
 
 \EndProcedure
 \end{algorithmic}
+\sourceFig{o autor, 2026.}
 \end{algorithm}
 
 % ============================================================
@@ -681,7 +683,7 @@ As operações de ponto flutuante, em particular o cálculo de \texttt{atan2} no
 \Statex
 \Procedure{I2C\_DMA\_Complete\_ISR}{}
     \State \Comment{1. Leitura da Referência (UART)}
-    \State $\theta_{ref} \gets \text{LerReferencia()}$
+    \State $\theta_{\text{ref}} \gets \text{LerReferencia()}$
 
     \Statex
     \State \Comment{2. Estimação de Estados (FPU)}
@@ -698,8 +700,9 @@ As operações de ponto flutuante, em particular o cálculo de \texttt{atan2} no
 
     \Statex
     \State \Comment{5. Registro de Dados (UART DMA)}
-    \State $\text{IniciarTelemetria\_DMA}(\theta,\; \dot{\theta},\; \theta_{ref},\; u)$
+    \State $\text{IniciarTelemetria\_DMA}(\theta,\; \dot{\theta},\; \theta_{\text{ref}},\; u)$
 \EndProcedure
 \end{algorithmic}
+\sourceFig{o autor, 2026.}
 \end{algorithm}
 % ============================================================

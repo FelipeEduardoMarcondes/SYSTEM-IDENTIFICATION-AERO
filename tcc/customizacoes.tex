@@ -12,6 +12,7 @@
 \usepackage{color}			% Controle das cores
 \usepackage{xcolor}
 \usepackage{graphicx}		% Inclusão de gráficos
+\usepackage{svg}
 \usepackage{microtype} 		% para melhorias de justificação
 \usepackage{pslatex}        % torna o documento padrão para as fontes Times/Helvetica/Courier
 % \usepackage{url}
@@ -205,6 +206,57 @@
 
 
 \setfloatlocations{plot}{hbtp} % Ver https://github.com/abntex/abntex2/issues/176
+% ---
+
+% ---
+% Configurações de Algoritmos conforme ABNT NBR 14724
+% 1. Rótulo em português com travessão: Algoritmo X – Título
+% 2. Indicação de fonte logo abaixo da linha inferior do algoritmo
+% 3. Inclusão dos algoritmos na Lista de Ilustrações (lof)
+% ---
+\floatname{algorithm}{Algoritmo}
+
+% Entrada para a Lista de Ilustrações
+\newlistentry{algorithm}{lof}{0}
+\counterwithout{algorithm}{chapter}
+\renewcommand{\cftalgorithmname}{Algoritmo\space}
+\renewcommand*{\cftalgorithmaftersnum}{\hfill--\hfill}
+\setlength{\cftalgorithmindent}{\cftfigureindent}
+\setlength{\cftalgorithmnumwidth}{\cftfigurenumwidth}
+
+% Redireciona gravação de algoritmos para o arquivo .lof (Lista de Ilustrações)
+\makeatletter
+\renewcommand*{\ext@algorithm}{lof}
+
+% Cabeçalho com travessão: Algoritmo X – Título
+\renewcommand\floatc@ruled[2]{{\@fs@cfont #1} \textendash{} #2\par}
+
+% Armazena e renderiza a fonte logo abaixo da linha inferior do algoritmo
+\gdef\@alg@source{}
+\newcommand{\sourceAlg}[1]{\gdef\@alg@source{#1}}
+
+\def\@fs@post{%
+  \kern2pt\hrule\relax
+  \ifx\@alg@source\@empty\else
+    \vspace{0.8ex}%
+    {\centering\small Fonte: \@alg@source\par}%
+    \gdef\@alg@source{}%
+  \fi
+}
+
+% Wrapper para vincular comandos de fonte ao escopo do algoritmo
+\let\orig@algorithm\algorithm
+\let\orig@endalgorithm\endalgorithm
+\renewenvironment{algorithm}[1][\fps@algorithm]{%
+  \gdef\@alg@source{}%
+  \let\sourceFig\sourceAlg
+  \let\sourceTab\sourceAlg
+  \let\fonte\sourceAlg
+  \orig@algorithm[#1]%
+}{%
+  \orig@endalgorithm
+}
+\makeatother
 % ---
 
 

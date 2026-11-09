@@ -68,13 +68,13 @@ A Figura~\ref{fig:narx_freerun} apresenta a comparação entre a trajetória sim
     \sourceFig{o autor, 2026.}
 \end{figure}
 
-O modelo alcançou uma Raiz do Erro Quadrático Médio de simulação livre igual a $\text{RMSE} = 4{,}685^\circ$. Conforme observado na Figura~\ref{fig:narx_freerun}, a sincronia de fase é precisa; os picos, vales e inversões de direção do modelo sobrepõem-se exatamente aos instantes experimentais.
+O modelo alcançou uma Raiz do Erro Quadrático Médio de simulação livre igual a $\text{RMSE} = 5{,}955^\circ$ ($\text{MAE} = 4{,}527^\circ$ e $\text{FIT} = 63{,}4\%$, com $R^2 = 0{,}866$). Conforme observado na Figura~\ref{fig:narx_freerun}, a sincronia de fase é precisa; os picos, vales e inversões de direção do modelo sobrepõem-se exatamente aos instantes experimentais.
 
 Entretanto, observa-se que o modelo tende a sobrestimar a amplitude do movimento nos extremos de deflexão. Esse comportamento decorre do fato de o modelo NARX apresentar amortecimento ligeiramente inferior ao da planta real. Na síntese do controle preditivo, isso implica que o controlador foi sintetizado para uma planta discretamente mais rápida e menos amortecida do que a estrutura mecânica física.
 
 Para comprovar que a acurácia preditiva se mantém frente a diferentes perfis operacionais, o modelo foi submetido a ensaios independentes de validação envolvendo transitórios abruptos e varredura espectral contínua:
 
-A Figura~\ref{fig:narx_val_steps} ilustra a simulação livre do modelo NARX frente a uma sequência experimental de degraus múltiplos na faixa de $25^\circ$ a $65^\circ$, com duração superior a 125\,s (12.656 passos de amostragem a 100\,Hz).
+A Figura~\ref{fig:narx_val_steps} ilustra a simulação livre do modelo NARX frente a uma sequência experimental de degraus múltiplos na faixa de $25^\circ$ a $65^\circ$, com duração superior a 125\,s.
 
 \begin{figure}[H]
     \centering
@@ -104,7 +104,7 @@ No ensaio de \textit{chirp}, o modelo obteve $\text{RMSE} = 6{,}270^\circ$, $\te
 
 \subsubsection{Rastreamento e Geração do Dataset}
 
-Com o modelo NARX validado, formulou-se o Problema de Controle Ótimo em tempo discreto implementado no ambiente CasADi \cite{andersson2019} com o solucionador não-linear IPOPT. Para gerar uma política rica de controle para o treinamento supervisionado subsequente, definiu-se um sinal de referência multivariado com duração de 187\,s, combinando trechos com multisseno de frequências até $f_{\max} = 0{,}5$\,Hz e transições em degrau que cobrem amplitudes de $12^\circ$ até $110^\circ$. A Figura~\ref{fig:mpc_treino} ilustra a resposta do NMPC nominal rastreando essa referência em simulação.
+Com o modelo NARX validado, formulou-se o Problema de Controle Ótimo em tempo discreto implementado no ambiente CasADi \cite{andersson2019} com o solucionador não-linear IPOPT. Para gerar uma política rica de controle para o treinamento supervisionado subsequente, definiu-se um sinal de referência multivariado com duração de 187\,s, combinando trechos com multisseno de frequências até $f_{\max} = 0{,}5$\,Hz e transições em degrau que cobrem amplitudes de $10^\circ$ até $110^\circ$. A Figura~\ref{fig:mpc_treino} ilustra a resposta do NMPC nominal rastreando essa referência em simulação.
 
 \begin{figure}[H]
     \centering
@@ -130,13 +130,13 @@ Embora o desempenho do NMPC em simulação seja elevado, a sua implantação dir
 
 O tempo de convergência típico do otimizador concentrou-se entre 90 e 120\,ms, apresentando um pico inicial de 458\,ms no primeiro passo (devido à inicialização a frio do solucionador) e picos transitórios de 220 a 333\,ms durante as transições de referência e inversões de aceleração, nas quais o solucionador demanda mais iterações para encontrar a trajetória viável sob restrições ativas.
 
-Considerando que a dinâmica angular do aeropêndulo impõe um período de amostragem de $T_s = 10$\,ms, o tempo de processamento exigido pelo NMPC nominal foi de 10 a 45 vezes maior do que o período de controle disponível, mesmo em ambiente de computação de mesa. Embora frameworks de controle preditivo rápido voltados a sistemas embarcados (como o \textit{acados} e métodos baseados em \textit{Real-Time Iterations} - RTI) atenuem consideravelmente a sobrecarga temporal via geração de código C otimizado em SQP, acomodar um horizonte longo de $N = 150$ passos sob dimensão de estado expandida ($nx = 30$) a 100\,Hz permanece desafiador em núcleos de microcontroladores Cortex-M4. A execução direta do IPOPT causaria esgotamento instantâneo de recursos e violações críticas de \textit{deadline}. Essa demonstração computacional justifica a proposta central deste trabalho: transferir a inteligência do controle ótimo para uma rede neural do tipo MLP de inferência determinística.
+Considerando que a dinâmica angular do aeropêndulo impõe um período de amostragem de $T_s = 10$\,ms, o tempo de processamento exigido pelo NMPC nominal foi de 10 a 45 vezes maior do que o período de controle disponível, mesmo em ambiente de computação de mesa. Embora frameworks de controle preditivo rápido voltados a sistemas embarcados (como o \textit{acados} e métodos baseados em \textit{Real-Time Iterations} - RTI) atenuem consideravelmente a sobrecarga temporal via geração de código C otimizado em SQP, acomodar um horizonte longo de $N = 150$ passos sob dimensão de estado expandida ($nx = 30$) a 100\,Hz permanece desafiador em núcleos de microcontroladores. A execução direta do IPOPT causaria esgotamento instantâneo de recursos e violações críticas de \textit{deadline}. Essa demonstração computacional justifica a proposta central deste trabalho: transferir a inteligência do controle ótimo para uma rede neural do tipo MLP de inferência determinística.
 
 % ------------------------------------------------------------
 \subsection{Treinamento da Rede Neural}
 \label{sec:res_mlp}
 
-A aproximação da política de controle do NMPC foi implementada por meio de uma rede neural \textit{Multilayer Perceptron} (MLP) desenvolvida no \textit{framework} PyTorch \cite{paszke2019}. A rede foi projetada com camadas ocultas lineares dotadas de funções de ativação do tipo ReLU (\textit{Rectified Linear Unit}) e uma camada de saída linear simples. As entradas da rede consistem no vetor concatenado de saídas passadas da planta ($n_y=15$), entradas passadas ($n_u=15$) e nas referências angulares futuras ao longo do horizonte de predição do controlador ($N=100$ passos, totalizando 130 entradas com \textit{preview}), enquanto a saída é o comando escalar ótimo de controle $\hat{u}(k)$.
+A aproximação da política de controle do NMPC foi implementada por meio de uma rede neural \textit{Multilayer Perceptron} (MLP) desenvolvida no \textit{framework} PyTorch. A rede foi projetada com camadas ocultas lineares dotadas de funções de ativação do tipo ReLU (\textit{Rectified Linear Unit}) e uma camada de saída linear simples. As entradas da rede consistem no vetor concatenado de saídas passadas da planta ($n_y=15$), entradas passadas ($n_u=15$) e nas referências angulares futuras ao longo do horizonte de predição do controlador ($N=100$ passos, totalizando 130 entradas com \textit{preview}), enquanto a saída é o comando escalar ótimo de controle $\hat{u}(k)$.
 
 O treinamento foi conduzido com o otimizador Adam, adotando como função de custo o Erro Quadrático Médio (MSE) entre a ação calculada pela rede $\hat{u}$ e o comando ótimo gerado pelo CasADi $u^*$. A base de dados foi dividida em conjuntos de treino ($70\%$), validação ($15\%$) e teste ($15\%$). A Figura~\ref{fig:ann_treino} apresenta a evolução da função de perda por época e o gráfico de dispersão entre os valores preditos e ótimos para os três conjuntos de dados.
 
@@ -222,7 +222,7 @@ Para a validação em \textit{Software-in-the-Loop} (SIL), o firmware foi compil
 
 \begin{figure}[H]
     \centering
-    \caption{Validação 1 (Multisseno + Degraus): resposta dinâmica em SIL no microcontrolador STM32F446RE.}
+    \caption{Validação 1 (Multisseno + Degraus): resposta dinâmica em SIL no microcontrolador.}
     \label{fig:sil_val1}
     \includegraphics[width=0.92\textwidth]{img/resultados/sil_val1.png}
     \sourceFig{o autor, 2026.}
@@ -230,7 +230,7 @@ Para a validação em \textit{Software-in-the-Loop} (SIL), o firmware foi compil
 
 \begin{figure}[H]
     \centering
-    \caption{Validação 2 (Degraus Aleatórios): resposta dinâmica em SIL no microcontrolador STM32F446RE.}
+    \caption{Validação 2 (Degraus Aleatórios): resposta dinâmica em SIL no microcontrolador.}
     \label{fig:sil_val2}
     \includegraphics[width=0.92\textwidth]{img/resultados/sil_val2.png}
     \sourceFig{o autor, 2026.}
@@ -238,7 +238,7 @@ Para a validação em \textit{Software-in-the-Loop} (SIL), o firmware foi compil
 
 \begin{figure}[H]
     \centering
-    \caption{Validação 3 (Senoidal Suave): resposta dinâmica em SIL no microcontrolador STM32F446RE.}
+    \caption{Validação 3 (Senoidal Suave): resposta dinâmica em SIL no microcontrolador.}
     \label{fig:sil_val3}
     \includegraphics[width=0.92\textwidth]{img/resultados/sil_val3.png}
     \sourceFig{o autor, 2026.}
@@ -295,7 +295,7 @@ As Figuras~\ref{fig:cmp_val1}, \ref{fig:cmp_val2} e \ref{fig:cmp_val3} exibem a 
 
 \subsection{Diagnóstico do Gap Sim-to-Real}
 
-A inspeção quantitativa e qualitativa das curvas experimentais na bancada física (calculada na janela ativa de controle neural, de $5{,}0$ a $70{,}0$\,s) revela o comportamento do sistema e as interações mecânicas não modeladas:
+A inspeção quantitativa e qualitativa das curvas experimentais na bancada física revela o comportamento do sistema e as interações mecânicas não modeladas:
 
 \subsubsection{Ensaio 1: Frequências Rápidas}
 No primeiro cenário (Figura~\ref{fig:cmp_val1}), o ensaio experimental comprova a estabilidade do acoplamento dinâmico e a fidelidade da aproximação neural frente a estímulos multivariados, alcançando na janela ativa ($5{,}0$ a $70{,}0$\,s) $\text{RMSE} = 3{,}13^\circ$, $\text{MAE} = 2{,}45^\circ$ e viés estacionário médio (\textit{bias}) de $+2{,}29^\circ$ (frente a $\text{RMSE} = 2{,}48^\circ$ no SIL nominal e $1{,}49^\circ$ na simulação em Python).
@@ -322,7 +322,7 @@ A inversão de sinal do erro nos patamares acima de $90^\circ$ e a divergência 
 Como a rede neural nominal opera sem ação integradora, qualquer discrepância entre o ganho estático da política aprendida e o da planta física manifesta-se sob a forma de erro persistente de regime permanente (\textit{offset}).
 
 \subsubsection{Ensaio 3: Senoidal Suave e Atrito Estático}
-Na Validação~3 (Figura~\ref{fig:cmp_val3}), a bancada nominal registrou na janela ativa ($5{,}0$ a $70{,}0$\,s) $\text{RMSE} = 3{,}55^\circ$, $\text{MAE} = 2{,}75^\circ$ e viés estacionário médio de $+2{,}13^\circ$, contrastando com os valores obtidos no SIL nominal ($\text{RMSE} = 1{,}49^\circ$) e na simulação em Python ($\text{RMSE} = 1{,}34^\circ$). Observa-se um atraso de fase de 0,5 a 1,0\,s na bancada real em relação à trajetória simulada, notadamente durante os instantes de inversão de sentido de rotação. Mais evidentes ainda são os patamares horizontais planos que surgem na resposta angular nos momentos em que a velocidade angular cruza o zero: o pêndulo permanece temporariamente travado nesses pontos até que o sinal de controle acumule empuxo aerodinâmico suficiente para vencer o torque resistente do mancal.
+Na Validação~3 (Figura~\ref{fig:cmp_val3}), a bancada nominal registrou na janela ativa $\text{RMSE} = 3{,}55^\circ$, $\text{MAE} = 2{,}75^\circ$ e viés estacionário médio de $+2{,}13^\circ$, contrastando com os valores obtidos no SIL nominal ($\text{RMSE} = 1{,}49^\circ$) e na simulação em Python ($\text{RMSE} = 1{,}34^\circ$). Observa-se um atraso de fase de 0,5 a 1,0\,s na bancada real em relação à trajetória simulada, notadamente durante os instantes de inversão de sentido de rotação. Mais evidentes ainda são os patamares horizontais planos que surgem na resposta angular nos momentos em que a velocidade angular cruza o zero: o pêndulo permanece temporariamente travado nesses pontos até que o sinal de controle acumule empuxo aerodinâmico suficiente para vencer o torque resistente do mancal.
 
 Como o modelo polinomial NARX foi treinado sem termos descontínuos dependentes do sinal da velocidade $\text{sign}(\dot{\theta})$, o atrito estático não foi mapeado pelo modelo matemático e, por conseguinte, a política ótima do NMPC não foi capaz de antecipar a sua compensação. A malha fechada atua para contornar essa perturbação apenas de forma reativa, o que explica a elevação do RMSE de $1{,}49^\circ$ (SIL) para $3{,}55^\circ$ (bancada) e o aumento da atividade de comando $u$ nesses instantes.
 
@@ -509,17 +509,17 @@ O perfil temporal de cada configuração foi medido no microcontrolador através
     \label{tab:benchmark_compilador_xcube}
     \small
     \resizebox{\textwidth}{!}{
-    \begin{tabular}{lcccccc}
+    \begin{tabular}{lcccc}
         \toprule
-        \textbf{Implementação / Configuração} & \textbf{Tempo ($t_{\text{ann}}$)} & \textbf{Ocupação CPU} & \textbf{Ganho vs. \texttt{-O0}} & \textbf{Flash Pesos} & \textbf{Flash Total FW} & \textbf{RAM Total} \\
+        \textbf{Implementação / Configuração} & \textbf{Tempo ($t_{\text{ann}}$)} & \textbf{Ocupação CPU} & \textbf{Ganho vs. \texttt{-O0}} & \textbf{Flash Total FW} \\
         \midrule
-        C Nativo (\texttt{-O0}) & 10{,}07\,ms & 100{,}7\%* & 1,00$\times$ (Ref.) & 130,50\,KiB & 183,05\,KB & 1,01\,KiB \\
-        C Nativo (\texttt{-O1}) & 2,46\,ms & 24,6\% & 4,09$\times$ & 130,50\,KiB & 173,70\,KB & 1,01\,KiB \\
-        C Nativo (\texttt{-Os}) & 2,08\,ms & 20,8\% & 4,84$\times$ & 130,50\,KiB & 174,14\,KB & 1,01\,KiB \\
-        C Nativo (\texttt{-O3}) & 1,98\,ms & 19,8\% & 5,09$\times$ & 130,50\,KiB & 175,63\,KB & 1,01\,KiB \\
+        C Nativo (\texttt{-O0}) & 10{,}07\,ms & 100{,}7\%* & 1,00$\times$ (Ref.) & 183,05\,KB \\
+        C Nativo (\texttt{-O1}) & 2,46\,ms & 24,6\% & 4,09$\times$ & 173,70\,KB \\
+        C Nativo (\texttt{-Os}) & 2,08\,ms & 20,8\% & 4,84$\times$ & 174,14\,KB \\
+        C Nativo (\texttt{-O3}) & 1,98\,ms & 19,8\% & 5,09$\times$ & 175,63\,KB \\
         \midrule
-        X-CUBE-AI (Sem Compressão) & \textbf{1,69\,ms} & \textbf{16,9\%} & \textbf{5,96$\times$} & 130,50\,KiB & 182,25\,KB & 2,78\,KiB \\
-        X-CUBE-AI (\textit{High Compression}) & \textbf{1,82\,ms} & \textbf{18,2\%} & \textbf{5,53$\times$} & \textbf{17,75\,KiB} & \textbf{69,51\,KB} & 2,78\,KiB \\
+        X-CUBE-AI (Sem Compressão) & \textbf{1,69\,ms} & \textbf{16,9\%} & \textbf{5,96$\times$} & 182,25\,KB \\
+        X-CUBE-AI (\textit{High Compression}) & \textbf{1,82\,ms} & \textbf{18,2\%} & \textbf{5,53$\times$} & \textbf{69,51\,KB} \\
         \bottomrule
     \end{tabular}
     }
@@ -542,29 +542,30 @@ A Figura~\ref{fig:benchmark_inferencia_flash} ilustra a relação direta entre o
 
 A análise da Tabela~\ref{tab:benchmark_compilador_xcube} e da Figura~\ref{fig:benchmark_inferencia_flash} revela aspectos fundamentais para a engenharia de sistemas embarcados:
 \begin{enumerate}
-    \item \textbf{Impacto das Flags do GCC, Determinismo e Estouro de Deadline em \texttt{-O0}:} A compilação sem otimização (\texttt{-O0}) exigiu 10,07\,ms por inferência, excedendo a janela de controle de $10$\,ms ($100{,}7\%$ da CPU) e provocando perda de sincronismo temporal no microcontrolador (1.878 amostras atrasadas registradas no ensaio em SIL). Esse resultado evidencia a inviabilidade do código ingênuo para sistemas de tempo real estrito. A simples ativação da flag básica \texttt{-O1} reduziu o tempo para 2,46\,ms (aceleração de $4{,}09\times$, restabelecendo a operação determinística com folga de $75{,}4\%$), enquanto a flag agressiva \texttt{-O3} atingiu 1,98\,ms (ganho de $5{,}09\times$). A flag \texttt{-Os}, comumente adotada em ambientes industriais para equilibrar pegada de binário e velocidade, atingiu 2,08\,ms ($20{,}8\%$ de ocupação). Em todas as configurações otimizadas (\texttt{-O1} a \texttt{-O3} e X-CUBE-AI), a execução matricial direta da MLP assegura determinismo temporal estrito: por não conter ramificações condicionais dependentes de dados nem laços de convergência iterativa, o tempo máximo de inferência coincide com a média e o \textit{jitter} temporal permaneceu inferior a $1\,\mu$s nas medições registradas pelo registrador DWT. Ademais, nota-se que a variação de código executável entre os níveis de compilação oscilou entre 43,20\,KB e 45,13\,KB, demonstrando que o código compilado responde por apenas uma fração modesta da Flash total frente à tabela de pesos.
+    \item \textbf{Impacto das Flags do GCC, Determinismo e Estouro de Deadline em \texttt{-O0}:} A compilação sem otimização (\texttt{-O0}) exigiu 10,07\,ms por inferência, excedendo a janela de controle de $10$\,ms ($100{,}7\%$ da CPU) e provocando perda de sincronismo temporal no microcontrolador (1.878 amostras atrasadas registradas no ensaio em SIL). Esse resultado evidencia a inviabilidade do código ingênuo para sistemas de tempo real estrito. A simples ativação da flag básica \texttt{-O1} reduziu o tempo para 2,46\,ms (aceleração de $4{,}09\times$, restabelecendo a operação determinística com folga de $75{,}4\%$), enquanto a flag agressiva \texttt{-O3} atingiu 1,98\,ms (ganho de $5{,}09\times$). A flag \texttt{-Os}, comumente adotada em ambientes industriais para equilibrar pegada de binário e velocidade, atingiu 2,08\,ms ($20{,}8\%$ de ocupação). Em todas as configurações otimizadas (\texttt{-O1} a \texttt{-O3} e X-CUBE-AI), a execução matricial direta da MLP assegura determinismo temporal estrito: por não conter ramificações condicionais dependentes de dados nem laços de convergência iterativa, o tempo máximo de inferência coincide com a média e o \textit{jitter} temporal permaneceu inferior a $1\,\mu$s nas medições registradas pelo registrador DWT. Ademais, subtraindo o tamanho invariante da tabela de pesos em ponto flutuante ($130{,}50$\,KiB) do Flash total do firmware, nota-se que o código executável compilado oscilou entre $43{,}20$\,KB (\texttt{-O1}) e $45{,}13$\,KB (\texttt{-O3}), demonstrando que a lógica algorítmica responde por apenas uma fração modesta da Flash total frente à matriz de pesos.
     
-    \item \textbf{Aceleração Algorítmica via CMSIS-NN:} O motor do X-CUBE-AI em ponto flutuante superou a compilação mais agressiva do GCC (\texttt{-O3}), diminuindo a latência para ${1{,}69}$\,ms (ganho de $5{,}96\times$ frente a \texttt{-O0} e adicional de $14{,}6\%$ sobre \texttt{-O3}). Esse avanço decorre da reorganização matricial em blocos e do emprego de rotinas otimizadas com instruções SIMD dedicadas da arquitetura Cortex-M4, que realizam operações de multiplicação-acumulação (\textit{MAC}) em ciclos de \textit{clock} reduzidos.
+    \item \textbf{Aceleração Algorítmica via CMSIS-NN e Demanda de RAM:} O motor do X-CUBE-AI em ponto flutuante superou a compilação mais agressiva do GCC (\texttt{-O3}), diminuindo a latência para ${1{,}69}$\,ms (ganho de $5{,}96\times$ frente a \texttt{-O0} e adicional de $14{,}6\%$ sobre \texttt{-O3}). Esse avanço decorre da reorganização matricial em blocos e do emprego de rotinas otimizadas com instruções SIMD dedicadas da arquitetura Cortex-M4, que realizam operações de multiplicação-acumulação (\textit{MAC}) em ciclos de \textit{clock} reduzidos. Em contrapartida ao ganho de velocidade, o runtime do X-CUBE-AI alocou $2{,}78$\,KiB de memória RAM total para ativações e estruturas de despacho, contra $1{,}01$\,KiB da implementação em C nativo (um consumo cerca de $2{,}75\times$ superior, aspecto relevante no dimensionamento de microcontroladores com severas restrições de SRAM).
     
-    \item \textbf{Compressão Severa com Preservação de Velocidade:} A configuração com compressão alta (\textit{High Compression}) reduziu a memória Flash dos pesos de 130,50\,KiB para apenas ${17{,}75}$\,KiB, correspondendo a uma expressiva economia de ${86{,}4\%}$ no armazenamento dos parâmetros via quantização não-linear em 4 bits. Sob a perspectiva do binário completo gravado no microcontrolador, o \textit{firmware} total contraiu de 182,25\,KB para ${69{,}51}$\,KB (redução global de ${61{,}8\%}$), viabilizando a incorporação do controlador preditivo com rede neural até mesmo em microcontroladores de custo reduzido dotados de apenas 128\,KB ou 64\,KB de Flash. Devido à decodificação dos pesos em tempo de execução, houve uma sobrecarga temporal de apenas 0,13\,ms (de 1,69\,ms para 1,82\,ms). Notavelmente, mesmo com essa etapa de descompressão, a inferência a 1,82\,ms permaneceu ${8{,}1\%}$ mais rápida do que o código C nativo otimizado sob \texttt{-O3} (1,98\,ms), ocupando apenas $18{,}2\%$ do período de amostragem de 10\,ms.
+    \item \textbf{Compressão Severa com Preservação de Velocidade:} A configuração com compressão alta (\textit{High Compression}) reduziu a memória Flash dos pesos de 130,50\,KiB para apenas ${17{,}75}$\,KiB (conforme detalhado na Tabela~\ref{tab:sil_tracking_comparacao}), correspondendo a uma expressiva economia de ${86{,}4\%}$ no armazenamento dos parâmetros via quantização não-linear em 4 bits. Sob a perspectiva do binário completo gravado no microcontrolador, o \textit{firmware} total contraiu de 182,25\,KB para ${69{,}51}$\,KB (redução global de ${61{,}8\%}$), viabilizando a incorporação do controlador preditivo com rede neural até mesmo em microcontroladores de custo reduzido dotados de apenas 128\,KB ou 64\,KB de Flash. Devido à decodificação dos pesos em tempo de execução, houve uma sobrecarga temporal de apenas 0,13\,ms (de 1,69\,ms para 1,82\,ms). Notavelmente, mesmo com essa etapa de descompressão, a inferência a 1,82\,ms permaneceu ${8{,}1\%}$ mais rápida do que o código C nativo otimizado sob \texttt{-O3} (1,98\,ms), ocupando apenas $18{,}2\%$ do período de amostragem de 10\,ms.
 \end{enumerate}
 
 \subsection{Impacto da Compressão em Malha Fechada}
 
-Embora a compressão proporcione redução de 86,4\% no espaço ocupado pelos pesos (e de 61,8\% no firmware total), é necessário verificar se a perda de precisão numérica decorrente da quantização afeta a estabilidade e a qualidade do controle. Para responder a essa questão, foram executados dois ensaios completos de SIL sob a trajetória de Validação~1: utilizando a rede X-CUBE-AI sem compressão e com compressão alta.
+Embora a compressão proporcione redução de 86,4\% no espaço ocupado pelos pesos (de 130,50\,KiB para 17,75\,KiB, conforme detalhado na Tabela~\ref{tab:sil_tracking_comparacao}) e de 61,8\% no firmware total, é necessário verificar se a perda de precisão numérica decorrente da quantização afeta a estabilidade e a qualidade do controle. Para responder a essa questão, foram executados dois ensaios completos de SIL sob a trajetória de Validação~1 utilizando a arquitetura do controlador híbrido: o primeiro com a rede X-CUBE-AI sem compressão e o segundo com compressão alta.
 
 A Tabela~\ref{tab:sil_tracking_comparacao} compara as métricas estatísticas de rastreamento angular e esforço de controle avaliadas na janela ativa de operação ($5{,}0$ a $70{,}0$\,s) para ambos os ensaios, enquanto a Figura~\ref{fig:sil_xcube_tracking_comparacao} apresenta a sobreposição temporal das trajetórias.
 
 \begin{table}[H]
     \centering
-    \caption{Métricas de desempenho em SIL (janela ativa de $5{,}0$ a $70{,}0$\,s) no X-CUBE-AI: sem compressão versus alta compressão.}
+    \caption{Métricas de desempenho em SIL no X-CUBE-AI: sem compressão versus alta compressão.}
     \label{tab:sil_tracking_comparacao}
     \resizebox{\textwidth}{!}{
     \begin{tabular}{lccc}
         \toprule
-        \textbf{Métrica de Avaliação ($5{,}0$ a $70{,}0$\,s)} & \textbf{X-CUBE-AI (Sem Compressão)} & \textbf{X-CUBE-AI (Alta Compressão)} & \textbf{Variação / Impacto} \\
+        \textbf{Métrica de Avaliação} & \textbf{Sem Compressão} & \textbf{Alta Compressão} & \textbf{Variação / Impacto} \\
         \midrule
-        $\text{RMSE}_\theta$ na Janela Ativa                          & \textbf{1,5279$^\circ$} & \textbf{1,9055$^\circ$} & +0,3776$^\circ$ \\
+        $\text{RMSE}_\theta$ na Janela Ativa ($5{,}0$ a $70{,}0$\,s)  & \textbf{1,5279$^\circ$} & \textbf{1,9055$^\circ$} & +0,3776$^\circ$ \\
+        $\text{RMSE}_\theta$ Global ($0$ a $83{,}65$\,s)              & 4,8836$^\circ$ & 4,9956$^\circ$ & +0,1120$^\circ$ (+2,3\%) \\
         Erro Absoluto Médio ($\text{MAE}_\theta$)                    & 0,8342$^\circ$ & 1,1335$^\circ$ & +0,2993$^\circ$ \\
         Erro Absoluto Máximo ($\text{MaxErr}_\theta$, Transição Degrau) & 15,2500$^\circ$ & 16,9600$^\circ$ & +1,7100$^\circ$ \\
         Sinal de Controle Médio ($\bar{u}$)                         & 46,42\% & 46,39\% & -0,03\% \\
@@ -581,7 +582,7 @@ A Tabela~\ref{tab:sil_tracking_comparacao} compara as métricas estatísticas de
 
 \begin{figure}[H]
     \centering
-    \caption{Comparação temporal compressão}
+    \caption{Comparação temporal entre o modelo sem compressão e com alta compressão no ambiente SIL (ensaio completo de $0$ a $83{,}65$\,s).}
     \label{fig:sil_xcube_tracking_comparacao}
     \includegraphics[width=0.75\textwidth]{img/resultados/sil_xcube_tracking_comparacao.png}
     \par\vspace{1.5ex}
@@ -611,12 +612,12 @@ A Tabela~\ref{tab:desempenho_rmse} consolida as métricas de desempenho obtidas 
     \caption{Desempenho comparativo entre os ambientes da tríade e evolução para o controlador híbrido na bancada física.}
     \label{tab:desempenho_rmse}
     \resizebox{\textwidth}{!}{
-    \begin{tabular}{lccccccc}
+    \begin{tabular}{lcccccc}
         \toprule
-        \textbf{Cenário de Teste} & \textbf{Python ($^\circ$)} & \textbf{SIL Nom. ($^\circ$)} & \textbf{SIL Híb. ($^\circ$)} & \textbf{Bancada Nom. ($^\circ$)} & \textbf{Bancada Híb. ($N=10$) ($^\circ$)} & \textbf{Redução RMSE} & \textbf{Redução Viés (\textit{Bias})} \\ \midrule
-        Multisseno + Degraus & 1,49 & 2,48 & 1,53 & 3,13 & $\mathbf{2{,}26 \pm 0{,}03}$ & \textbf{-27,8\%} & $+2{,}29^\circ \to \mathbf{+0{,}01^\circ \pm 0{,}01^\circ}$ (-99,5\%) \\
-        Degraus Aleatórios   & 3,63 & 3,78 & 3,38 & 4,61 & $\mathbf{3{,}80 \pm 0{,}17}$ & \textbf{-17,6\%} & $+2{,}67^\circ \to \mathbf{+0{,}05^\circ \pm 0{,}01^\circ}$ (-98,1\%) \\
-        Senoidal Suave       & 1,34 & 1,49 & 0,62 & 3,55 & $\mathbf{1{,}80 \pm 0{,}03}$ & \textbf{-49,3\%} & $+2{,}13^\circ \to \mathbf{+0{,}08^\circ \pm 0{,}00^\circ}$ (-96,4\%) \\ \bottomrule
+        \textbf{Cenário de Teste} & \textbf{Python ($^\circ$)} & \textbf{SIL Nom. ($^\circ$)} & \textbf{SIL Híb. ($^\circ$)} & \textbf{Bancada Nom. ($^\circ$)} & \textbf{Bancada Híb. ($N=10$) ($^\circ$)} & \textbf{Redução RMSE} \\ \midrule
+        Multisseno + Degraus & 1,49 & 2,48 & 1,53 & 3,13 & $\mathbf{2{,}26 \pm 0{,}03}$ & \textbf{-27,8\%} \\
+        Degraus Aleatórios   & 3,63 & 3,78 & 3,38 & 4,61 & $\mathbf{3{,}80 \pm 0{,}17}$ & \textbf{-17,6\%} \\
+        Senoidal Suave       & 1,34 & 1,49 & 0,62 & 3,55 & $\mathbf{1{,}80 \pm 0{,}03}$ & \textbf{-49,3\%} \\ \bottomrule
     \end{tabular}
     }
     \sourceTab{o autor, 2026.}
@@ -641,7 +642,7 @@ A análise aprofundada da Tabela~\ref{tab:desempenho_rmse} esclarece pontos esse
 
 Em termos globais, os resultados experimentais indicam a viabilidade da metodologia proposta e sugerem vantagens expressivas frente ao controle puramente linear.
 
-Foi possível transpor a política de Controle Preditivo Não-Linear (cuja solução online via otimização numérica no CasADi exigiu de 90 a 460\,ms em computador de mesa) para uma rede neural do tipo MLP compacta, executada em linguagem C no microcontrolador STM32F446RE em ciclos determinísticos de 10\,ms com tempo de inferência de cerca de $2{,}07$\,ms a $2{,}08$\,ms (ocupando cerca de $20{,}7\%$ da janela disponível, com folga de CPU de $79{,}3\%$).
+Foi possível transpor a política de Controle Preditivo Não-Linear (cuja solução online via otimização numérica no CasADi exigiu de 90 a 460\,ms em computador de mesa) para uma rede neural do tipo MLP compacta, executada em linguagem C no microcontrolador STM32F446RE em ciclos determinísticos de 10\,ms com tempo de inferência de cerca de $2{,}08$\,ms (ocupando cerca de $20{,}7\%$ da janela disponível, com folga de CPU de $79{,}3\%$).
 
 Mais do que isso, a transição para a bancada física permitiu evidenciar as limitações de uma abordagem puramente baseada em dados: a ausência de mapeamento explícito do atrito de mancal e a inexistência de ação integral na rede geraram pequenos atrasos e erros de regime. A formulação da arquitetura híbrida, integrando a MLP com um integrador residual moderado em firmware, atenuou essas deficiências práticas, alcançando valores médios de RMSE na bancada entre $1{,}80^\circ$ e $3{,}80^\circ$ ($N = 10$).
 
