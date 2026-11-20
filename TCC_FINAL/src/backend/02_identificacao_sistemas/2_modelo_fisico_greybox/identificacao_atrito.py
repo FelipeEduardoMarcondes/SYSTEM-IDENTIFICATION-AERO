@@ -31,6 +31,11 @@ np.random.seed(42)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {device}")
 
+import os
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+DATA_DIR = os.path.join(ROOT_DIR, "data", "datasets")
+
 # ==============================
 # Constantes Fisicas (medidas)
 # ==============================
@@ -40,11 +45,11 @@ GRAV   = 9.81
 DT     = 0.010
 TAU_GRAV = (M1*L1 - M2*L2) * GRAV  # ~0.2795 N.m
 
-PATH_ESCADA = r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\escada-atrito-1_0819_19-08.csv"
+PATH_ESCADA = os.path.join(DATA_DIR, "03_coleta_malha_fechada_rodada7", "seq-degraus-45-1_0904_20-41.csv")
 PATHS_DEGRAUS = [
-    r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\degraus_0819_19-29.csv",
-    r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\degraus_0819_19-30.csv",
-    r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\degraus_0819_19-33.csv",
+    os.path.join(DATA_DIR, "03_coleta_malha_fechada_rodada7", "seq-degraus-60-1_0904_20-51.csv"),
+    os.path.join(DATA_DIR, "03_coleta_malha_fechada_rodada7", "seq-degraus-60-2_0904_20-54.csv"),
+    os.path.join(DATA_DIR, "03_coleta_malha_fechada_rodada7", "seq-degraus-60-3_0904_20-57.csv"),
 ]
 
 

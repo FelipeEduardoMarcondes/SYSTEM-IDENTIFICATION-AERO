@@ -1,5 +1,5 @@
 ../Core/Src/aeropendulo_main.c:361:17:micros	1
-../Core/Src/aeropendulo_main.c:566:13:resetar_controlador	3
+../Core/Src/aeropendulo_main.c:568:13:resetar_controlador	3
 ../Core/Src/aeropendulo_main.c:366:13:icm_write_reg	1
 ../Core/Src/aeropendulo_main.c:379:16:icm_read_reg	1
 ../Core/Src/aeropendulo_main.c:425:50:icm_iniciar	2
@@ -9,10 +9,10 @@
 ../Core/Src/aeropendulo_main.c:313:12:fmt_float	4
 ../Core/Src/aeropendulo_main.c:445:14:angulo_acelerometro	5
 ../Core/Src/aeropendulo_main.c:296:13:uart_println	2
-../Core/Src/aeropendulo_main.c:507:13:calibrar_giroscopio	5
+../Core/Src/aeropendulo_main.c:507:13:calibrar_giroscopio	6
 ../Core/Src/aeropendulo_main.c:286:13:uart_print	2
-../Core/Src/aeropendulo_main.c:848:13:ciclo_controle	53
-../Core/Src/aeropendulo_main.c:1312:6:HAL_UART_RxCpltCallback	6
-../Core/Src/aeropendulo_main.c:1336:6:HAL_TIM_PeriodElapsedCallback	2
-../Core/Src/aeropendulo_main.c:1347:6:aeropendulo_init	3
-../Core/Src/aeropendulo_main.c:1417:6:aeropendulo_loop	73
+../Core/Src/aeropendulo_main.c:850:13:ciclo_controle	53
+../Core/Src/aeropendulo_main.c:1314:6:HAL_UART_RxCpltCallback	6
+../Core/Src/aeropendulo_main.c:1338:6:HAL_TIM_PeriodElapsedCallback	2
+../Core/Src/aeropendulo_main.c:1349:6:aeropendulo_init	3
+../Core/Src/aeropendulo_main.c:1419:6:aeropendulo_loop	75

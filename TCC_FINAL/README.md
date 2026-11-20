@@ -25,7 +25,7 @@ O projeto resolve o gargalo de viabilidade temporal do Controle Preditivo Basead
 │   │   ├── 03_coleta_malha_fechada_rodada7/       # Ensaios dinâmicos (APRBS, Chirp, Multisseno, MIX_DC_45/60)
 │   │   ├── 05_dataset_nmpc/                       # Trajetórias ótimas geradas pelo NMPC/IPOPT (18.700 amostras)
 │   │   ├── 07_validacao_simulacao/                # Telemetria de validação em Python e STM32 Software-in-the-Loop (SIL)
-│   │   ├── 08_ensaios_bancada_fisica/             # Ensaios reais na bancada (Nominal, Híbrido com Integrador e PID)
+│   │   ├── 08_ensaios_bancada_fisica/             # Ensaios reais na bancada (Nominal, Híbrido N=10, distúrbios e PID)
 │   │   └── 09_benchmarks_tinyml/                  # Perfis de latência de inferência e otimização de compilador GCC
 │   └── exemplos/
 │       ├── referencias_planejadas/                # Sinais de excitação e referências CSV para o protocolo WAVE
@@ -39,8 +39,7 @@ O projeto resolve o gargalo de viabilidade temporal do Controle Preditivo Basead
 │   │   └── 04_treinamento_rede_neural/            # Treinamento PyTorch da MLP (R² = 0,999) e exportação ONNX/C
 │   ├── firmware/                                  # Códigos-fonte de sistemas embarcados
 │   │   ├── arduino/                               # Firmware preliminar de aquisição e controle PID
-│   │   ├── stm32-fisico/                          # Firmware STM32F446RE da bancada física (IMU ICM-20948 + ESC BLDC + MLP)
-│   │   ├── stm32-sil/                             # Firmware STM32F446RE para validação Software-in-the-Loop e X-CUBE-AI
+│   │   ├── stm32-sil/                             # Firmware STM32F446RE principal (bancada física IMU/ESC, SIL e X-CUBE-AI)
 │   │   └── stm32-standard/                        # Projeto base STM32CubeIDE de referência
 │   └── frontend/                                  # Interface desktop de aquisição, controle serial e visualização
 │       ├── main.py                                # Ponto de entrada interativo (CLI) e plotagem rápida
@@ -91,9 +90,8 @@ pip install -r requirements.txt
 
 1. Abra o **STM32CubeIDE**.
 2. Vá em `File` → `Open Projects from File System...` e selecione:
-   - `src/firmware/stm32-fisico` (para operação na bancada real do aeropêndulo); ou
-   - `src/firmware/stm32-sil` (para validação *Software-in-the-Loop* onde a dinâmica NARX roda embarcada no próprio STM32).
-3. Os pesos da rede neural já estão incluídos em `Core/Inc/ann_weights.h`. Caso treine um novo modelo, substitua esse cabeçalho usando `src/backend/04_treinamento_rede_neural/export_onnx.py`.
+   - `src/firmware/stm32-sil` (projeto principal utilizado no STM32F446RE: opera na bancada real com IMU/ESC por padrão e também suporta validação *Software-in-the-Loop* com a dinâmica NARX embarcada descomentando `#define SIL_MODE 1` em `Core/Src/aeropendulo_main.c`, além de comutação para X-CUBE-AI via `#define USE_XCUBE_AI 1`).
+3. Os pesos da rede neural (`[130 -> 128 -> 128 -> 1]`) já estão incluídos em `Core/Inc/ann_weights.h`. Caso treine um novo modelo, converta/atualize o grafo ONNX usando `src/backend/04_treinamento_rede_neural/export_onnx.py` e `src/firmware/stm32-sil/atualizar_modelo.py`.
 4. Para atingir a latência nominal de **2,08 ms**, certifique-se de que a flag de otimização do compilador GCC em `Project Properties` → `C/C++ Build` → `Settings` → `MCU GCC Compiler` → `Optimization` esteja configurada em `-O3` ou `-Ofast` com FPU ativa (`-mfpu=fpv4-sp-d16 -mfloat-abi=hard`).
 5. Compile (`Ctrl+B`) e grave na placa Nucleo-F446RE (`Run` / `F11`).
 
@@ -136,7 +134,7 @@ python src/backend/03_controle_nmpc_casadi/mpc_v4.py
 ```
 
 ### 4. Treinamento da Rede Neural e Exportação Embarcada (`src/backend/04_treinamento_rede_neural/`)
-- Abra o notebook `src/backend/04_treinamento_rede_neural/ANN_NARX_AEROPENDULO_v5.ipynb` no Jupyter/VS Code para treinar a arquitetura MLP `[23 -> 64 -> 32 -> 1]` e exportar `ann_weights.h`.
+- Abra o notebook `src/backend/04_treinamento_rede_neural/ANN_NARX_AEROPENDULO_v5.ipynb` no Jupyter/VS Code para treinar a arquitetura MLP `[130 -> 128 -> 128 -> 1]` e exportar `ann_weights.h`.
 - Para converter o cabeçalho C para o formato **ONNX** (compatível com STM32 X-CUBE-AI):
   ```bash
   python src/backend/04_treinamento_rede_neural/export_onnx.py
@@ -155,9 +153,11 @@ python tests/unitarios/gerar_benchmark_tinyml.py
 ```
 
 ### Testes de Integração (Python vs. STM32 SIL vs. Bancada Física)
-Reproduzem as análises comparativas de ponta a ponta (fidelidade numérica Python vs. STM32 SIL, fechamento do *Sim-to-Real gap* pelo integrador híbrido e comparação de rastreamento NMPC Neural vs. PID clássico):
+Reproduzem as análises comparativas de ponta a ponta (fidelidade numérica Python vs. STM32 SIL, fechamento do *Sim-to-Real gap* pelo integrador híbrido, repetibilidade estatística com $N = 10$ ensaios, rejeição de perturbações externas e comparação NMPC Neural vs. PID clássico):
 
 ```bash
+python tests/integracao/calcular_n10_combinado.py
+python tests/integracao/gerar_plot_disturbio.py --save --no-show
 python tests/integracao/gerar_comparacao.py
 python tests/integracao/gerar_plots_academicos_hibrido.py
 python tests/integracao/gerar_plots_rodada7_vs_ann.py

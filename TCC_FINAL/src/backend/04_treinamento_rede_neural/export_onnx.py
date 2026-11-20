@@ -13,8 +13,11 @@ import torch.nn as nn
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-HEADER_PATH = os.path.join(CURRENT_DIR, "ann_weights.h")
-ONNX_PATH = os.path.join(CURRENT_DIR, "ann_model.onnx")
+ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", ".."))
+MODELOS_DIR = os.path.join(ROOT_DIR, "data", "exemplos", "modelos_exportados")
+LOCAL_HEADER = os.path.join(CURRENT_DIR, "ann_weights.h")
+HEADER_PATH = LOCAL_HEADER if os.path.exists(LOCAL_HEADER) else os.path.join(MODELOS_DIR, "ann_weights.h")
+ONNX_PATH = os.path.join(MODELOS_DIR, "ann_model.onnx")
 
 print(f"Lendo pesos de: {HEADER_PATH}")
 with open(HEADER_PATH, "r", encoding="utf-8") as f:

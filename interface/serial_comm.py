@@ -169,7 +169,7 @@ class SerialManager:
         self.enviar(f"MODE={modo}")
         return self.aguardar_token("MODE_OK", timeout_s=5.0)
 
-    def iniciar_experimento(self, timeout_s: float = 10.0) -> bool:
+    def iniciar_experimento(self, timeout_s: float = 12.0) -> bool:
         self.ser.reset_input_buffer()
         self.enviar("START")
         if not self.aguardar_token("EXP_START", timeout_s=timeout_s):

@@ -38,16 +38,12 @@ plt.rcParams.update({
     "savefig.pad_inches": 0.05,
 })
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-if not os.path.exists(os.path.join(BASE_DIR, "data", "coletas", "RODADA-7_20260904")):
-    BASE_DIR = r"c:\Users\vicio\Documents\AEROPENDULO"
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-r7_dir = os.path.join(BASE_DIR, "data", "coletas", "RODADA-7_20260904")
-real_dir = os.path.join(BASE_DIR, "data", "experimentos_novos", "EXP001_reteste_narx-mpc", "4_aeropendulo")
+r7_dir = os.path.join(BASE_DIR, "data", "datasets", "03_coleta_malha_fechada_rodada7")
+real_dir = os.path.join(BASE_DIR, "data", "datasets", "08_ensaios_bancada_fisica", "comparacao_com_pid_rodada7")
 dest_dirs = [
-    os.path.join(BASE_DIR, "tcc", "img", "resultados"),
-    os.path.join(BASE_DIR, "tcc", "img"),
-    os.path.join(BASE_DIR, "fluxograma-tcc", "10_comparativos_finais", "ann_vs_pid_rodada7")
+    os.path.join(BASE_DIR, "plots"),
 ]
 
 def save_fig(fig, base_name):

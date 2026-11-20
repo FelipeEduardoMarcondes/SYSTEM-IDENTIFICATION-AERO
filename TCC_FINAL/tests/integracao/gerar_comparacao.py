@@ -8,10 +8,10 @@ import matplotlib.pyplot as plt
 plt.style.use('dark_background')
 cores = {'python': '#58a6ff', 'sil': '#3fb950', 'real': '#da3633', 'ref': '#f0883e'}
 
-exp_dir = r"c:\Users\vicio\Documents\AEROPENDULO\data\experimentos_novos\EXP001_legado_narx-mpc"
-py_dir = os.path.join(exp_dir, "2_mpc_python")
-sil_dir = os.path.join(exp_dir, "3_sil_stm32")
-real_dir = os.path.join(exp_dir, "4_aeropendulo")
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+py_dir = os.path.join(root_dir, "data", "datasets", "07_validacao_simulacao", "1_python_sim")
+sil_dir = os.path.join(root_dir, "data", "datasets", "07_validacao_simulacao", "2_stm32_sil", "sem_integrador")
+real_dir = os.path.join(root_dir, "data", "datasets", "08_ensaios_bancada_fisica", "nominal_sem_integrador")
 
 def get_latest_csv(folder, pattern):
     files = glob.glob(os.path.join(folder, f"*{pattern}*.csv"))
@@ -29,7 +29,7 @@ report_md += "Esta tabela compara o **RMSE** (Erro Quadrático Médio) do ângul
 report_md += "| Teste | RMSE Python | RMSE SIL (STM32) | RMSE Bancada Real |\n"
 report_md += "|-------|-------------|------------------|-------------------|\n"
 
-artifact_dir = r"c:\Users\vicio\.gemini\antigravity-ide\brain\d56c58f0-a7c1-4a55-b68a-6c404f696320\scratch"
+artifact_dir = os.path.join(root_dir, "plots")
 os.makedirs(artifact_dir, exist_ok=True)
 
 for idx, test in enumerate(tests):
@@ -135,8 +135,8 @@ for idx, test in enumerate(tests):
     
     report_md += f"\n![Comparativo {test['name']}](file:///{embed_path})\n\n"
 
-# Save the markdown report to artifact dir
-report_path = os.path.join(artifact_dir, "..", "comparacao_experimentos.md")
+# Save the markdown report to plots dir
+report_path = os.path.join(artifact_dir, "comparacao_experimentos.md")
 with open(report_path, "w", encoding="utf-8") as f:
     f.write(report_md)
 

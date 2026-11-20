@@ -69,7 +69,9 @@ def process_and_mix(files, output_filename, plot_filename, threshold=10.0):
         print(f"Gráfico salvo: {plot_filename}")
 
 if __name__ == "__main__":
-    folder = r"C:\Users\vicio\Documents\AEROPENDULO\experimentos\RODADA-7"
+    folder = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "datasets", "03_coleta_malha_fechada_rodada7")
+    )
     os.chdir(folder)
     
     # Todos os arquivos que possuem -45- e não são png

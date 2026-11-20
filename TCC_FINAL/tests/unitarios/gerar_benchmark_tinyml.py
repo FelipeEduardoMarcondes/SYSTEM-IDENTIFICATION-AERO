@@ -176,17 +176,13 @@ def gerar_benchmark_firmware_completo(save_paths):
     plt.close(fig)
 
 if __name__ == "__main__":
-    base_dir = r"c:\Users\vicio\Documents\AEROPENDULO"
-    
-    # Destinos oficiais
-    official_paths_png = [
-        os.path.join(base_dir, "tcc", "img", "resultados", "benchmark_inferencia_flash.png"),
-        os.path.join(base_dir, "fluxograma-tcc", "09_otimizacoes_tinyml", "benchmark_inferencia_flash.png")
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    plots_dir = os.path.join(base_dir, "plots")
+
+    official_paths = [
+        os.path.join(plots_dir, "benchmark_inferencia_flash.png"),
+        os.path.join(plots_dir, "benchmark_inferencia_flash.pdf"),
     ]
-    official_paths_pdf = [
-        os.path.join(base_dir, "tcc", "img", "resultados", "benchmark_inferencia_flash.pdf"),
-        os.path.join(base_dir, "fluxograma-tcc", "09_otimizacoes_tinyml", "benchmark_inferencia_flash.pdf")
-    ]
-    
-    gerar_benchmark_firmware_completo(official_paths_png + official_paths_pdf)
+
+    gerar_benchmark_firmware_completo(official_paths)
     print("Atualização concluída com sucesso!")

@@ -21,22 +21,16 @@ import matplotlib.pyplot as plt
 # ==============================================================================
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
 root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
+backend_dir = os.path.join(root_dir, 'src', 'backend')
 
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
+for p in (root_dir, backend_dir):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 # Diretórios de saída para salvar os gráficos
 plots_dirs = [
     os.path.join(current_dir, 'plots')
 ]
-
-tcc_img_dir = os.path.join(root_dir, 'tcc', 'img', 'resultados')
-if os.path.exists(tcc_img_dir):
-    plots_dirs.append(tcc_img_dir)
-
-overleaf_img_dir = os.path.join(root_dir, 'img', 'resultados')
-if os.path.exists(overleaf_img_dir):
-    plots_dirs.append(overleaf_img_dir)
 
 for d in plots_dirs:
     os.makedirs(d, exist_ok=True)
@@ -45,7 +39,7 @@ for d in plots_dirs:
 try:
     from aerodata import readData
 except ImportError:
-    sys.path.append(root_dir)
+    sys.path.append(backend_dir)
     from aerodata import readData
 
 # Instala/importa a biblioteca de identificação sysid

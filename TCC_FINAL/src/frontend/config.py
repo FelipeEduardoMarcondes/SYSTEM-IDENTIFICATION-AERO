@@ -5,7 +5,7 @@ Edite aqui antes de rodar qualquer módulo.
 """
 import os
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # ── Serial ────────────────────────────────────────────────────────────────────
 BAUD                 = 500_000
@@ -21,14 +21,14 @@ TS             = 1.0 / FS    # s
 LIVE_JANELA_S  = 30.0         # s — janela de visualização
 LIVE_UPDATE    = 0.25         # s — intervalo mínimo entre redesenhos
 
-# ── Caminhos (nova estrutura) ────────────────────────────────────────────────
-COLETAS_DIR       = os.path.join(BASE_DIR, "data", "coletas")
-EXPERIMENTOS_DIR  = os.path.join(BASE_DIR, "data", "experimentos_novos")
-SINAIS_REF_DIR    = os.path.join(BASE_DIR, "data", "sinais_referencia")
+# ── Caminhos (estrutura TCC_FINAL) ───────────────────────────────────────────
+COLETAS_DIR       = os.path.join(BASE_DIR, "data", "datasets", "03_coleta_malha_fechada_rodada7")
+EXPERIMENTOS_DIR  = os.path.join(BASE_DIR, "data", "datasets", "08_ensaios_bancada_fisica")
+SINAIS_REF_DIR    = os.path.join(BASE_DIR, "data", "exemplos", "referencias_planejadas")
 
-# Legado — manter até migração completa, não usar em código novo
-EXP_DIR           = os.path.join(BASE_DIR, "data", "experimentos")   # DEPRECATED
-CONTROLE_DIR      = os.path.join(BASE_DIR, "data", "controle")       # DEPRECATED
+# Legado — compatibilidade com scripts de leitura/plotagem
+EXP_DIR           = os.path.join(BASE_DIR, "data", "datasets")
+CONTROLE_DIR      = os.path.join(BASE_DIR, "data", "datasets", "08_ensaios_bancada_fisica")
 
 # ── Experimento ativo ────────────────────────────────────────────────────────
 # Quando definido, salvar_csv() direciona os dados para dentro do EXP.

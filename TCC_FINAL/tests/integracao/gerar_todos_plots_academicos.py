@@ -54,20 +54,20 @@ setup_academic()
 
 # Diretórios
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
-root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
+root_dir = os.path.abspath(os.path.join(current_dir, "..", ".."))
+backend_dir = os.path.join(root_dir, "src", "backend")
 import sys
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
+for _p in (root_dir, backend_dir):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-exp_dir = os.path.join(root_dir, "data", "experimentos_novos", "EXP001_reteste_narx-mpc")
-py_dir = os.path.join(exp_dir, "2_mpc_python")
-sil_dir = os.path.join(exp_dir, "3_sil_stm32")
-real_dir = os.path.join(exp_dir, "4_aeropendulo")
+py_dir = os.path.join(root_dir, "data", "datasets", "07_validacao_simulacao", "1_python_sim")
+mpc_dir = os.path.join(root_dir, "data", "datasets", "05_dataset_nmpc")
+sil_dir = os.path.join(root_dir, "data", "datasets", "07_validacao_simulacao", "2_stm32_sil", "com_integrador")
+real_dir = os.path.join(root_dir, "data", "datasets", "08_ensaios_bancada_fisica", "nominal_sem_integrador")
 
 dest_dirs = [
-    os.path.join(root_dir, "tcc", "img"),
-    os.path.join(root_dir, "tcc", "img", "resultados"),
-    os.path.join(exp_dir, "plots_academicos")
+    os.path.join(root_dir, "plots"),
 ]
 for d in dest_dirs:
     os.makedirs(d, exist_ok=True)
@@ -168,7 +168,7 @@ for item in comparacoes:
 # 2. SIMULAÇÃO LIVRE DO MODELO NARX (Free-Run)
 # ==============================================================================
 print("\n[2/7] Gerando gráfico de Simulação Livre (NARX Free-Run)...")
-narx_json_path = os.path.join(root_dir, "sysid", "notebooks", "identificação-collab", "IDENT-HELON", "narx_model.json")
+narx_json_path = os.path.join(root_dir, "data", "exemplos", "modelos_exportados", "narx_model.json")
 with open(narx_json_path, 'r') as f:
     narx_data = json.load(f)
 
@@ -179,7 +179,7 @@ nu = narx_data['nu']
 
 # Carrega multisseno de validação
 from aerodata import readData
-y_raw, u_raw, t_raw, ref_raw = readData('data/coletas/RODADA-7_20260904/multi-seno-45-040Hz_0904_20-26.csv', return_ref=True)
+y_raw, u_raw, t_raw, ref_raw = readData('multi-seno-45-040Hz_0904_20-26.csv', return_ref=True)
 trim_start, trim_end = 10.0, 13.0
 i0 = np.searchsorted(t_raw, t_raw[0] + trim_start)
 i1 = np.searchsorted(t_raw, t_raw[-1] - trim_end)
@@ -226,14 +226,14 @@ ax2.legend(loc='upper right', framealpha=0.95)
 ax1.set_xlim(0, t_fr[-1])
 
 plt.tight_layout()
-save_academic_plot(fig, "narx_freerun", extra_dirs=[py_dir])
+save_academic_plot(fig, "narx_freerun")
 plt.close(fig)
 
 # ==============================================================================
 # 3. NMPC NOMINAL DE TREINAMENTO (CasADi)
 # ==============================================================================
 print("\n[3/7] Gerando gráfico de Rastreamento Nominal NMPC...")
-df_mpc = pd.read_csv(os.path.join(py_dir, "simulacao_mpc_treino.csv"))
+df_mpc = pd.read_csv(os.path.join(mpc_dir, "simulacao_mpc_treino.csv"))
 t_mpc = df_mpc['tempo_ms'] / 1000.0
 
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7.2, 4.4), sharex=True, 
@@ -259,66 +259,70 @@ ax2.legend(loc='upper right', framealpha=0.95)
 ax1.set_xlim(0, t_mpc.max())
 
 plt.tight_layout()
-save_academic_plot(fig, "mpc_treino", extra_dirs=[py_dir])
+save_academic_plot(fig, "mpc_treino")
 plt.close(fig)
 
 # ==============================================================================
 # 4. TEMPO COMPUTACIONAL DO NMPC (Comprovando Inviabilidade Online)
 # ==============================================================================
 print("\n[4/7] Gerando gráfico de Tempo Computacional do NMPC...")
-# Extração de alta precisão da curva de solve time original
-orig_time_img = mpimg.imread(os.path.join(py_dir, "MPC_Computational_Time.png"))
-r, g, b = orig_time_img[:,:,0], orig_time_img[:,:,1], orig_time_img[:,:,2]
-blue_mask = (b > 0.6) & (r < 0.3) & (g < 0.6)
+mpc_time_img_path = os.path.join(py_dir, "MPC_Computational_Time.png")
+if os.path.exists(mpc_time_img_path):
+    # Extração de alta precisão da curva de solve time original
+    orig_time_img = mpimg.imread(mpc_time_img_path)
+    r, g, b = orig_time_img[:,:,0], orig_time_img[:,:,1], orig_time_img[:,:,2]
+    blue_mask = (b > 0.6) & (r < 0.3) & (g < 0.6)
 
-# Spines calibradas: x in [192, 1038] (t=0 a t=25s), y in [46, 267]
-x_coords = np.arange(192, 1039)
-t_extracted = (x_coords - 192.0) / (1038.0 - 192.0) * 25.0
-dt_ms = []
+    # Spines calibradas: x in [192, 1038] (t=0 a t=25s), y in [46, 267]
+    x_coords = np.arange(192, 1039)
+    t_extracted = (x_coords - 192.0) / (1038.0 - 192.0) * 25.0
+    dt_ms = []
 
-for x in x_coords:
-    y_pix = np.where(blue_mask[:, x])[0]
-    if len(y_pix) > 0:
-        span = np.max(y_pix) - np.min(y_pix)
-        if span > 8:
-            y_val = np.min(y_pix)
+    for x in x_coords:
+        y_pix = np.where(blue_mask[:, x])[0]
+        if len(y_pix) > 0:
+            span = np.max(y_pix) - np.min(y_pix)
+            if span > 8:
+                y_val = np.min(y_pix)
+            else:
+                y_val = np.mean(y_pix)
+            val = (298.0 - y_val) / 550.0 * 1000.0
+            dt_ms.append(val)
         else:
-            y_val = np.mean(y_pix)
-        val = (298.0 - y_val) / 550.0 * 1000.0
-        dt_ms.append(val)
-    else:
-        dt_ms.append(dt_ms[-1] if dt_ms else 100.0)
+            dt_ms.append(dt_ms[-1] if dt_ms else 100.0)
 
-dt_ms = np.array(dt_ms)
+    dt_ms = np.array(dt_ms)
 
-fig, ax = plt.subplots(figsize=(7.2, 3.4))
-ax.plot(t_extracted, dt_ms, color='#1f77b4', linestyle='-', linewidth=1.2, 
-        label='Tempo de Solução NMPC (IPOPT)')
-ax.axhline(10.0, color='#d62728', linestyle='--', linewidth=1.4, 
-           label=r'Período de Amostragem $T_s = 10$ ms (Deadline)')
+    fig, ax = plt.subplots(figsize=(7.2, 3.4))
+    ax.plot(t_extracted, dt_ms, color='#1f77b4', linestyle='-', linewidth=1.2, 
+            label='Tempo de Solução NMPC (IPOPT)')
+    ax.axhline(10.0, color='#d62728', linestyle='--', linewidth=1.4, 
+               label=r'Período de Amostragem $T_s = 10$ ms (Deadline)')
 
-# Seta para o pico inicial de cold-start (t = 0 s, 458 ms)
-ax.annotate('Cold-start inicial\n(458 ms)', 
-            xy=(0.0, 458), xytext=(1.8, 420),
-            arrowprops=dict(facecolor='black', shrink=0.08, width=0.8, headwidth=5),
-            fontsize=8.5)
+    # Seta para o pico inicial de cold-start (t = 0 s, 458 ms)
+    ax.annotate('Cold-start inicial\n(458 ms)', 
+                xy=(0.0, 458), xytext=(1.8, 420),
+                arrowprops=dict(facecolor='black', shrink=0.08, width=0.8, headwidth=5),
+                fontsize=8.5)
 
-# Seta para o pico de transição dinâmica (t = 9.17 s, 333 ms)
-ax.annotate('Pico em transição\nde degrau (333 ms)', 
-            xy=(9.17, 333), xytext=(11.5, 320),
-            arrowprops=dict(facecolor='black', shrink=0.08, width=0.8, headwidth=5),
-            fontsize=8.5)
+    # Seta para o pico de transição dinâmica (t = 9.17 s, 333 ms)
+    ax.annotate('Pico em transição\nde degrau (333 ms)', 
+                xy=(9.17, 333), xytext=(11.5, 320),
+                arrowprops=dict(facecolor='black', shrink=0.08, width=0.8, headwidth=5),
+                fontsize=8.5)
 
-ax.set_xlabel('Tempo [s]')
-ax.set_ylabel('Tempo de Solução [ms]')
-ax.set_xlim(0, 25)
-ax.set_ylim(0, 500)
-ax.grid(True)
-ax.legend(loc='upper right', framealpha=0.95)
+    ax.set_xlabel('Tempo [s]')
+    ax.set_ylabel('Tempo de Solução [ms]')
+    ax.set_xlim(0, 25)
+    ax.set_ylim(0, 500)
+    ax.grid(True)
+    ax.legend(loc='upper right', framealpha=0.95)
 
-plt.tight_layout()
-save_academic_plot(fig, "mpc_tempo", extra_dirs=[py_dir])
-plt.close(fig)
+    plt.tight_layout()
+    save_academic_plot(fig, "mpc_tempo")
+    plt.close(fig)
+else:
+    print(f"  [AVISO] Imagem bruta não encontrada em {mpc_time_img_path}; etapa [4/7] ignorada.")
 
 # ==============================================================================
 # 5. SIMULAÇÕES INDIVIDUAIS PYTHON (py_val1, py_val2, py_val3)
@@ -354,7 +358,7 @@ for base_name, csv_file, label_name in py_sims:
     ax1.set_xlim(0, t.max())
     
     plt.tight_layout()
-    save_academic_plot(fig, base_name, extra_dirs=[py_dir])
+    save_academic_plot(fig, base_name)
     plt.close(fig)
 
 # ==============================================================================
@@ -391,7 +395,7 @@ for base_name, csv_file in sil_sims:
     ax1.set_xlim(0, t.max())
     
     plt.tight_layout()
-    save_academic_plot(fig, base_name, extra_dirs=[sil_dir])
+    save_academic_plot(fig, base_name)
     plt.close(fig)
 
 # ==============================================================================
@@ -428,7 +432,7 @@ for base_name, csv_file in real_sims:
     ax1.set_xlim(0, t.max())
     
     plt.tight_layout()
-    save_academic_plot(fig, base_name, extra_dirs=[real_dir])
+    save_academic_plot(fig, base_name)
     plt.close(fig)
 
 # ==============================================================================
@@ -443,7 +447,7 @@ for name in ["ann_loss", "ann_r2"]:
         ax.imshow(img_arr)
         ax.axis('off')
         plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-        save_academic_plot(fig, name, extra_dirs=[py_dir])
+        save_academic_plot(fig, name)
         plt.close(fig)
 
 print("\n=======================================================")

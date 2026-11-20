@@ -54,6 +54,10 @@ class SerialManager:
             return False
         try:
             self.ser = serial.Serial(self._porta, self._baud, timeout=self._timeout, write_timeout=self._write_timeout)
+            try:
+                self.ser.set_buffer_size(rx_size=131072, tx_size=16384)
+            except Exception:
+                pass
             time.sleep(0.5)
             self.ser.reset_input_buffer()
             self.ser.reset_output_buffer()

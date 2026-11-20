@@ -51,8 +51,8 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False, start_idx=0,
         "multiseno_2": "multi-seno-60-030Hz_0908_23-13.csv"
     }
     
-    repo_root = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(repo_root, "data", "experimentos", "coleta_dados")
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    data_dir = os.path.join(repo_root, "data", "datasets")
     
     normalized_name = dataset_name.replace('\\', '/')
     local_path = ""
@@ -65,22 +65,35 @@ def readData(dataset_name="multiseno", decimar=1, return_ref=False, start_idx=0,
         # Se for um dos apelidos tabelados
         rel_target = urls.get(normalized_name, normalized_name)
         
-        # Remove prefixos redundantes caso o usuário tenha passado o caminho relativo completo
-        for prefix in ["data/experimentos/coleta_dados/", "data/experimentos/", "coleta_dados/"]:
+        # Remove prefixos redundantes caso o usuário tenha passado o caminho relativo antigo ou completo
+        for prefix in [
+            "data/experimentos/coleta_dados/RODADA-7/",
+            "data/coletas/RODADA-7_20260904/",
+            "data/experimentos/coleta_dados/",
+            "data/experimentos/",
+            "coleta_dados/",
+            "RODADA-7/",
+        ]:
             if rel_target.startswith(prefix):
                 rel_target = rel_target[len(prefix):]
                 break
                 
-        # 1. Candidato direto dentro de data/experimentos/coleta_dados/
-        candidate = os.path.join(data_dir, rel_target)
-        if os.path.exists(candidate) and os.path.isfile(candidate):
-            local_path = candidate
+        # 1. Candidatos diretos dentro de data/datasets/
+        candidate_r7 = os.path.join(data_dir, "03_coleta_malha_fechada_rodada7", rel_target)
+        candidate_data = os.path.join(data_dir, rel_target)
+        candidate_repo = os.path.join(repo_root, normalized_name)
+        if os.path.exists(candidate_r7) and os.path.isfile(candidate_r7):
+            local_path = candidate_r7
+        elif os.path.exists(candidate_data) and os.path.isfile(candidate_data):
+            local_path = candidate_data
+        elif os.path.exists(candidate_repo) and os.path.isfile(candidate_repo):
+            local_path = candidate_repo
         elif os.path.isabs(dataset_name) and os.path.exists(dataset_name):
             local_path = dataset_name
         else:
-            # 2. Busca recursiva EXCLUSIVAMENTE dentro de data/experimentos/coleta_dados
+            # 2. Busca recursiva dentro de data/
             base_fname = os.path.basename(rel_target)
-            for root_folder, _, files in os.walk(data_dir):
+            for root_folder, _, files in os.walk(os.path.join(repo_root, "data")):
                 if base_fname in files:
                     local_path = os.path.join(root_folder, base_fname)
                     break

@@ -120,11 +120,16 @@ class StribeckStaticModel(nn.Module):
         
         return torque_efetivo, torque_atrito
 
+import os
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+DATA_DIR = os.path.join(ROOT_DIR, "data", "datasets")
+
 if __name__ == '__main__':
     arquivos = [
-        r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\escada-atrito-1_0819_19-08.csv",
-        r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\degraus_0819_19-30.csv",
-        r"c:\Users\vicio\Documents\AEROPENDULO\experimentos\degraus_0819_19-33.csv"
+        os.path.join(DATA_DIR, "01_malha_aberta", "degraus_0917_15-33.csv"),
+        os.path.join(DATA_DIR, "03_coleta_malha_fechada_rodada7", "seq-degraus-45-1_0904_20-41.csv"),
+        os.path.join(DATA_DIR, "03_coleta_malha_fechada_rodada7", "seq-degraus-60-1_0904_20-51.csv"),
     ]
     
     print("1. Carregando e mesclando dados...")

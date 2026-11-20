@@ -45,16 +45,14 @@ def setup_academic():
 setup_academic()
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
+root_dir = os.path.abspath(os.path.join(current_dir, "..", ".."))
 
-exp_dir = os.path.join(root_dir, "data", "experimentos_novos", "EXP001_reteste_narx-mpc")
-real_dir = os.path.join(exp_dir, "4_aeropendulo")
+bench_dir = os.path.join(root_dir, "data", "datasets", "08_ensaios_bancada_fisica")
+nom_dir = os.path.join(bench_dir, "nominal_sem_integrador")
+hyb_dir = os.path.join(bench_dir, "hibrido_com_integrador")
 
 dest_dirs = [
-    os.path.join(root_dir, "tcc", "img", "resultados"),
-    os.path.join(root_dir, "tcc", "img"),
-    os.path.join(exp_dir, "plots_academicos"),
-    os.path.join(root_dir, "fluxograma-tcc", "10_comparativos_finais", "nominal_vs_hibrido")
+    os.path.join(root_dir, "plots"),
 ]
 for d in dest_dirs:
     os.makedirs(d, exist_ok=True)
@@ -64,8 +62,8 @@ comparacoes = [
         "id": 1,
         "base_name": "comparacao_hibrido_val1",
         "title": "Validação 1 (Multisseno + Degraus / Chirp)",
-        "f_sem": os.path.join(real_dir, "20261023_180508_referencia_legado_val1_mpc_hybrid.csv"),
-        "f_com": os.path.join(real_dir, "20261023_181157_referencia_legado_val1_mpc_hybrid.csv"),
+        "f_sem": os.path.join(nom_dir, "20261023_180508_referencia_legado_val1_mpc_hybrid.csv"),
+        "f_com": os.path.join(hyb_dir, "20261023_181157_referencia_legado_val1_mpc_hybrid.csv"),
         "leg1_pos": "lower right",
         "leg1_ncol": 3,
         "leg2_pos": "upper right",
@@ -75,8 +73,8 @@ comparacoes = [
         "id": 2,
         "base_name": "comparacao_hibrido_val2",
         "title": "Validação 2 (Degraus Aleatórios)",
-        "f_sem": os.path.join(real_dir, "20261023_180711_referencia_legado_val2_degraus_hybrid.csv"),
-        "f_com": os.path.join(real_dir, "20261023_181401_referencia_legado_val2_degraus_hybrid.csv"),
+        "f_sem": os.path.join(nom_dir, "20261023_180711_referencia_legado_val2_degraus_hybrid.csv"),
+        "f_com": os.path.join(hyb_dir, "20261023_181401_referencia_legado_val2_degraus_hybrid.csv"),
         "leg1_pos": "upper right",
         "leg1_ncol": 1,
         "leg2_pos": "upper right",
@@ -86,8 +84,8 @@ comparacoes = [
         "id": 3,
         "base_name": "comparacao_hibrido_val3",
         "title": "Validação 3 (Senoidal Suave)",
-        "f_sem": os.path.join(real_dir, "20261023_180920_referencia_legado_val3_senoidal_hybrid.csv"),
-        "f_com": os.path.join(real_dir, "20261023_181719_referencia_legado_val3_senoidal_hybrid.csv"),
+        "f_sem": os.path.join(nom_dir, "20261023_180920_referencia_legado_val3_senoidal_hybrid.csv"),
+        "f_com": os.path.join(hyb_dir, "20261023_181719_referencia_legado_val3_senoidal_hybrid.csv"),
         "leg1_pos": "lower right",
         "leg1_ncol": 3,
         "leg2_pos": "upper right",

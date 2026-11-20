@@ -14,9 +14,11 @@ import sys
 import subprocess
 import argparse
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", ".."))
 STEDGEAI_EXE = r"C:/Users/vicio/STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI/10.2.0/Utilities/windows/stedgeai.exe"
-DEFAULT_MODEL = r"data/experimentos_novos/EXP001_otimizacao_narx/3_sil_stm32/ann_model.onnx"
-OUTPUT_DIR = r"firmware/stm32-sil/X-CUBE-AI/App"
+DEFAULT_MODEL = os.path.join(ROOT_DIR, "data", "exemplos", "modelos_exportados", "ann_model.onnx")
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "X-CUBE-AI", "App")
 
 def main():
     parser = argparse.ArgumentParser(description="Atualiza modelo X-CUBE-AI no firmware STM32")

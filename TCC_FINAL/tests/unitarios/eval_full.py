@@ -1,8 +1,8 @@
 import os, glob, sys, json
 import numpy as np
 
-root_dir = os.path.abspath("C:/Users/vicio/Documents/SYSTEM-IDENTIFICATION-AERO-main")
-sys.path.append(root_dir)
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(root_dir, "src", "backend"))
 from aerodata import readData
 
 TRAIN_NAMES = [
@@ -23,7 +23,7 @@ VAL_NAMES = [
 ]
 
 def load_dataset(fname, trim=(10.0, 13.0)):
-    fpath = os.path.join(root_dir, "data/experimentos/coleta_dados/RODADA-7", fname)
+    fpath = os.path.join(root_dir, "data", "datasets", "03_coleta_malha_fechada_rodada7", fname)
     y_deg, u, t = readData(fpath)[:3]
     i0 = np.searchsorted(t, t[0] + trim[0])
     i1 = np.searchsorted(t, t[-1] - trim[1])

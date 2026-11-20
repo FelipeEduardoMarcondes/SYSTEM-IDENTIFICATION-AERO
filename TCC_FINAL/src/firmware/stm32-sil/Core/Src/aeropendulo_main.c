@@ -511,13 +511,15 @@ static void calibrar_giroscopio(void)
     float soma = 0.0f;
     int   n    = 0;
     uint32_t t0 = HAL_GetTick();
-    while (n < 500) {
-        if (HAL_GetTick() - t0 > 5000) break;   /* timeout de seguranca */
+    /* Coleta 300 amostras sincronizadas com novos dados da IMU (100 Hz = 3 segundos) */
+    while (n < 300) {
+        if (HAL_GetTick() - t0 > 6000) break;   /* timeout de seguranca (6s) */
         
-        soma += icm_read_gyro_y();
-        n++;
-        HAL_Delay(2);
-        
+        if (icm_data_ready()) {
+            soma += icm_read_gyro_y();
+            n++;
+        }
+        HAL_Delay(1);
     }
     gyro_bias = (n > 0) ? soma / (float)n : 0.0f;
 
@@ -816,7 +818,7 @@ static void processar_comando(const char *cmd)
         esc_set_us(ESC_NEUTRO_US);
         estado = ESTADO_ARMING_ESC;
         tempo_inicio = HAL_GetTick();
-        uart_println("# ARMANDO ESC... (3s)");
+        uart_println("# ARMANDO ESC... (5s)");
         return;
     }
 
@@ -1427,7 +1429,14 @@ void aeropendulo_loop(void)
     }
     
     if (estado == ESTADO_ARMING_ESC) {
-        if (HAL_GetTick() - tempo_inicio >= 3000) {
+        uint32_t t_arm = HAL_GetTick() - tempo_inicio;
+        if (t_arm < 2000) {
+            esc_set_us(ESC_NEUTRO_US);         /* 1500 us (neutro estavel) */
+        } else if (t_arm < 3500) {
+            esc_set_us(1535);                  /* 1535 us (pulso de ativacao do ESC, equiv. a ~7% / 10 deg) */
+        } else if (t_arm < 5000) {
+            esc_set_us(ESC_NEUTRO_US);         /* 1500 us (retorno ao repouso) */
+        } else {
 #ifndef SIL_MODE
             angulo_filtrado = angulo_acelerometro();
 #endif

@@ -29,22 +29,21 @@ from sklearn.metrics import r2_score
 # sysid library (used to load the measured 1/4 drone datasets)
 import os, sys
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
-root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..'))
-if root_dir not in sys.path:
-    sys.path.append(root_dir)
+root_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..'))
+backend_dir = os.path.join(root_dir, "src", "backend")
+for _p in (root_dir, backend_dir):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-# ── Experimento ativo — EDITAR AQUI para cada novo experimento ──────
-EXP_ID = os.environ.get("EXP_ID", "EXP003_legado_narx-mpc")
-EXP_OUTPUT_DIR = os.path.join(root_dir, "data", "experimentos_novos", EXP_ID)
-IDENT_DIR   = os.path.join(EXP_OUTPUT_DIR, "1_identificacao")
-MPC_DIR     = os.path.join(EXP_OUTPUT_DIR, "2_mpc_python")
-SIL_DIR     = os.path.join(EXP_OUTPUT_DIR, "3_sil_stm32")
-REAL_DIR    = os.path.join(EXP_OUTPUT_DIR, "4_aeropendulo")
-PLOTS_DIR   = MPC_DIR
-COLETAS_DIR = os.path.join(root_dir, "data", "experimentos", "coleta_dados")
-SINAIS_REF_DIR = os.path.join(root_dir, "data", "sinais_referencia")
-for _d in [IDENT_DIR, MPC_DIR, SIL_DIR, REAL_DIR]:
-    os.makedirs(_d, exist_ok=True)
+# ── Diretórios dentro de TCC_FINAL ──────────────────────────────────
+IDENT_DIR      = os.path.join(root_dir, "src", "backend", "02_identificacao_sistemas", "1_narx_polinomial")
+MPC_DIR        = os.path.join(root_dir, "data", "datasets", "07_validacao_simulacao", "1_python_sim")
+DATASET_DIR    = os.path.join(root_dir, "data", "datasets", "05_dataset_nmpc")
+SIL_DIR        = os.path.join(root_dir, "data", "exemplos", "modelos_exportados")
+REAL_DIR       = os.path.join(root_dir, "data", "datasets", "08_ensaios_bancada_fisica")
+PLOTS_DIR      = os.path.join(current_dir, "plots")
+COLETAS_DIR    = os.path.join(root_dir, "data", "datasets", "03_coleta_malha_fechada_rodada7")
+SINAIS_REF_DIR = os.path.join(root_dir, "data", "exemplos", "referencias_planejadas")
 
 # Configuração de estilo acadêmico (IEEE / ABNT / PUCPR)
 def setup_academic_style():
@@ -82,20 +81,25 @@ Ts = 0.01  # Sampling time in seconds (DECIMATION=5 -> 5 * 10ms = 50ms)
 # CONTROLE DE EXECUÇÃO / CACHE:
 # - Se False: carrega o dataset de 32.547 amostras já calculado (.npz) em < 1s
 # - Se True: reexecuta a otimização CasADi IPOPT por ~23 minutos e regrava o cache
-RECOMPUTE_MPC = True
+RECOMPUTE_MPC = False
 # =============================================================================
 
 import json
-try:
-    with open(os.path.join(current_dir, 'narx_model.json'), 'r') as f:
-        model_data = json.load(f)
-        ny_model = model_data['ny']
-        nu_model = model_data['nu']
-        NARX_TERMS = model_data['terms']
-        NARX_THETA = model_data['theta']
-except FileNotFoundError:
+narx_candidates = [
+    os.path.join(current_dir, 'narx_model.json'),
+    os.path.join(root_dir, 'src', 'backend', '02_identificacao_sistemas', '1_narx_polinomial', 'narx_model.json'),
+    os.path.join(root_dir, 'data', 'exemplos', 'modelos_exportados', 'narx_model.json'),
+]
+narx_json_file = next((p for p in narx_candidates if os.path.exists(p)), None)
+if narx_json_file is None:
     print("Run narx.py first to generate narx_model.json")
-    import sys; sys.exit(1)
+    sys.exit(1)
+with open(narx_json_file, 'r') as f:
+    model_data = json.load(f)
+    ny_model = model_data['ny']
+    nu_model = model_data['nu']
+    NARX_TERMS = model_data['terms']
+    NARX_THETA = model_data['theta']
 
 nx = ny_model + nu_model
 
@@ -480,7 +484,7 @@ plt.pause(0.1)
 RECOMPUTE_MPC = globals().get('RECOMPUTE_MPC', False)
 # -----------------------------------------------------------------------------
 
-dataset_cache_file = os.path.join(MPC_DIR, "dataset_mpc_treino.npz")
+dataset_cache_file = os.path.join(DATASET_DIR, "dataset_mpc_treino.npz")
 
 if os.path.exists(dataset_cache_file) and not RECOMPUTE_MPC:
     print(f"\n[CACHE] Carregando dataset NMPC do arquivo: {dataset_cache_file} ...")
@@ -823,7 +827,7 @@ ann_filename = os.path.join(SIL_DIR, 'ann_weights.h')
 export_ann_to_c(model, scaler, filename=ann_filename, narx_terms=NARX_TERMS, narx_theta=NARX_THETA, ny=ny_model, nu=nu_model)
 print(f"Arquivo {ann_filename} gerado com sucesso!")
 
-stm_inc_dir = os.path.join(root_dir, "firmware", "stm32-sil", "Core", "Inc")
+stm_inc_dir = os.path.join(root_dir, "src", "firmware", "stm32-sil", "Core", "Inc")
 if os.path.exists(stm_inc_dir):
     stm_ann_filename = os.path.join(stm_inc_dir, 'ann_weights.h')
     export_ann_to_c(model, scaler, filename=stm_ann_filename, narx_terms=NARX_TERMS, narx_theta=NARX_THETA, ny=ny_model, nu=nu_model)

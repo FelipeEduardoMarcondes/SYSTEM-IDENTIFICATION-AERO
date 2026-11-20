@@ -16,6 +16,7 @@ Uso
 """
 
 import time
+import queue
 import threading
 import numpy as np
 
@@ -77,7 +78,8 @@ class Aquisicao:
         timeouts     = 0
 
         prazo = time.time() + duracao_s if duracao_s > 0 else float("inf")
-        self._mgr.ser.timeout = 3.0
+        self._mgr.ser.timeout = 0.5
+        max_timeouts = self.MAX_TIMEOUTS * 6  # 18 * 0.5s = 9s sem resposta
 
         # Thread: parar com Enter
         threading.Thread(target=self._watch_enter, daemon=True).start()
@@ -103,65 +105,107 @@ class Aquisicao:
 
         print("  Coletando dados ao vivo...\n")
 
-        while time.time() < prazo and not self._parar.is_set():
-            raw = self._mgr.ser.readline()
-            if not raw:
-                timeouts += 1
-                print(f"  Timeout {timeouts}/{self.MAX_TIMEOUTS}")
-                if timeouts >= self.MAX_TIMEOUTS:
-                    print("  STM32 sem resposta. Abortando.")
-                    with self._lock:
-                        self._mgr.enviar("STOP")
+        fila_rx: queue.Queue = queue.Queue()
+
+        def _reader_serial():
+            nonlocal timeouts
+            while time.time() < prazo and not self._parar.is_set():
+                try:
+                    raw = self._mgr.ser.readline()
+                except Exception:
                     break
-                continue
-            timeouts = 0
+                if not raw:
+                    timeouts += 1
+                    if timeouts % 6 == 0:
+                        print(f"\n  Timeout {timeouts // 6}/{self.MAX_TIMEOUTS}")
+                    if timeouts >= max_timeouts:
+                        print("  STM32 sem resposta. Abortando.")
+                        with self._lock:
+                            try:
+                                self._mgr.enviar("STOP")
+                            except Exception:
+                                pass
+                        self._parar.set()
+                        break
+                    continue
+                timeouts = 0
+                fila_rx.put(raw)
 
-            linha = raw.decode("utf-8", errors="replace").strip()
-            if not linha:
-                continue
-            if linha.startswith("#"):
-                print(f"  [STM32] {linha}")
-                if linha.startswith("# PROFILE"):
-                    self.linhas_profile.append(linha)
-                if "PARADO" in linha or "FIM" in linha:
+        t_reader = threading.Thread(target=_reader_serial, daemon=True)
+        t_reader.start()
+
+        ultimo_print = 0.0
+        while (time.time() < prazo and not self._parar.is_set()) or not fila_rx.empty():
+            # Drena todos os pacotes disponíveis na fila sem bloquear na UI
+            processei_algo = False
+            ultimo_status = ""
+
+            while not fila_rx.empty():
+                try:
+                    raw = fila_rx.get_nowait()
+                except queue.Empty:
                     break
-                continue
 
-            partes = linha.split(",")
-            if len(partes) < 3:
-                continue
+                linha = raw.decode("utf-8", errors="replace").strip()
+                if not linha:
+                    continue
+                if linha.startswith("#"):
+                    print(f"\n  [STM32] {linha}")
+                    if linha.startswith("# PROFILE"):
+                        self.linhas_profile.append(linha)
+                    if "PARADO" in linha or "FIM" in linha:
+                        self._parar.set()
+                        break
+                    continue
 
-            try:
-                t_ms = float(partes[0])
-                ang  = float(partes[1])
-                u    = float(partes[2])
-                ref  = float(partes[3]) if len(partes) >= 4 else float("nan")
-                t_inf = float(partes[4]) if len(partes) >= 5 else None
-            except ValueError:
-                continue
+                partes = linha.split(",")
+                if len(partes) not in (4, 5):
+                    continue
 
-            # Removemos o descarte de ângulos. Apenas u é validado para evitar lixo
-            if abs(u) > 100:
-                continue
+                try:
+                    t_ms  = float(partes[0])
+                    ang   = float(partes[1])
+                    u     = float(partes[2])
+                    ref   = float(partes[3])
+                    t_inf = float(partes[4]) if len(partes) == 5 else None
+                except ValueError:
+                    continue
 
-            t_s = t_ms / 1000.0
-            t_list.append(t_s)
-            ang_list.append(ang)
-            u_list.append(u)
-            ref_list.append(ref)
-            linhas_dados.append(linha)
+                # Valida limites para descartar eventuais linhas truncadas
+                if abs(u) > 100 or abs(ang) > 360 or abs(ref) > 360 or t_ms < 0 or t_ms > 7_200_000:
+                    continue
 
-            inf_str = f"  inf={t_inf:.3f}ms" if t_inf is not None else ""
-            print(
-                f"\r  t={t_s:7.2f}s  ang={ang:6.1f} deg  ref={ref:5.1f} deg  "
-                f"err={ang - ref:+6.1f} deg  u={u:5.1f}%{inf_str}  n={len(t_list)}",
-                end="", flush=True,
-            )
-            if len(t_list) % 5 == 0:
+                t_s = t_ms / 1000.0
+                if t_list and (t_s < t_list[-1] or (t_s - t_list[-1]) > 15.0):
+                    continue
+
+                t_list.append(t_s)
+                ang_list.append(ang)
+                u_list.append(u)
+                ref_list.append(ref)
+                linhas_dados.append(linha)
+                processei_algo = True
+
+                inf_str = f"  inf={t_inf:.3f}ms" if t_inf is not None else ""
+                ultimo_status = (
+                    f"\r  t={t_s:7.2f}s  ang={ang:6.1f} deg  ref={ref:5.1f} deg  "
+                    f"err={ang - ref:+6.1f} deg  u={u:5.1f}%{inf_str}  n={len(t_list)}"
+                )
+
+            if processei_algo:
+                agora = time.time()
+                if agora - ultimo_print >= 0.05:
+                    print(ultimo_status, end="", flush=True)
+                    ultimo_print = agora
                 self._live.atualizar(t_list, ang_list, u_list, ref_list)
+            else:
+                if self._parar.is_set() or time.time() >= prazo:
+                    break
+                time.sleep(0.005)
 
         # Encerramento
         self._parar.set()
+        t_reader.join(timeout=1.5)
         Aquisicao.ultimo_profile = list(self.linhas_profile)
         self._mgr.parar()
         print(f"\n\n  Total de amostras: {len(linhas_dados)}")
