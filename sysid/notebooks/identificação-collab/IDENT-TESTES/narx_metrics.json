@@ -1,0 +1,68 @@
+{
+    "multisine_45_val": {
+        "label": "Multisseno (45°, 0.30 Hz)",
+        "rmse_deg": 4.875280350414722,
+        "mae_deg": 3.9402806609172583,
+        "fit_percent": 70.07411720151275,
+        "r2_score": 0.9104441538731205,
+        "samples": 1587,
+        "decimation": 8,
+        "Ts_sec": 0.08,
+        "unclipped_stable": true
+    },
+    "chirp_45_val": {
+        "label": "Chirp (45°, Amp ±35°)",
+        "rmse_deg": 7.253684975985589,
+        "mae_deg": 5.780680740964259,
+        "fit_percent": 67.79796356151972,
+        "r2_score": 0.8963028849214789,
+        "samples": 622,
+        "decimation": 8,
+        "Ts_sec": 0.08,
+        "unclipped_stable": true
+    },
+    "steps_45_val": {
+        "label": "Sequência de Degraus (45°)",
+        "rmse_deg": 5.243253797027073,
+        "mae_deg": 4.1771649546714125,
+        "fit_percent": 76.62987772412741,
+        "r2_score": 0.9453837384810764,
+        "samples": 1581,
+        "decimation": 8,
+        "Ts_sec": 0.08,
+        "unclipped_stable": true
+    },
+    "multisine_60_val": {
+        "label": "Multisseno (60°, 0.30 Hz)",
+        "rmse_deg": 9.060917085581014,
+        "mae_deg": 5.8964406363775685,
+        "fit_percent": 53.374488234121785,
+        "r2_score": 0.7826061652569952,
+        "samples": 1588,
+        "decimation": 8,
+        "Ts_sec": 0.08,
+        "unclipped_stable": true
+    },
+    "chirp_60_val": {
+        "label": "Chirp (60°, Amp ±40°)",
+        "rmse_deg": 9.313528043502158,
+        "mae_deg": 7.5072798942305194,
+        "fit_percent": 67.49685069465039,
+        "r2_score": 0.8943545285234151,
+        "samples": 624,
+        "decimation": 8,
+        "Ts_sec": 0.08,
+        "unclipped_stable": true
+    },
+    "steps_60_val": {
+        "label": "Sequência de Degraus (60°)",
+        "rmse_deg": 15.075679737006752,
+        "mae_deg": 11.135720140158957,
+        "fit_percent": 58.65308480185172,
+        "r2_score": 0.8290432603597134,
+        "samples": 1587,
+        "decimation": 8,
+        "Ts_sec": 0.08,
+        "unclipped_stable": true
+    }
+}

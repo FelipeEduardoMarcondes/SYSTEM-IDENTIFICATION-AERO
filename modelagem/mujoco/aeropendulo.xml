@@ -1,0 +1,189 @@
+<mujoco model="aeropendulo_pucpr_edf">
+  <compiler angle="degree" coordinate="local" inertiafromgeom="false" meshdir="meshes"/>
+
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="RK4"/>
+
+  <visual>
+    <headlight diffuse="0.72 0.72 0.74" ambient="0.36 0.38 0.42" specular="0.28 0.28 0.30"/>
+    <rgba haze="0.06 0.08 0.11 1"/>
+    <global azimuth="132" elevation="-20" offwidth="1920" offheight="1080"/>
+    <quality shadowsize="4096" offsamples="4"/>
+  </visual>
+
+  <asset>
+    <!-- Texturas procedurais e materiais realistas da bancada -->
+    <texture name="grid_tex" type="2d" builtin="checker" rgb1="0.08 0.10 0.14" rgb2="0.12 0.15 0.20" width="512" height="512" mark="edge" markrgb="0.20 0.24 0.30"/>
+    <material name="floor_mat" texture="grid_tex" texrepeat="6 6" texuniform="true" reflectance="0.08"/>
+
+    <!-- Materiais fiéis à Tabela 1 do TCC (com Turbina EDF FMS 50mm 11 pás) -->
+    <material name="wood_base_mat" rgba="0.38 0.37 0.43 1" specular="0.18" shininess="0.25"/>
+    <material name="mdf_tower_mat" rgba="0.62 0.65 0.72 1" specular="0.20" shininess="0.25"/>
+    <material name="pla_dark_mat" rgba="0.20 0.22 0.26 1" specular="0.30" shininess="0.40"/>
+    <material name="alu_shaft_mat" rgba="0.84 0.87 0.90 1" specular="0.85" shininess="0.85"/>
+    <material name="steel_rod_mat" rgba="0.74 0.77 0.82 1" specular="0.78" shininess="0.75"/>
+    <material name="bearing_mat" rgba="0.58 0.62 0.67 1" specular="0.90" shininess="0.90"/>
+    <material name="brass_counter_mat" rgba="0.90 0.72 0.22 1" specular="0.85" shininess="0.85"/>
+    <material name="edf_duct_mat" rgba="0.16 0.18 0.22 1" specular="0.45" shininess="0.55"/>
+    <material name="edf_ring_mat" rgba="0.85 0.20 0.20 1" specular="0.75" shininess="0.75"/>
+    <material name="edf_rotor_mat" rgba="0.22 0.64 0.98 1" specular="0.75" shininess="0.75"/>
+    <material name="psu_metal_mat" rgba="0.48 0.51 0.57 1" specular="0.65" shininess="0.65"/>
+    <material name="ref_ghost_mat" rgba="0.94 0.53 0.24 0.48" specular="0.15" shininess="0.15"/>
+    <material name="narx_ghost_mat" rgba="0.66 0.33 0.97 0.55" specular="0.20" shininess="0.20"/>
+    <material name="thrust_jet_mat" rgba="0.25 0.82 0.38 0.78" specular="0.30" shininess="0.40"/>
+
+    <!-- Malhas 3D: Torres piramidais + Duto EDF 50mm + Rotor EDF de 11 pás -->
+    <mesh name="torre_esquerda_mesh" file="torre_esquerda.stl"/>
+    <mesh name="torre_direita_mesh" file="torre_direita.stl"/>
+    <mesh name="edf_duto_mesh" file="edf_duto.stl"/>
+    <mesh name="edf_rotor_mesh" file="edf_rotor_11pas.stl"/>
+  </asset>
+
+  <default>
+    <geom contype="0" conaffinity="0" solref="0.01 1"/>
+  </default>
+
+  <worldbody>
+    <!-- Iluminação de estúdio -->
+    <light name="key_light" pos="0.8 -1.2 1.6" dir="-0.45 0.65 -0.60" directional="true" diffuse="0.82 0.82 0.80" specular="0.35 0.35 0.35" castshadow="true"/>
+    <light name="fill_light" pos="-1.0 -0.8 1.2" dir="0.55 0.45 -0.65" directional="true" diffuse="0.38 0.42 0.48" specular="0.10 0.10 0.10" castshadow="false"/>
+    <light name="back_light" pos="0.0 1.4 1.3" dir="0.0 -0.75 -0.65" directional="true" diffuse="0.30 0.32 0.38" specular="0.15 0.15 0.15" castshadow="false"/>
+
+    <!-- Câmeras pré-configuradas -->
+    <camera name="isometrica_cad" pos="0.68 -1.04 0.78" xyaxes="0.82 0.57 0.00 -0.17 0.24 0.96" fovy="46"/>
+    <camera name="lateral_plano_pendulo" pos="0.92 -0.62 0.58" xyaxes="0.55 0.83 0.00 -0.11 0.07 0.99" fovy="46"/>
+    <camera name="frontal_bancada" pos="0.00 -1.26 0.52" xyaxes="1.00 0.00 0.00 0.00 0.04 1.00" fovy="46"/>
+    <camera name="superior_bancada" pos="0.00 0.04 1.60" xyaxes="1.00 0.00 0.00 0.00 1.00 0.00" fovy="46"/>
+
+    <!-- Piso / Mesa de laboratório -->
+    <geom name="floor" type="plane" pos="0 0 0" size="2.0 2.0 0.05" material="floor_mat"/>
+
+    <!-- ==================== 1. ESTRUTURA FIXA DA BANCADA ==================== -->
+    <body name="bancada_fixa" pos="0 0 0">
+      <!-- Base de madeira compensada: 845.00 x 399.00 x 15.00 mm -->
+      <geom name="base_madeira" type="box" pos="0 -0.060 0.0075" size="0.4225 0.1995 0.0075" material="wood_base_mat"/>
+
+      <!-- Fonte Chaveada 12V/24V na borda frontal direita da base -->
+      <body name="fonte_chaveada" pos="0.295 -0.190 0.015">
+        <geom name="psu_body" type="box" pos="0 0 0.025" size="0.105 0.055 0.025" material="psu_metal_mat"/>
+        <geom name="psu_terminal" type="box" pos="-0.092 0 0.018" size="0.014 0.046 0.016" material="pla_dark_mat"/>
+        <geom name="psu_vent1" type="box" pos="-0.045 0 0.0505" size="0.003 0.038 0.001" material="pla_dark_mat"/>
+        <geom name="psu_vent2" type="box" pos="-0.033 0 0.0505" size="0.003 0.038 0.001" material="pla_dark_mat"/>
+        <geom name="psu_vent3" type="box" pos="-0.021 0 0.0505" size="0.003 0.038 0.001" material="pla_dark_mat"/>
+        <geom name="psu_vent4" type="box" pos="-0.009 0 0.0505" size="0.003 0.038 0.001" material="pla_dark_mat"/>
+        <geom name="psu_fan_ring" type="cylinder" pos="0.045 0 0.0505" size="0.032 0.001" material="pla_dark_mat"/>
+      </body>
+
+      <!-- Torre Esquerda (com suporte do Potenciômetro): centro do bloco a x = -0.1905 m (vão interno = 351 mm) -->
+      <body name="torre_esquerda" pos="-0.1905 0 0.015">
+        <geom name="piramide_esq" type="mesh" mesh="torre_esquerda_mesh" material="mdf_tower_mat"/>
+        <geom name="aba_esq_1" type="box" pos="0.018 0 0.003" size="0.012 0.012 0.003" material="pla_dark_mat"/>
+        <geom name="aba_esq_2" type="box" pos="-0.165 -0.092 0.003" size="0.012 0.012 0.003" material="pla_dark_mat"/>
+        <geom name="aba_esq_3" type="box" pos="-0.165 0.092 0.003" size="0.012 0.012 0.003" material="pla_dark_mat"/>
+        <geom name="mancal_esq" type="box" pos="0 0 0.455" size="0.015 0.018 0.022" material="mdf_tower_mat"/>
+        <geom name="rolamento_esq" type="cylinder" pos="0.012 0 0.455" euler="0 90 0" size="0.01432 0.004" material="bearing_mat"/>
+        <geom name="potenciometro_corpo" type="cylinder" pos="-0.023 0 0.455" euler="0 90 0" size="0.0075 0.0083" material="pla_dark_mat"/>
+        <geom name="potenciometro_eixo" type="cylinder" pos="-0.012 0 0.455" euler="0 90 0" size="0.0025 0.0095" material="alu_shaft_mat"/>
+      </body>
+
+      <!-- Torre Direita (sem potenciômetro): centro do bloco a x = +0.1905 m -->
+      <body name="torre_direita" pos="0.1905 0 0.015">
+        <geom name="piramide_dir" type="mesh" mesh="torre_direita_mesh" material="mdf_tower_mat"/>
+        <geom name="aba_dir_1" type="box" pos="-0.018 0 0.003" size="0.012 0.012 0.003" material="pla_dark_mat"/>
+        <geom name="aba_dir_2" type="box" pos="0.165 -0.092 0.003" size="0.012 0.012 0.003" material="pla_dark_mat"/>
+        <geom name="aba_dir_3" type="box" pos="0.165 0.092 0.003" size="0.012 0.012 0.003" material="pla_dark_mat"/>
+        <geom name="mancal_dir" type="box" pos="0 0 0.455" size="0.015 0.018 0.022" material="mdf_tower_mat"/>
+        <geom name="rolamento_dir" type="cylinder" pos="-0.012 0 0.455" euler="0 90 0" size="0.01432 0.004" material="bearing_mat"/>
+      </body>
+    </body>
+
+    <!-- ==================== 2. INDICADORES VISUAIS (GHOSTS: REFERÊNCIA/REAL E NARX) ==================== -->
+    <body name="referencia_visual" pos="0 0 0.470" mocap="true">
+      <geom name="ref_haste_ghost" type="cylinder" fromto="0 0 0 0 0 -0.320" size="0.003" material="ref_ghost_mat"/>
+      <geom name="ref_tip_ghost" type="sphere" pos="0 0 -0.320" size="0.012" material="ref_ghost_mat"/>
+    </body>
+
+    <body name="narx_visual" pos="0 0 0.470" mocap="true">
+      <geom name="narx_haste_ghost" type="cylinder" fromto="-0.018 0 0 -0.018 0 -0.320" size="0.003" material="narx_ghost_mat"/>
+      <geom name="narx_tip_ghost" type="sphere" pos="-0.018 0 -0.320" size="0.011" material="narx_ghost_mat"/>
+    </body>
+
+    <!-- ==================== 3. CONJUNTO MÓVEL DO AEROPÊNDULO (1-DOF) ==================== -->
+    <!-- Pivô no centro do eixo horizontal a z = 0.470 m -->
+    <!-- Calibrado com o Modelo Físico Grey-Box v9 (modelo_greybox_v9.json - v9_otimizado):
+         C_g = 0.279536 N·m (m = 0.317 kg, z_cm = -0.0898895 m)
+         J   = 0.0407587 kg·m² (I_cm = J - m*z_cm^2 = 0.0381973 kg·m²)
+         K_s = 0.0638036 N·m/rad (rigidez elástica torsional do chicote/cabo no pivô -> stiffness)
+         b_ef = 0.0135097 N·m·s/rad (amortecimento viscoso efetivo -> damping) -->
+    <body name="pendulo_movel" pos="0 0 0.470">
+      <joint name="pendulo_joint" type="hinge" pos="0 0 0" axis="-1 0 0" stiffness="0.06380358" damping="0.01350967" frictionloss="0.0" armature="0.0"/>
+
+      <inertial pos="0 0 -0.0898895" mass="0.317" diaginertia="0.0381973 0.0381973 0.0025"/>
+
+      <!-- Eixo Horizontal de Alumínio: comprimento 386.00 mm, diâmetro 12.51 mm -->
+      <geom name="eixo_horizontal" type="cylinder" fromto="-0.193 0 0 0.193 0 0" size="0.006255" material="alu_shaft_mat"/>
+
+      <!-- Alojamento da IMU ICM-20948 impresso em 3D: 70.00 x 30.00 x 30.00 mm -->
+      <geom name="caixa_imu" type="box" pos="0.095 0 0" size="0.035 0.015 0.015" material="pla_dark_mat"/>
+      <site name="imu_site" pos="0.095 0 0.015" size="0.004" rgba="0.2 0.8 0.3 1"/>
+
+      <!-- Eixo Vertical (Haste Rosqueada): deslocado mais para cima conforme MONTGEM-Geral.pdf / MONTGEM-Fontal.pdf
+           Vai de z = -0.320 m (centro da turbina EDF) até z = +0.435 m (topo mais alto com contrapeso elevado) -->
+      <geom name="eixo_vertical" type="cylinder" fromto="0 0 -0.315 0 0 0.435" size="0.003815" material="steel_rod_mat"/>
+
+      <!-- Porcas de fixação no cruzamento dos eixos -->
+      <geom name="porca_central_sup" type="cylinder" pos="0 0 0.010" size="0.0065 0.003" material="steel_rod_mat"/>
+      <geom name="porca_central_inf" type="cylinder" pos="0 0 -0.010" size="0.0065 0.003" material="steel_rod_mat"/>
+
+      <!-- Contrapeso elevado na extremidade superior (z = +0.415 m a +0.425 m acima do eixo horizontal) -->
+      <geom name="contrapeso_1" type="cylinder" pos="0 0 0.425" size="0.011 0.0045" material="brass_counter_mat"/>
+      <geom name="contrapeso_2" type="cylinder" pos="0 0 0.415" size="0.011 0.0045" material="brass_counter_mat"/>
+      <geom name="porca_contrapeso_sup" type="cylinder" pos="0 0 0.432" size="0.0068 0.0025" material="steel_rod_mat"/>
+      <geom name="porca_contrapeso_inf" type="cylinder" pos="0 0 0.408" size="0.0068 0.0025" material="steel_rod_mat"/>
+
+      <!-- ==================== UNIDADE PROPULSORA: TURBINA FAN DUTADA (EDF FMS 50mm 11 PÁS) ==================== -->
+      <!-- Acoplada na extremidade inferior da haste (z = -0.320 m), com eixo do duto ao longo de Y (empuxo perpendicular à haste) -->
+      <body name="conjunto_edf" pos="0 0 -0.320">
+        <!-- Suporte impresso em 3D (berço superior PLA que prende a haste vertical ao topo externo do duto da EDF) -->
+        <geom name="suporte_haste_edf" type="box" pos="0 0 0.030" size="0.012 0.016 0.006" material="pla_dark_mat"/>
+
+        <!-- Carcaça Cilíndrica Vazada / Duto Aerodinâmico da EDF FMS 50mm com bocal convergente (bellmouth) -->
+        <geom name="edf_duto_shroud" type="mesh" mesh="edf_duto_mesh" euler="90 0 0" material="edf_duct_mat"/>
+
+        <!-- Motor Brushless Outrunner 2627 KV4500 centralizado dentro do cubo do duto + 4 aletas estatoras traseiras -->
+        <geom name="edf_motor_2627" type="cylinder" pos="0 0.008 0" euler="90 0 0" size="0.0095 0.012" material="edf_ring_mat"/>
+        <geom name="estator_horiz" type="box" pos="0 0.016 0" size="0.024 0.003 0.0012" material="pla_dark_mat"/>
+        <geom name="estator_vert" type="box" pos="0 0.016 0" size="0.0012 0.003 0.024" material="pla_dark_mat"/>
+
+        <!-- Site de aplicação da força de empuxo aerodinâmico -->
+        <site name="thrust_site" pos="0 -0.025 0" size="0.003" rgba="0.25 0.82 0.38 1"/>
+
+        <!-- 3 filetes visuais translúcidos do jato de ar da EDF -->
+        <geom name="jato_empuxo" type="cylinder" pos="0 -0.065 0" euler="90 0 0" size="0.0032 0.035" material="thrust_jet_mat"/>
+        <geom name="jato_empuxo_esq" type="cylinder" pos="-0.014 -0.058 0" euler="90 0 0" size="0.0020 0.028" material="thrust_jet_mat"/>
+        <geom name="jato_empuxo_dir" type="cylinder" pos="0.014 -0.058 0" euler="90 0 0" size="0.0020 0.028" material="thrust_jet_mat"/>
+
+        <!-- Rotor Interno de 11 Pás + Ogiva Cônica (gira dentro do duto vazado de 50mm; massa já contabilizada em pendulo_movel) -->
+        <body name="helice_body" pos="0 -0.006 0">
+          <joint name="helice_joint" type="hinge" pos="0 0 0" axis="0 1 0" damping="1e-6"/>
+          <inertial pos="0 0 0" mass="1e-7" diaginertia="1e-9 1e-9 1e-9"/>
+          <geom name="edf_rotor_geom" type="mesh" mesh="edf_rotor_mesh" euler="90 0 0" material="edf_rotor_mat"/>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- ==================== 4. ATUADORES E SENSORES ==================== -->
+  <actuator>
+    <!-- Atuador com dinâmica interna de 1ª ordem (dyntype="filter", tau_m = 0.113127 s do Grey-Box v9)
+         integrada nativamente pelo RK4 do MuJoCo em data.act[0] -->
+    <general name="empuxo_torque" joint="pendulo_joint" dyntype="filter" dynprm="0.113127 0 0" gainprm="1.0 0 0" biasprm="0 0 0" ctrlrange="-100 100"/>
+    <velocity name="helice_spin" joint="helice_joint" kv="0.002" ctrlrange="-450 450"/>
+  </actuator>
+
+  <sensor>
+    <jointpos name="angulo_pot_rad" joint="pendulo_joint"/>
+    <jointvel name="vel_angular_rad_s" joint="pendulo_joint"/>
+    <gyro name="imu_gyro" site="imu_site"/>
+    <accelerometer name="imu_accel" site="imu_site"/>
+  </sensor>
+</mujoco>

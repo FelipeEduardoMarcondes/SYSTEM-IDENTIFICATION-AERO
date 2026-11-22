@@ -1,0 +1,21 @@
+\begin{table}[H]
+    \centering
+    \caption{Termos e parâmetros do modelo NARX metodológico ($T_s = 80$\,ms, $n_y = n_u = 3$).}
+    \label{tab:narx_termos}
+    \begin{tabular}{lrr}
+        \toprule
+        \textbf{Termo Regressor} & $\hat{\theta}_{\text{EE}}$ (OLS) & $\hat{\theta}_{\text{OE}}$ (LM-OE) \\ \midrule
+        $y[k-1]$                           & $+2.6110$ & $+2.6208$ \\
+        $y[k-2]$                           & $-2.2944$ & $-2.3163$ \\
+        $y[k-3]$                           & $+0.6655$ & $+0.6779$ \\
+        $u[k-1]\,u[k-2]\,u[k-3]$           & $+1.9268e-06$ & $+2.1157e-05$ \\
+        $y[k-2]^2$                         & $+3.5068e-04$ & $+8.8076e-04$ \\
+        $u[k-2]^3$                         & $+2.4617e-05$ & $+5.0064e-05$ \\
+        $u[k-2]^2\,u[k-3]$                 & $-2.5815e-05$ & $-5.7275e-05$ \\
+        $u[k-1]^2\,u[k-2]$                 & $-1.6975e-05$ & $-5.4627e-05$ \\
+        $u[k-1]^3$                         & $-1.4322e-06$ & $+9.0961e-06$ \\
+        $y[k-1]\,y[k-3]$                   & $-2.7638e-04$ & $-8.1277e-04$ \\
+        $u[k-1]^2\,u[k-3]$                 & $+2.4126e-05$ & $+3.8046e-05$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}

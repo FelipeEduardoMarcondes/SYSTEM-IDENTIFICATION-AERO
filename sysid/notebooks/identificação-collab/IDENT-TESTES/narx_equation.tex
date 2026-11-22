@@ -1,0 +1,6 @@
+% Equação NARX polinomial identificada metodologicamente (SR-FROLS + Aguirre + LM-OE)
+% Ts = 80 ms (DECIMATION = 8), ny = 3, nu = 3, ly = 2, lu = 3
+\begin{equation}
+    \hat{y}(k) = 2.6208 \cdot y[k-1] - 2.3163 \cdot y[k-2] + 0.6779 \cdot y[k-3] + 2.1157e-05 \cdot u[k-1]\,u[k-2]\,u[k-3] + 8.8076e-04 \cdot y[k-2]^2 + 5.0064e-05 \cdot u[k-2]^3 - 5.7275e-05 \cdot u[k-2]^2\,u[k-3] - 5.4627e-05 \cdot u[k-1]^2\,u[k-2] + 9.0961e-06 \cdot u[k-1]^3 - 8.1277e-04 \cdot y[k-1]\,y[k-3] + 3.8046e-05 \cdot u[k-1]^2\,u[k-3]
+    \label{eq:narx_identificado}
+\end{equation}
